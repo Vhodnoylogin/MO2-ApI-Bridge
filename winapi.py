@@ -90,6 +90,33 @@ def windows_of(pid):
     return found
 
 
+def main_window(pid):
+    """Главное видимое окно процесса, без чтения его заголовка.
+
+    Отличается от windows_of принципиально: здесь не вызывается GetWindowTextW. Он шлёт
+    окну WM_GETTEXT и ждёт ответа от ЕГО потока, а значит зависает, если тот занят. Для
+    своего же процесса это тупик: поток сервера ждёт поток интерфейса, который в этот
+    момент как раз ничего не разбирает.
+
+    GetClassNameW, IsWindowVisible и IsWindowEnabled читают структуру окна и не ждут никого.
+    """
+    _require()
+    found = []
+
+    def visit(hwnd, _l):
+        owner = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value == pid and user32.IsWindowVisible(hwnd):
+            if class_name(hwnd).startswith('Qt'):
+                found.append(hwnd)
+                return False
+        return True
+
+    proto = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    user32.EnumWindows(proto(visit), 0)
+    return found[0] if found else 0
+
+
 def is_enabled(hwnd):
     """Принимает ли окно ввод. Выключенное верхнее окно означает, что поверх него модальное.
 

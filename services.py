@@ -75,6 +75,12 @@ class Services(object):
                 (self.o.managedGame().binaryName() or '').strip()).lower()
         except Exception:
             self.game_exe = ''
+        # Заодно запоминаем окно: мы в главном потоке, спешить некуда
+        if self._self_hwnd is None:
+            try:
+                self._self_hwnd = winapi.main_window(os.getpid())
+            except Exception:
+                self._self_hwnd = 0
         return self.game_exe
 
     def _game_binary(self):
@@ -134,14 +140,13 @@ class Services(object):
         запущенную программу, она показывает модальный диалог «заблокирован, пока приложение
         запущено», и её окно перестаёт принимать ввод. Учёт запусков и перечисление процессов
         оба могут промахнуться - это не может.
+
+        Окно ищется без чтения заголовка. GetWindowTextW шлёт WM_GETTEXT и ждёт поток окна,
+        то есть повис бы ровно в том случае, ради которого проверка и написана.
         """
         try:
             if self._self_hwnd is None:
-                self._self_hwnd = 0
-                for w in winapi.windows_of(os.getpid()):
-                    if w.get('visible') and w.get('class', '').startswith('Qt'):
-                        self._self_hwnd = w['hwnd']
-                        break
+                self._self_hwnd = winapi.main_window(os.getpid())
             return bool(self._self_hwnd) and not winapi.is_enabled(self._self_hwnd)
         except Exception:
             return False
