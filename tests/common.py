@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """Общее для проверок: где лежит плагин, как до него достучаться, как отчитаться.
 
-Ни одного пути к конкретной машине здесь нет. Папка плагина выводится от собственного
-расположения файла, имя файла с токеном - от имени этой папки, порт берётся из окружения.
-Поэтому проверки едут вместе с модом и работают у того, кто его склонировал.
+Ни одного пути к конкретной машине здесь нет. Корень модуля выводится от расположения этого
+файла, папка плагина ищется рядом по наличию __init__.py, имя файла с токеном - от имени этой
+папки, порт берётся из окружения. Поэтому проверки едут вместе с модом и работают у того, кто
+его склонировал.
 """
 import io
 import json
@@ -13,7 +14,21 @@ import types
 import urllib.error
 import urllib.request
 
-PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _find_package():
+    """Папка самого плагина - соседняя с tests, та, где лежит __init__.py.
+
+    Ищем, а не складываем из имени: корень модуля и пакет называются одинаково лишь по
+    соглашению, а проверки не должны зависеть от соглашений."""
+    for name in sorted(os.listdir(ROOT)):
+        if os.path.isfile(os.path.join(ROOT, name, '__init__.py')):
+            return os.path.join(ROOT, name)
+    raise SystemExit('рядом с tests нет папки с __init__.py - где плагин?')
+
+
+PKG = _find_package()
 NAME = os.path.basename(PKG)
 TOKEN_FILE = os.path.join(PKG, NAME + '-token.txt')
 PORT = int(os.environ.get('MO2AILINK_PORT') or 8930)
@@ -67,9 +82,8 @@ def import_package(with_mobase=False):
     """
     if not with_mobase and 'mobase' not in sys.modules:
         sys.modules['mobase'] = types.ModuleType('mobase')
-    parent = os.path.dirname(PKG)
-    if parent not in sys.path:
-        sys.path.insert(0, parent)
+    if ROOT not in sys.path:
+        sys.path.insert(0, ROOT)
     return __import__(NAME, fromlist=['services', 'i18n', 'winapi'])
 
 
