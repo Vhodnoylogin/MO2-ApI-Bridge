@@ -458,7 +458,17 @@ class Services(object):
         что нужны. Для FOMOD это и так единственный верный путь: выбор опций разбирается
         чтением ModuleConfig.xml, а не кликами.
 
-        body: {archive, name, paths: ["подпапка в архиве", ...]}
+        body: {archive, name, paths: ["подпапка в архиве", ...], mode}
+
+        mode нужен только когда папка мода уже занята, и повторяет то, что установщик MO2
+        спрашивает диалогом:
+
+            merge    положить выбранное поверх прежнего содержимого
+            replace  убрать прежнее содержимое и положить выбранное
+
+        Без mode занятая папка - отказ: перезаписать чужую работу молча нельзя. При замене
+        прежнее содержимое уходит В КОРЗИНУ, а meta.ini остаётся: в нём nexusId, категория и
+        имя архива, то есть опознание мода помимо имени папки.
         """
         stop = self._blocked_while_busy('op.install')
         if stop:
@@ -471,16 +481,40 @@ class Services(object):
         if not name:
             raise ValueError(i18n.t('err.needName'))
 
+        mode = (body.get('mode') or '').strip().lower()
+        if mode and mode not in ('merge', 'replace'):
+            raise ValueError(i18n.t('err.badMode', mode=mode))
+
         mods_root = self.run_main(lambda: self.o.modsPath())
-        if os.path.isdir(os.path.join(mods_root, name)):
+        existed = os.path.isdir(os.path.join(mods_root, name))
+        if existed and not mode:
             raise ValueError(i18n.t('err.modExists', mod=name))
 
-        def mk():
-            m = self.o.createMod(mobase.GuessedString(name))
-            return None if m is None else m.absolutePath()
-        target = self.run_main(mk)
-        if not target:
-            raise RuntimeError(i18n.t('err.createFailed'))
+        if existed:
+            target = os.path.join(mods_root, name)
+            before = _tree_files(target)
+        else:
+            def mk():
+                m = self.o.createMod(mobase.GuessedString(name))
+                return None if m is None else m.absolutePath()
+            target = self.run_main(mk)
+            if not target:
+                raise RuntimeError(i18n.t('err.createFailed'))
+            before = set()
+
+        removed = 0
+        if existed and mode == 'replace':
+            # Убираем прежнее содержимое В КОРЗИНУ, а не мимо: замена - единственная
+            # установка, которая что-то теряет, и терять её надо обратимо. meta.ini не
+            # трогаем: он принадлежит MO2 и хранит опознание мода помимо имени папки.
+            for entry in sorted(os.listdir(target)):
+                if entry.lower() == 'meta.ini':
+                    continue
+                full = os.path.join(target, entry)
+                if _safe(lambda p=full: winapi.recycle(p), False):
+                    removed += 1
+                else:
+                    raise RuntimeError(i18n.t('err.recycle', path=full))
 
         tmp = os.path.join(os.environ.get('TEMP', target), 'mo2aibridge-unpack')
         if os.path.isdir(tmp):
@@ -515,8 +549,19 @@ class Services(object):
                     copied += 1
         shutil.rmtree(tmp, ignore_errors=True)
         self.run_main(lambda: (self.o.refresh(True), True)[1])
-        return {'mod': name, 'path': target, 'files': copied, 'created': True,
-                'fomodSkipped': skipped_fomod, 'archive': os.path.basename(arc)}
+        after = _tree_files(target)
+        # «Что было и что стало» - целиком: слияние молча перекрывает прежние файлы, и без
+        # списка перекрытых вызывающий не узнает, что именно потерял.
+        overwritten = sorted(before & after) if mode == 'merge' else []
+        return {'mod': name, 'path': target, 'files': copied,
+                'created': not existed, 'existed': existed, 'mode': mode or 'new',
+                'fomodSkipped': skipped_fomod, 'archive': os.path.basename(arc),
+                'filesBefore': len(before), 'filesAfter': len(after),
+                'added': sorted(after - before)[:200], 'addedCount': len(after - before),
+                'overwritten': overwritten[:200], 'overwrittenCount': len(overwritten),
+                'removedToRecycleBin': removed,
+                'undo': ({'route': '/mods/remove', 'body': {'mod': name}}
+                         if not existed else None)}
 
     def refresh(self, _=None):
         """Перечитать mods\\ и профиль.
@@ -873,6 +918,21 @@ class Services(object):
 def _one(q, key, default):
     v = (q or {}).get(key)
     return v[0] if isinstance(v, list) and v else (v if isinstance(v, str) else default)
+
+
+def _tree_files(root):
+    """Пути всех файлов папки относительно неё самой, в нижнем регистре.
+
+    Нужны для честного «было и стало»: по разнице видно, что добавилось, а по пересечению -
+    что перекрыто. Регистр снят, потому что Windows его не различает, а архивы приносят
+    и то, и другое написание.
+    """
+    out = set()
+    for dp, _dn, fs in os.walk(root):
+        rel = os.path.relpath(dp, root)
+        for f in fs:
+            out.add((f if rel == '.' else os.path.join(rel, f)).lower())
+    return out
 
 
 def _seven_zip():

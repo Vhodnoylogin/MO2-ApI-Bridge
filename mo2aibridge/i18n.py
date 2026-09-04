@@ -60,12 +60,15 @@ RU = {
     'err.mainThread': 'главный поток MO2 не ответил за %(sec).0f с',
 
     'err.noArchive': 'нет архива: %(archive)s',
-    'err.modExists': ('мод "%(mod)s" уже существует. Слияния и замены не бывает: если нужен '
-                      'изменённый файл, заводится ОТДЕЛЬНЫЙ мод, перекрывающий исходный'),
+    'err.modExists': ('мод "%(mod)s" уже существует. Молча поверх не кладу: укажите mode - '
+                      'merge, чтобы положить выбранное поверх прежнего, или replace, чтобы '
+                      'сперва убрать прежнее содержимое в Корзину'),
     'err.createFailed': 'createMod вернул пусто - имя занято или отказано',
     'err.no7z': 'не найден 7z.exe',
     'err.unpack': 'распаковка не удалась: %(detail)s',
     'err.noPathInArchive': 'нет пути в архиве: %(path)s',
+    'err.badMode': "mode: merge (положить поверх) или replace (заменить), а не %(mode)s",
+    'err.recycle': 'не удалось отправить в Корзину: %(path)s',
 
     # --- имена изменяющих операций, общие для обоих замков ---
     'op.refresh': 'перечитывание списков MO2',
@@ -145,12 +148,15 @@ EN = {
     'err.mainThread': "MO2's main thread did not answer within %(sec).0f s",
 
     'err.noArchive': 'archive not found: %(archive)s',
-    'err.modExists': ('mod "%(mod)s" already exists. There is no merge or replace: if you need '
-                      'a modified file, create a SEPARATE mod that overrides the original'),
+    'err.modExists': ('mod "%(mod)s" already exists. Nothing is written over it silently: '
+                      'pass mode - merge to overlay the selection, or replace to send the '
+                      'previous contents to the Recycle Bin first'),
     'err.createFailed': 'createMod returned nothing - the name is taken or was refused',
     'err.no7z': '7z.exe not found',
     'err.unpack': 'extraction failed: %(detail)s',
     'err.noPathInArchive': 'path not found in archive: %(path)s',
+    'err.badMode': 'mode: merge (overlay) or replace (wipe first), not %(mode)s',
+    'err.recycle': 'could not send to the Recycle Bin: %(path)s',
 
     'op.refresh': 'refreshing the MO2 lists',
     'op.install': 'installing a mod',

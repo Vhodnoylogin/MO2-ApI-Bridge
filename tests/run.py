@@ -9,7 +9,8 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SUITES = ['test_busy_logic.py', 'test_routes.py', 'test_plugins_txt.py', 'test_busy_live.py']
+SUITES = ['test_busy_logic.py', 'test_routes.py', 'test_plugins_txt.py',
+           'test_install_modes.py', 'test_busy_live.py']
 SKIPPED = 77
 
 bad = skipped = 0

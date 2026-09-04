@@ -88,7 +88,7 @@ The token is supplied by the wrapper and omitted below for brevity.
 | Route | Body | Effect |
 |---|---|---|
 | `/refresh` | — | re-read `mods\` and the profile |
-| `/install` | `archive`, `name`, `paths` | install a mod without a single dialog |
+| `/install` | `archive`, `name`, `paths`, `mode` | install without dialogs; `mode` is `merge` or `replace` when the folder is taken |
 | `/toggle` | `mod`, `active` | enable or disable a mod |
 | `/plugins/state` | `set`, `apply` | enable or disable plugins in bulk |
 | `/plugins/order` | `order`, `apply` | set the whole load order |
@@ -132,11 +132,15 @@ if you do not.
 deleting anything: name, version, `nexusId`, link, which archive the mod was built from and
 whether that archive is still on disk, priority, active state, file count, categories and notes.
 
+**The bridge does all the work itself.** The caller issues a command and receives what was and
+what became; extraction, copying, deletion and cleanup are the bridge's business. Wherever it
+deletes files with its own hands they go **to the Recycle Bin** rather than past it — that is its
+own decision, not the caller's concern.
+
 **The archive is kept by default.** `/mods/remove` deletes the mod folder but never touches the
 download in `downloads\`, so the mod stays restorable by reinstalling. Deleting the archive too
-takes an explicit `"withArchive": true`; it then goes **to the Recycle Bin** rather than past it,
-and the reply says `archiveRecycled`. That is the only thing the bridge deletes with its own
-hands, and therefore the only place where it insists on recoverability.
+takes an explicit `"withArchive": true`; it goes to the Recycle Bin as well, and the reply says
+`archiveRecycled`.
 
 ---
 
@@ -196,6 +200,24 @@ For FOMOD the manual path is the only correct one anyway: options are resolved b
 
 If a mod with that name already exists, the route refuses. There is no merge and no replace: a
 modified file goes into a **separate** mod that overrides the original.
+
+### When the folder is taken: merge or replace
+
+MO2's installer asks with a dialog here; the bridge asks with the `mode` field, and without it
+it **refuses** — nothing is written over someone's work silently.
+
+| `mode` | What it does | What is lost |
+|---|---|---|
+| absent | refusal with an explanation | nothing |
+| `merge` | overlays the selection on the previous contents | the overwritten files; the reply lists them |
+| `replace` | sends the previous contents **to the Recycle Bin** first, then copies | nothing irrecoverably |
+
+`meta.ini` is left alone on replace: it belongs to MO2 and holds `nexusId`, the category and the
+archive name — that is, the mod's identity beyond its folder name.
+
+Either way the reply says what was and what became: `filesBefore`, `filesAfter`, `added` and
+`addedCount`, `overwritten` and `overwrittenCount`, `removedToRecycleBin`. The lists are capped
+at two hundred names; the counters are not.
 
 **The manual path**, when the files are already laid out:
 
