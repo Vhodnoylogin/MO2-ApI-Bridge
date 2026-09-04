@@ -437,8 +437,13 @@ class Services(object):
             ml = self.o.modList()
             if ml.getMod(mod) is None:
                 raise ValueError(i18n.t('err.noSuchMod', mod=mod))
+            # Прежнее состояние снимается ДО правки: обратить операцию больше нечем,
+            # запоминать его мост не станет - это дело вызывающего.
+            was = bool(ml.state(mod) & mobase.ModState.ACTIVE)
             ml.setActive(mod, bool(want))
-            return {'mod': mod, 'active': bool(want)}
+            return {'mod': mod, 'active': bool(want), 'was': was,
+                    'changed': was != bool(want),
+                    'undo': {'route': '/toggle', 'body': {'mod': mod, 'active': was}}}
         return self.run_main(f)
 
     def install(self, body):
@@ -477,7 +482,7 @@ class Services(object):
         if not target:
             raise RuntimeError(i18n.t('err.createFailed'))
 
-        tmp = os.path.join(os.environ.get('TEMP', target), 'mo2ailink-unpack')
+        tmp = os.path.join(os.environ.get('TEMP', target), 'mo2aibridge-unpack')
         if os.path.isdir(tmp):
             shutil.rmtree(tmp, ignore_errors=True)
         os.makedirs(tmp)
@@ -624,6 +629,13 @@ class Services(object):
                 res['error'] = i18n.t('err.orderIncomplete',
                                       missing=len(missing), extra=len(extra))
                 return res
+            before = sorted(known, key=lambda n: pl.loadOrder(n)
+                            if pl.loadOrder(n) >= 0 else 10 ** 6)
+            # Прежний порядок отдаётся ЦЕЛИКОМ и всегда: короче его не описать, а без него
+            # операция необратима - плагинов под сотню, и какой где стоял, знать неоткуда.
+            res['before'] = before
+            res['undo'] = {'route': '/plugins/order',
+                           'body': {'order': before, 'apply': True}}
             if apply_it:
                 pl.setLoadOrder(order)
                 self.o.refresh(True)
@@ -679,9 +691,19 @@ class Services(object):
             m = ml.getMod(mod)
             if m is None:
                 raise ValueError(i18n.t('err.noSuchMod', mod=mod))
+            was_path = _safe(m.absolutePath, '')
+            nid = _safe(m.nexusId, 0)
             res = ml.renameMod(m, new)
             self.o.refresh(True)
-            return {'applied': res is not None, 'mod': mod, 'newName': new}
+            got = ml.getMod(new)
+            # Имя папки - это то, чем мод опознают снаружи, поэтому вместе с путями
+            # отдаём nexusId: по нему мод узнаётся, даже если имя уже потеряно.
+            return {'applied': res is not None, 'mod': mod, 'newName': new,
+                    'fromPath': was_path,
+                    'toPath': _safe(got.absolutePath, '') if got else '',
+                    'nexusId': nid,
+                    'undo': {'route': '/mods/rename',
+                             'body': {'mod': new, 'newName': mod}}}
         return self.run_main(f)
 
     def mods_remove(self, body):
@@ -693,19 +715,59 @@ class Services(object):
             raise ValueError(i18n.t('err.needMod'))
         stop = self._danger(body, 'op.remove')
 
+        with_archive = bool(body.get('withArchive'))
+
         def f():
             ml = self.o.modList()
             m = ml.getMod(mod)
             if m is None:
                 raise ValueError(i18n.t('err.noSuchMod', mod=mod))
-            path = m.absolutePath()
+            # Карточка снимается ДО сноса и отдаётся целиком: после удаления спросить будет
+            # некого, а чтобы мод вернуть, нужно знать всё - из какого архива он собран,
+            # какой версии, где стоял и был ли включён.
+            card = self._removal_card(m, ml)
             if stop:
-                stop.update({'mod': mod, 'path': path})
+                stop.update({'mod': mod, 'card': card, 'withArchive': with_archive})
                 return stop
             ok = ml.removeMod(m)
             self.o.refresh(True)
-            return {'applied': bool(ok), 'mod': mod, 'path': path}
+            out = {'applied': bool(ok), 'mod': mod, 'path': card['path'],
+                   'card': card, 'archiveKept': True, 'archiveRecycled': False}
+            if with_archive and card.get('archivePath'):
+                # Архив - единственное, что мост удаляет сам, поэтому только в Корзину.
+                out['archiveRecycled'] = bool(_safe(
+                    lambda: winapi.recycle(card['archivePath']), False))
+                out['archiveKept'] = not out['archiveRecycled']
+            out['undo'] = ({'route': '/install',
+                            'body': {'archive': card.get('archivePath'), 'name': mod}}
+                           if out['archiveKept'] and card.get('archivePath') else None)
+            return out
         return self.run_main(f)
+
+    def _removal_card(self, m, ml):
+        """Всё, что понадобится, чтобы вернуть мод. Снимается до удаления, из главного потока."""
+        name = m.name()
+        arc = _safe(m.installationFile, '') or ''
+        arc_path = ''
+        if arc:
+            cand = os.path.join(_safe(self.o.downloadsPath, '') or '', arc)
+            arc_path = cand if os.path.isfile(cand) else ''
+        st = ml.state(name)
+        return {'mod': name,
+                'path': _safe(m.absolutePath, ''),
+                'version': _safe(lambda: m.version().displayString(), ''),
+                'nexusId': _safe(m.nexusId, 0),
+                'url': ('https://www.nexusmods.com/skyrimspecialedition/mods/%d'
+                        % _safe(m.nexusId, 0)) if _safe(m.nexusId, 0) > 0 else '',
+                'categories': list(_safe(m.categories, []) or []),
+                'notes': _safe(m.comments, '') or '',
+                'installationFile': arc,
+                'archivePath': arc_path,
+                'archiveOnDisk': bool(arc_path),
+                'priority': ml.priority(name),
+                'active': bool(st & mobase.ModState.ACTIVE),
+                'files': _safe(lambda: sum(len(fs) for _r, _d, fs in
+                                           os.walk(m.absolutePath())), -1)}
 
     # ================================================== процессы и окна
     def run(self, body):

@@ -22,7 +22,7 @@ RU = {
     # --- сам плагин, как он представляется MO2 ---
     'plugin.description': ('Локальный HTTP-мост к работающей MO2: список модов, чтение '
                            'виртуальной Data, порядок плагинов, запуск утилит внутри VFS.'),
-    'plugin.displayName': 'MO2 AI Link Assistant',
+    'plugin.displayName': 'MO2 AI Bridge',
     'plugin.tooltip': 'Показать адрес и токен локального моста',
     'setting.enabled': 'запускать мост вместе с MO2',
     'setting.port': 'порт на 127.0.0.1',
@@ -108,7 +108,7 @@ RU = {
 EN = {
     'plugin.description': ('Local HTTP bridge to a running MO2: mod list, virtual Data reads, '
                            'plugin load order, launching tools inside the VFS.'),
-    'plugin.displayName': 'MO2 AI Link Assistant',
+    'plugin.displayName': 'MO2 AI Bridge',
     'plugin.tooltip': 'Show the local bridge address and token',
     'setting.enabled': 'start the bridge together with MO2',
     'setting.port': 'port on 127.0.0.1',

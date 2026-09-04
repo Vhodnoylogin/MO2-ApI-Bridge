@@ -2,7 +2,7 @@
 """Замок занятости на настоящей запущенной программе.
 
 Берётся утилита, а не игра: она тоже запускается через MO2 и тоже держит её замок, но
-ничего не считает, пока не нажать кнопку. Имя задаётся переменной MO2AILINK_TEST_APP и
+ничего не считает, пока не нажать кнопку. Имя задаётся переменной MO2AIBRIDGE_TEST_APP и
 должно быть ЗАРЕГИСТРИРОВАННЫМ в MO2 - startApplication принимает имя, а не путь.
 
 Закрывается она тем же маршрутом /window, которым мост вообще умеет работать с окнами.
@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
 
 common.need_live()
-APP = os.environ.get('MO2AILINK_TEST_APP') or 'TexGen'
+APP = os.environ.get('MO2AIBRIDGE_TEST_APP') or 'TexGen'
 r = common.Report('замок занятости на запущенной программе (%s)' % APP)
 
 _, ping = common.call('GET', '/ping')
@@ -45,7 +45,7 @@ for _ in range(60):
         break
     if box.get('res') and box['res'][0] != 200:
         r.note('пропуск', 'запустить "%s" не вышло: %s' % (APP, box['res'][1].get('error')))
-        r.note('', 'задайте MO2AILINK_TEST_APP именем утилиты из списка MO2')
+        r.note('', 'задайте MO2AIBRIDGE_TEST_APP именем утилиты из списка MO2')
         r.done()
 if not pid:
     r.case('программа поднялась', False, True)

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""MO2 AI Link Assistant — локальный HTTP-мост к работающей Mod Organizer 2.
+"""MO2 AI Bridge — локальный HTTP-мост к работающей Mod Organizer 2.
 
 Слои снизу вверх, каждый знает лишь про тот, что под ним:
 
@@ -11,7 +11,7 @@
     i18n.py      строки и переводы, поперёк всех слоёв
 
 Здесь намеренно пусто, кроме фабрики. `mobase` есть только внутри процесса MO2, и если тянуть
-его на уровне пакета, то `from mo2ailink import i18n` перестаёт работать где угодно ещё —
+его на уровне пакета, то `from mo2aibridge import i18n` перестаёт работать где угодно ещё —
 включая проверку переводов и разбор winapi без запущенного менеджера. Импорт отложен внутрь
 функции, поэтому нижние слои проверяются по отдельности.
 
@@ -22,5 +22,5 @@ __version__ = '2.0.0'
 
 
 def createPlugin():
-    from .plugin import MO2AILink
-    return MO2AILink()
+    from .plugin import MO2AIBridge
+    return MO2AIBridge()

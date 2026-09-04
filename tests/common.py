@@ -31,7 +31,7 @@ def _find_package():
 PKG = _find_package()
 NAME = os.path.basename(PKG)
 TOKEN_FILE = os.path.join(PKG, NAME + '-token.txt')
-PORT = int(os.environ.get('MO2AILINK_PORT') or 8930)
+PORT = int(os.environ.get('MO2AIBRIDGE_PORT') or 8930)
 BASE = 'http://127.0.0.1:%d' % PORT
 
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""MO2 AI Link Assistant — локальный HTTP-мост к работающей Mod Organizer 2.
+"""MO2 AI Bridge — локальный HTTP-мост к работающей Mod Organizer 2.
 
 Верхний слой: жизненный цикл плагина и сборка остальных слоёв воедино. Сам ничего не делает
 руками — только соединяет.
@@ -22,11 +22,11 @@ import mobase
 from . import i18n, runtime, routes as routes_mod
 from .services import Services
 
-PLUGIN_NAME = 'MO2AILink'
+PLUGIN_NAME = 'MO2AIBridge'
 DEFAULT_PORT = 8930
 HERE = os.path.dirname(os.path.abspath(__file__))
-TOKEN_FILE = os.path.join(HERE, 'mo2ailink-token.txt')
-ERROR_LOG = os.path.join(HERE, 'mo2ailink.log')
+TOKEN_FILE = os.path.join(HERE, 'mo2aibridge-token.txt')
+ERROR_LOG = os.path.join(HERE, 'mo2aibridge.log')
 DOCS = os.path.join(HERE, 'README.md')
 
 
@@ -50,7 +50,7 @@ def log(msg):
         pass
 
 
-class MO2AILink(mobase.IPluginTool):
+class MO2AIBridge(mobase.IPluginTool):
     def __init__(self):
         super().__init__()
         self._organizer = None

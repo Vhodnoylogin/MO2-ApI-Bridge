@@ -206,6 +206,40 @@ def wait_process(handle, timeout_sec=None):
     return int(code.value)
 
 
+FO_DELETE = 0x0003
+FOF_ALLOWUNDO = 0x0040
+FOF_NOCONFIRMATION = 0x0010
+FOF_SILENT = 0x0004
+
+
+def recycle(path):
+    """Отправить файл в Корзину. True, если получилось.
+
+    Именно в Корзину, а не мимо: удаление архива - единственное, что мост делает с файлом
+    безвозвратно, и пусть у человека остаётся способ передумать. Файл окончен двойным нулём -
+    список путей в SHFileOperation разделяется нулями и завершается ещё одним.
+    """
+    if kernel32 is None:
+        _require()
+    shell32 = ctypes.WinDLL('shell32', use_last_error=True)
+
+    class SHFILEOPSTRUCTW(ctypes.Structure):
+        _fields_ = [('hwnd', wintypes.HWND),
+                    ('wFunc', wintypes.UINT),
+                    ('pFrom', wintypes.LPCWSTR),
+                    ('pTo', wintypes.LPCWSTR),
+                    ('fFlags', ctypes.c_uint16),
+                    ('fAnyOperationsAborted', wintypes.BOOL),
+                    ('hNameMappings', ctypes.c_void_p),
+                    ('lpszProgressTitle', wintypes.LPCWSTR)]
+
+    op = SHFILEOPSTRUCTW()
+    op.wFunc = FO_DELETE
+    op.pFrom = path + chr(0) + chr(0)
+    op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT
+    return shell32.SHFileOperationW(ctypes.byref(op)) == 0 and not op.fAnyOperationsAborted
+
+
 def pids_by_exe(names):
     """Идентификаторы живых процессов с такими именами файлов (регистр не важен).
 

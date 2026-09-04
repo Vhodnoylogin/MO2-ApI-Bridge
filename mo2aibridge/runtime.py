@@ -118,5 +118,5 @@ def serve(port, handler):
     """Поднять сервер в фоне. Слушаем только петлю - наружу порт не выставляется никогда."""
     srv = ThreadingHTTPServer(('127.0.0.1', port), handler)
     srv.daemon_threads = True
-    threading.Thread(target=srv.serve_forever, name='MO2AILink', daemon=True).start()
+    threading.Thread(target=srv.serve_forever, name='MO2AIBridge', daemon=True).start()
     return srv

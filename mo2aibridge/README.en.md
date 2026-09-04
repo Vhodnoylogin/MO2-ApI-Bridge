@@ -1,4 +1,4 @@
-# MO2 AI Link Assistant
+# MO2 AI Bridge
 
 **A local HTTP bridge to a running Mod Organizer 2 for scripts and AI agents.**
 
@@ -8,7 +8,7 @@ plugin exposes those calls on `127.0.0.1` so scripts, command lines and AI agent
 without clicking through the MO2 window.
 
 Binds to loopback only. Every request needs an `X-Token` header; MO2 generates a fresh token on
-each start and writes it to `mo2ailink-token.txt` next to the plugin.
+each start and writes it to `mo2aibridge-token.txt` next to the plugin.
 
 *Документация на русском: [README.md](README.md).*
 
@@ -30,8 +30,8 @@ and a stray click silently ruins the output.
 
 ## Install
 
-Copy the `mo2ailink` folder into `<MO2>\plugins\` and restart MO2. It appears under
-**Settings → Plugins → Tool → MO2 AI Link Assistant** and in the tools menu.
+Copy the `mo2aibridge` folder into `<MO2>\plugins\` and restart MO2. It appears under
+**Settings → Plugins → Tool → MO2 AI Bridge** and in the tools menu.
 
 | Setting | Default | Meaning |
 |---|---|---|
@@ -40,7 +40,7 @@ Copy the `mo2ailink` folder into `<MO2>\plugins\` and restart MO2. It appears un
 | `language` | `auto` | message language: `auto`, `ru`, `en` |
 
 The menu entry shows the address and state, and if autostart failed it starts the bridge by hand
-and shows the real reason. Diagnostics go to `mo2ailink.log` next to the plugin: load, start, and
+and shows the real reason. Diagnostics go to `mo2aibridge.log` next to the plugin: load, start, and
 a full traceback on any failure.
 
 **External requirements.** MO2 2.5 with Python plugin support — nothing else, with one exception:
@@ -97,10 +97,46 @@ The token is supplied by the wrapper and omitted below for brevity.
 | `/window` | `hwnd`, `action`, `button` | `close`, or `click` by button caption |
 | `/mods/priority` | `mod`, `priority` | **irreversible**, see below |
 | `/mods/rename` | `mod`, `newName` | **irreversible** |
-| `/mods/remove` | `mod` | **irreversible** |
+| `/mods/remove` | `mod`, `withArchive` | **irreversible**; the reply carries the mod card taken before deletion |
 
 An unknown path returns 404 together with both tables listed separately — half of all mistakes are
 a read sent as a POST, or the other way round.
+
+---
+
+## The bridge executes, the caller remembers
+
+The plugin **keeps nothing between calls** and decides nothing on the caller's behalf. There is
+no undo journal inside it, and there should not be: deciding where a mod belongs is the job of
+whoever issued the command, not of whoever carried it out.
+
+Hence the duty that replaces memory: **the reply to a mutating operation carries everything
+needed to reverse it.** Not a hint, not "something changed", but ready data.
+
+| Route | Reversed by | What the reply carries |
+|---|---|---|
+| `/toggle` | toggling back | `was` — the state before the edit, plus `changed` |
+| `/mods/priority` | restoring the priority | `from` and `to` |
+| `/plugins/state` | setting the states back | `changes` with `from`/`to` per plugin |
+| `/plugins/order` | restoring the order | `before` — the **whole** previous order |
+| `/mods/rename` | renaming back | `fromPath`, `toPath` and `nexusId` |
+| `/install` | deleting the created folder | `path` and `created` |
+| `/mods/remove` | reinstalling from the archive | `card` — the mod card taken **before** deletion |
+
+Where the reversal is a single request, the reply contains it whole — an `undo` field with a
+ready `route` and `body`. That is a suggestion, not a promise: the bridge does not verify that
+nothing has changed since, and does not store it. Send it back if you want the rollback; drop it
+if you do not.
+
+**The removal card is returned on refusal too**, so what would be lost can be inspected without
+deleting anything: name, version, `nexusId`, link, which archive the mod was built from and
+whether that archive is still on disk, priority, active state, file count, categories and notes.
+
+**The archive is kept by default.** `/mods/remove` deletes the mod folder but never touches the
+download in `downloads\`, so the mod stays restorable by reinstalling. Deleting the archive too
+takes an explicit `"withArchive": true`; it then goes **to the Recycle Bin** rather than past it,
+and the reply says `archiveRecycled`. That is the only thing the bridge deletes with its own
+hands, and therefore the only place where it insists on recoverability.
 
 ---
 
@@ -274,7 +310,7 @@ whole protection lives.
 
 The opposite risk is a stuck record, if the finish notification is lost entirely. There is
 deliberately no route to reset it: that would put the lock one request away. Only a person can
-clear it, by hand: **Tools → MO2 AI Link Assistant** shows what MO2 still considers active and
+clear it, by hand: **Tools → MO2 AI Bridge** shows what MO2 still considers active and
 offers a reset.
 
 There is deliberately no override here, unlike the irreversible lock. There a key confirms a
@@ -369,7 +405,7 @@ A missing key never breaks anything: English is used, and if that is missing too
 | `i18n.py` | strings | across all layers |
 
 `__init__.py` deliberately holds only the factory, and imports `mobase` lazily: otherwise
-`from mo2ailink import i18n` would require a running MO2, and the lower layers could not be checked
+`from mo2aibridge import i18n` would require a running MO2, and the lower layers could not be checked
 on their own.
 
 ---
