@@ -82,16 +82,24 @@ _, res = common.call('POST', '/plugins/state', {'set': {pl['plugins'][0]['plugin
 r.case('без apply не считается изменением', res.get('busy'), None)
 
 r.head('закрываю программу тем же мостом')
-_, wins = common.call('GET', '/windows?pid=%d' % pid, timeout=60)
+# Окно ищется с ожиданием, а не одним взглядом: процесс появляется раньше своего диалога,
+# и на занятой машине разрыв доходит до десятков секунд. Раньше проверка успевала посмотреть
+# до появления кнопок, не находила выхода и оставляла утилиту работать.
 target = None
-for w in wins.get('windows') or []:
-    for b in w.get('buttons') or []:
-        cap = b.get('text', '')
-        if any(x in cap.lower() for x in ('exit', 'close', 'выход', 'закрыть')):
-            target = (w['hwnd'], cap)
+for _ in range(60):
+    _, wins = common.call('GET', '/windows?pid=%d' % pid, timeout=60)
+    for w in wins.get('windows') or []:
+        for b in w.get('buttons') or []:
+            cap = b.get('text', '')
+            if any(x in cap.lower() for x in ('exit', 'close', 'выход', 'закрыть')):
+                target = (w['hwnd'], cap)
+                break
+        if target:
             break
     if target:
         break
+    time.sleep(1)
+r.case('кнопка выхода дождалась', target is not None, True)
 if target:
     _, res = common.call('POST', '/window',
                          {'hwnd': target[0], 'action': 'click', 'button': target[1]}, timeout=60)
@@ -102,13 +110,19 @@ else:
         common.call('POST', '/window', {'hwnd': w['hwnd'], 'action': 'close'}, timeout=60)
     r.note('', 'кнопки выхода не нашлось, закрыл окна')
 
-th.join(timeout=120)
-for _ in range(30):
+th.join(timeout=180)
+for _ in range(60):
     time.sleep(1)
     _, ping = common.call('GET', '/ping', timeout=20)
     if not ping.get('busy'):
         break
 r.head('после закрытия')
+if ping.get('busy'):
+    # Утилиту закрыть не удалось - это сбой проверки, а не замка: гасим, чтобы не оставить
+    # сборку занятой для следующего набора и для человека.
+    for w in (common.call('GET', '/windows?pid=%d' % pid, timeout=60)[1].get('windows') or []):
+        common.call('POST', '/window', {'hwnd': w['hwnd'], 'action': 'close'}, timeout=60)
+    r.note('уборка', 'программа не закрылась сама, послал закрытие окнам')
 r.case('снова свободно', ping.get('busy'), None)
 
 r.done()

@@ -145,9 +145,14 @@ class Services(object):
         то есть повис бы ровно в том случае, ради которого проверка и написана.
         """
         try:
-            if self._self_hwnd is None:
-                self._self_hwnd = winapi.main_window(os.getpid())
-            return bool(self._self_hwnd) and not winapi.is_enabled(self._self_hwnd)
+            hwnd = self._self_hwnd
+            # Дескриптор проверяется, а не берётся на веру. Запомненное при старте окно к
+            # этому времени может быть уничтожено - на старте видна заставка, а не главное
+            # окно, - и IsWindowEnabled на мёртвом дескрипторе отвечает "выключено". Мост
+            # тогда считал MO2 навсегда занятой и отказывал во всех изменениях.
+            if not hwnd or not winapi.is_window(hwnd):
+                hwnd = self._self_hwnd = winapi.main_window(os.getpid())
+            return bool(hwnd) and not winapi.is_enabled(hwnd)
         except Exception:
             return False
 
