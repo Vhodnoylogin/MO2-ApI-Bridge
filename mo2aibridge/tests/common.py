@@ -6,12 +6,9 @@
 папки, порт берётся из окружения. Поэтому проверки едут вместе с модом и работают у того, кто
 его склонировал.
 """
-import importlib
-import importlib.util
 import io
 import json
 import os
-import re
 import sys
 import types
 import urllib.error
@@ -32,9 +29,7 @@ def _find_package():
 
 
 PKG = _find_package()
-# Имя папки пакета - plugin-mo2aibridge, а именем модуля Python оно быть не может: дефис.
-# Поэтому пакет грузится по пути, под именем, годным для импорта.
-_MODNAME = re.sub(r'\W', '_', os.path.basename(PKG))
+NAME = os.path.basename(PKG)
 PORT = int(os.environ.get('MO2AIBRIDGE_PORT') or 8930)
 BASE = 'http://127.0.0.1:%d' % PORT
 
@@ -78,11 +73,12 @@ def need_live():
 
 
 def import_package(with_mobase=False):
-    """Импортировать сам плагин, минуя механизм поиска по sys.path.
+    """Импортировать сам плагин.
 
-    Обычный import сюда не годится: папка пакета называется plugin-mo2aibridge, а дефис в
-    имени модуля Python недопустим. Поэтому пакет загружается по пути к его __init__.py -
-    остальные его файлы находятся сами, через __path__.
+    Папка пакета в репозитории называется plugin_mo2aibridge, и это годное имя модуля -
+    импорт обычный. В MO2 тот же код зовётся mo2aibridge, потому что там его именем служит
+    имя связи в каталоге plugins. Выводить одно из другого нельзя, поэтому имя спрашивается
+    у самого плагина, а не складывается из пути.
 
     mobase живёт только внутри процесса MO2. Модулям нижних слоёв он не нужен вовсе, а
     services упоминает его лишь на уровне импорта, поэтому для проверки логики достаточно
@@ -90,16 +86,9 @@ def import_package(with_mobase=False):
     """
     if not with_mobase and 'mobase' not in sys.modules:
         sys.modules['mobase'] = types.ModuleType('mobase')
-    if _MODNAME not in sys.modules:
-        spec = importlib.util.spec_from_file_location(
-            _MODNAME, os.path.join(PKG, '__init__.py'),
-            submodule_search_locations=[PKG])
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules[_MODNAME] = mod
-        spec.loader.exec_module(mod)
-    for sub in ('i18n', 'winapi', 'services'):
-        importlib.import_module(_MODNAME + '.' + sub)
-    return sys.modules[_MODNAME]
+    if ROOT not in sys.path:
+        sys.path.insert(0, ROOT)
+    return __import__(NAME, fromlist=['services', 'i18n', 'winapi'])
 
 
 # Имя, под которым плагин известен MO2, спрашивается у него самого: имя папки с ним

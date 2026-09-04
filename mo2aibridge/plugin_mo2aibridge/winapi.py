@@ -15,10 +15,12 @@ try:
     from ctypes import wintypes
     user32 = ctypes.WinDLL('user32', use_last_error=True)
     kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    shell32 = ctypes.WinDLL('shell32', use_last_error=True)
 except Exception:
     wintypes = None
     user32 = None
     kernel32 = None
+    shell32 = None
 
 WM_CLOSE = 0x0010
 BM_CLICK = 0x00F5
@@ -52,12 +54,11 @@ def class_name(hwnd):
 
 def children(hwnd):
     out = []
-    proto = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
     def cb(h, _):
         out.append({'hwnd': int(h), 'class': class_name(h), 'text': window_text(h)})
         return True
-    user32.EnumChildWindows(hwnd, proto(cb), 0)
+    user32.EnumChildWindows(hwnd, WNDENUMPROC(cb), 0)
     return out
 
 
@@ -70,7 +71,6 @@ def windows_of(pid):
     """
     _require()
     found = []
-    proto = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
     def cb(hwnd, _):
         wpid = wintypes.DWORD()
@@ -86,7 +86,7 @@ def windows_of(pid):
                 rec['qtWindow'] = True
             found.append(rec)
         return True
-    user32.EnumWindows(proto(cb), 0)
+    user32.EnumWindows(WNDENUMPROC(cb), 0)
     return found
 
 
@@ -112,8 +112,7 @@ def main_window(pid):
                 return False
         return True
 
-    proto = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-    user32.EnumWindows(proto(visit), 0)
+    user32.EnumWindows(WNDENUMPROC(visit), 0)
     return found[0] if found else 0
 
 
@@ -152,6 +151,55 @@ def click_by_caption(hwnd, caption):
             user32.PostMessageW(k['hwnd'], BM_CLICK, 0, 0)
             return k['text']
     return None
+
+
+# ---------------------------------------------------------------- типы вызовов
+if wintypes is not None:
+    WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    class SHFILEOPSTRUCTW(ctypes.Structure):
+        _fields_ = [('hwnd', wintypes.HWND),
+                    ('wFunc', wintypes.UINT),
+                    ('pFrom', wintypes.LPCWSTR),
+                    ('pTo', wintypes.LPCWSTR),
+                    ('fFlags', ctypes.c_uint16),
+                    ('fAnyOperationsAborted', wintypes.BOOL),
+                    ('hNameMappings', ctypes.c_void_p),
+                    ('lpszProgressTitle', wintypes.LPCWSTR)]
+
+    def _declare():
+        """Объявить, чем на самом деле являются аргументы и результаты.
+
+        Умолчание ctypes - 32-битный int на всё, а дескриптор на x64 восьмибайтовый.
+        Пока старшие байты нулевые, это сходит с рук; когда нет - в чужой процесс уходит
+        обрезанное значение. Дешевле объявить, чем разбираться потом.
+        """
+        H, D, B, I = wintypes.HANDLE, wintypes.DWORD, wintypes.BOOL, ctypes.c_int
+        HWND, LP = wintypes.HWND, wintypes.LPARAM
+        for lib, name, args, ret in (
+                (user32, 'GetWindowTextLengthW', (HWND,), I),
+                (user32, 'GetWindowTextW', (HWND, wintypes.LPWSTR, I), I),
+                (user32, 'GetClassNameW', (HWND, wintypes.LPWSTR, I), I),
+                (user32, 'EnumWindows', (WNDENUMPROC, LP), B),
+                (user32, 'EnumChildWindows', (HWND, WNDENUMPROC, LP), B),
+                (user32, 'GetWindowThreadProcessId', (HWND, ctypes.POINTER(D)), D),
+                (user32, 'IsWindowVisible', (HWND,), B),
+                (user32, 'IsWindowEnabled', (HWND,), B),
+                (user32, 'IsWindow', (HWND,), B),
+                (user32, 'PostMessageW', (HWND, wintypes.UINT, wintypes.WPARAM, LP), B),
+                (kernel32, 'CreateToolhelp32Snapshot', (D, D), H),
+                (kernel32, 'Process32FirstW', (H, ctypes.c_void_p), B),
+                (kernel32, 'Process32NextW', (H, ctypes.c_void_p), B),
+                (kernel32, 'CloseHandle', (H,), B),
+                (kernel32, 'WaitForSingleObject', (H, D), D),
+                (kernel32, 'GetExitCodeProcess', (H, ctypes.POINTER(D)), B),
+                (kernel32, 'GetProcessId', (H,), D),
+                (shell32, 'SHFileOperationW', (ctypes.c_void_p,), I)):
+            fn = getattr(lib, name)
+            fn.argtypes = list(args)
+            fn.restype = ret
+
+    _declare()
 
 
 # ---------------------------------------------------------------- процессы
@@ -219,20 +267,8 @@ def recycle(path):
     безвозвратно, и пусть у человека остаётся способ передумать. Файл окончен двойным нулём -
     список путей в SHFileOperation разделяется нулями и завершается ещё одним.
     """
-    if kernel32 is None:
+    if shell32 is None:
         _require()
-    shell32 = ctypes.WinDLL('shell32', use_last_error=True)
-
-    class SHFILEOPSTRUCTW(ctypes.Structure):
-        _fields_ = [('hwnd', wintypes.HWND),
-                    ('wFunc', wintypes.UINT),
-                    ('pFrom', wintypes.LPCWSTR),
-                    ('pTo', wintypes.LPCWSTR),
-                    ('fFlags', ctypes.c_uint16),
-                    ('fAnyOperationsAborted', wintypes.BOOL),
-                    ('hNameMappings', ctypes.c_void_p),
-                    ('lpszProgressTitle', wintypes.LPCWSTR)]
-
     op = SHFILEOPSTRUCTW()
     op.wFunc = FO_DELETE
     op.pFrom = path + chr(0) + chr(0)
