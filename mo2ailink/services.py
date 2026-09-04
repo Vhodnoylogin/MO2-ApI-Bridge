@@ -746,7 +746,20 @@ class Services(object):
         return res
 
     def procs_list(self, _=None):
-        return {'procs': [{'key': k, 'pid': v[1], 'what': v[2]} for k, v in self.procs.items()],
+        """Что мост запускал за эту сессию - с признаком, жив ли процесс до сих пор.
+
+        Список копится с первого запуска и сам не чистится: о завершении своих запусков MO2
+        не сообщает, ждать её слова тут нечего. Пока признака не было, три давно закрытых
+        TexGen из проверок выглядели как три работающие программы и подняли ложную тревогу
+        в соседнем чате. Поэтому живость спрашивается у системы на каждый вызов.
+        """
+        out = []
+        for k, (handle, pid, what) in self.procs.items():
+            code = _safe(lambda h=handle: winapi.wait_process(h, 0), 0)
+            out.append({'key': k, 'pid': pid, 'what': what,
+                        'alive': code is None, 'exit': code})
+        return {'procs': out,
+                'running': sum(1 for x in out if x['alive']),
                 'launchedByMO2': sorted(self.launched),
                 'busy': self._busy()}
 

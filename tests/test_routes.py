@@ -6,6 +6,7 @@
 ожидается отказ, и именно он доказывает, что замок на месте.
 """
 import os
+import subprocess
 import sys
 import urllib.parse
 
@@ -14,6 +15,14 @@ import common  # noqa: E402
 
 common.need_live()
 r = common.Report('маршруты по живой MO2')
+
+
+def _alive_pids():
+    """Идентификаторы живых процессов - спрашиваем систему, а не мост."""
+    out = subprocess.run(['powershell', '-NoProfile', '-Command',
+                          '(Get-Process).Id -join ","'],
+                         capture_output=True, text=True).stdout.strip()
+    return {int(x) for x in out.split(',') if x.strip().isdigit()}
 
 
 def get(route, params=None):
@@ -64,6 +73,13 @@ r.case('/dirs нашёл подкаталоги meshes', len(d.get('dirs') or []
 
 code, pr = get('/procs')
 r.case('/procs отвечает', 'procs' in pr, True)
+# Регрессия: список запусков копится всю сессию и сам не чистится. Пока в нём не было
+# признака живости, давно закрытые программы выглядели как работающие.
+r.case('у каждой записи сказано, жива ли она',
+       all('alive' in x for x in pr.get('procs') or []), True)
+ghosts = [x for x in pr.get('procs') or []
+          if x['alive'] and x['pid'] not in _alive_pids()]
+r.case('живых мертвецов нет', ghosts, [])
 
 code, w = get('/windows')
 r.case('/windows без pid отказывает', code, 500)

@@ -80,7 +80,7 @@ The token is supplied by the wrapper and omitted below for brevity.
 | `/origins` | `path` | every mod providing the file — **the first one wins** |
 | `/resolve` | `path` | virtual path → real file on disk |
 | `/dirs` | `path` | subdirectories of the virtual `Data` |
-| `/procs` | — | what MO2 has launched, including launches from its own window |
+| `/procs` | — | what the bridge launched this session: `alive` per entry, `running` count; plus what MO2 considers active |
 | `/windows` | `pid` or `key` | windows of a process and their button captions |
 
 ### Writes (POST)
@@ -312,6 +312,12 @@ GIL for the duration, so only that one request's thread is occupied.
 single `HWND` and it has no native child windows. An empty button list on a `Qt*` window means "not
 visible to this API", not "no buttons". The mechanism works for WinAPI tools such as the DynDOLOD
 and TexGen dialogs, and not for MO2 itself. Such windows are flagged with `qtWindow: true`.
+
+**`/procs` accumulates over the session and never prunes itself.** An entry is added by
+`/run` and stays until MO2 closes: the manager does not report the finish of the bridge's own
+launches, so there is nothing to wait for. Each entry is therefore checked against the system —
+the `alive` field — and `running` says how many are actually up. Without it, three long-closed
+tools from the test suite looked like three running programs.
 
 **`/plugins/state` writes `plugins.txt` itself, and that is not a nicety.** `setState` changes
 the list in MO2's memory, while the file is rewritten at moments of its own choosing — usually on
