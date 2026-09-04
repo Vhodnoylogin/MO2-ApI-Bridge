@@ -22,11 +22,13 @@ import mobase
 from . import i18n, runtime, routes as routes_mod
 from .services import Services
 
+from . import PLUGIN_ID
+
 PLUGIN_NAME = 'MO2AIBridge'
 DEFAULT_PORT = 8930
 HERE = os.path.dirname(os.path.abspath(__file__))
-TOKEN_FILE = os.path.join(HERE, 'mo2aibridge-token.txt')
-ERROR_LOG = os.path.join(HERE, 'mo2aibridge.log')
+TOKEN_FILE = os.path.join(HERE, PLUGIN_ID + '-token.txt')
+ERROR_LOG = os.path.join(HERE, PLUGIN_ID + '.log')
 DOCS = os.path.join(HERE, 'README.md')
 
 
