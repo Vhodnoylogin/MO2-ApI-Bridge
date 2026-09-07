@@ -96,8 +96,6 @@ RU = {
     'dialog.stuck': ('MO2 считает запуск активным:\n%(run)s\n\nПока это так, мост не даёт '
                      'менять состав сборки. Если окно MO2 уже разблокировано и ничего не '
                      'работает, учёт можно сбросить.'),
-    'dialog.stuckReset': 'Сбросить учёт',
-    'dialog.stuckKeep': 'Оставить как есть',
 
     # --- необратимые операции ---
     'danger.why': ('Необратимая операция над сборкой. Ничего не сделано. Прочитай раздел '
@@ -106,6 +104,12 @@ RU = {
 
     # --- выгрузка ---
     'vfs.fallback': 'virtualFileTree не сработал (%(error)s), иду обходом вширь',
+
+    # --- след в логе ---
+    'log.stuckReset': 'учёт запусков сброшен вручную',
+    'config.writeFailed': 'настройки: не удалось записать умолчания в %(path)s: %(error)s',
+    'config.unreadable': 'настройки: %(path)s не прочитан (%(error)s), работаю по умолчаниям',
+    'config.notObject': 'ожидался объект JSON',
 }
 
 EN = {
@@ -180,14 +184,17 @@ EN = {
     'dialog.stuck': ('MO2 still considers a run active:\n%(run)s\n\nWhile that holds, the '
                      'bridge refuses to change the mod setup. If the MO2 window is already '
                      'unlocked and nothing is running, the bookkeeping can be reset.'),
-    'dialog.stuckReset': 'Reset bookkeeping',
-    'dialog.stuckKeep': 'Leave as is',
 
     'danger.why': ('Irreversible change to the mod setup. Nothing was done. Read the '
                    '"Irreversible operations" section of the documentation, understand the '
                    'consequences, then pass the %(key)s field with the value given there.'),
 
     'vfs.fallback': 'virtualFileTree failed (%(error)s), falling back to the breadth-first walk',
+
+    'log.stuckReset': 'run bookkeeping reset by hand',
+    'config.writeFailed': 'settings: could not write the defaults to %(path)s: %(error)s',
+    'config.unreadable': 'settings: %(path)s not read (%(error)s), using the defaults',
+    'config.notObject': 'a JSON object was expected',
 }
 
 LANGS = {'ru': RU, 'en': EN}

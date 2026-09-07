@@ -8,11 +8,11 @@
 
     winapi.py    окна и кнопки Windows          — не знает ни про MO2, ни про сеть
     runtime.py   главный поток Qt и HTTP        — не знает, что делают маршруты
-    services.py  операции над сборкой           — не знает про HTTP и JSON
+    services.py  операции над сборкой, фасад    — не знает про HTTP и JSON
     routes.py    какой путь во что отображается — не знает ни про mobase, ни про сокеты
-    __init__.py  жизненный цикл плагина
+    plugin.py    жизненный цикл плагина         — этот файл
 
-Строки вынесены в i18n.py, переводить можно не притрагиваясь к логике.
+Строки вынесены в i18n.py, настраиваемые значения — в config.py.
 """
 import os
 import traceback
@@ -20,15 +20,17 @@ import traceback
 import mobase
 
 from . import i18n, runtime, routes as routes_mod
+from .config import Config
 from .services import Services
 
-from . import PLUGIN_ID
+from . import PLUGIN_ID, __version__
 
 PLUGIN_NAME = 'MO2AIBridge'
 DEFAULT_PORT = 8930
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOKEN_FILE = os.path.join(HERE, PLUGIN_ID + '-token.txt')
 ERROR_LOG = os.path.join(HERE, PLUGIN_ID + '.log')
+CONFIG_FILE = os.path.join(HERE, PLUGIN_ID + '-config.json')
 DOCS = os.path.join(HERE, 'README.md')
 
 
@@ -50,6 +52,14 @@ def log(msg):
             fh.write(line + chr(10))
     except Exception:
         pass
+
+
+def _version_info():
+    """VersionInfo из __version__: номер задаётся один раз, в __init__.py."""
+    parts = [int(x) for x in __version__.split('.')[:3]]
+    while len(parts) < 3:
+        parts.append(0)
+    return mobase.VersionInfo(parts[0], parts[1], parts[2], 0)
 
 
 class MO2AIBridge(mobase.IPluginTool):
@@ -82,7 +92,7 @@ class MO2AIBridge(mobase.IPluginTool):
         return i18n.t('plugin.description')
 
     def version(self):
-        return mobase.VersionInfo(2, 0, 0, 0)
+        return _version_info()
 
     def settings(self):
         return [mobase.PluginSetting('enabled', i18n.t('setting.enabled'), True),
@@ -136,7 +146,7 @@ class MO2AIBridge(mobase.IPluginTool):
                 QMessageBox.StandardButton.Reset | QMessageBox.StandardButton.Cancel)
             if btn == QMessageBox.StandardButton.Reset:
                 self._svc.launched.clear()
-                log('учёт запусков сброшен вручную')
+                log(i18n.t('log.stuckReset'))
         state = i18n.t('dialog.running' if self._server else 'dialog.stopped')
         QMessageBox.information(
             self._parent, i18n.t('plugin.displayName'),
@@ -187,8 +197,11 @@ class MO2AIBridge(mobase.IPluginTool):
             token = runtime.new_token()
             with open(TOKEN_FILE, 'w', encoding='utf-8') as fh:
                 fh.write(token)
+            # Настройки читаются один раз на запуск; файла нет - он создаётся из умолчаний.
+            cfg = Config.load(CONFIG_FILE, note=log)
             self._runner = runtime.MainThreadRunner()
-            svc = self._svc = Services(self._organizer, self._runner.call, DOCS, note=log)
+            svc = self._svc = Services(self._organizer, self._runner.call, DOCS,
+                                       note=log, cfg=cfg)
             svc.prime()
             self._subscribe_runs(svc)
             get, post = routes_mod.build(svc)
@@ -199,5 +212,3 @@ class MO2AIBridge(mobase.IPluginTool):
             self._server = None
             log(i18n.t('start.failed') + ':' + chr(10) + traceback.format_exc())
             return '%s: %s' % (type(exc).__name__, exc)
-
-

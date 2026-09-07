@@ -55,9 +55,13 @@ in `PATH`). Every other route works without it.
 python ../tests/run.py
 ```
 
-Four suites: the busy-state logic runs without MO2, the other three need a running manager and
+Eight suites. Four run without MO2 — source hygiene, the busy-state logic, the strings, and the
+contract of all 24 routes over a fake `mobase`; four acceptance suites need a running manager and
 are skipped with a clear message when it is absent. They live **outside** this package, in
-`tests\` next to it, and are never shipped to MO2. Details in `..	ests\README.md`.
+`tests\` next to it, and are never shipped to MO2. Details in `..\tests\README.md`.
+
+The offline suites see the code on disk; the acceptance suites see the code MO2 loaded at start.
+After an edit they describe different versions until the manager is restarted.
 
 ---
 
@@ -127,6 +131,12 @@ Where the reversal is a single request, the reply contains it whole — an `undo
 ready `route` and `body`. That is a suggestion, not a promise: the bridge does not verify that
 nothing has changed since, and does not store it. Send it back if you want the rollback; drop it
 if you do not.
+
+**The card signature.** Every reply to a mutating route carries `op` — the operation name
+(`toggle`, `install`, `refresh`, `pluginState`, `pluginOrder`, `run`, `priority`, `rename`,
+`remove`) — and `applied`. Every refusal additionally carries `reason`: `busy` when MO2 is held
+by a running program, `danger` when the irreversible-operations key is missing. The old keys stay
+where they were: the reply shape only ever grows, otherwise other callers break silently.
 
 **The removal card is returned on refusal too**, so what would be lost can be inspected without
 deleting anything: name, version, `nexusId`, link, which archive the mod was built from and
@@ -415,16 +425,45 @@ A missing key never breaks anything: English is used, and if that is missing too
 
 ---
 
+## Settings
+
+The port and the language are set in MO2's plugin settings dialog. Everything else — main-thread
+timeouts per kind of work, list lengths in replies, where to look for `7z.exe`, Nexus domains per
+game name — lives in `mo2aibridge-config.json` next to the plugin. The file is created on first
+start from the built-in defaults; whatever it lacks falls back to the defaults, so an old file
+survives new keys. A broken file does not bring the bridge down: the reason is logged and the
+defaults are used.
+
+The defaults contain no machine-specific paths: the `7z.exe` candidates are assembled from the
+`ProgramFiles` and `ProgramFiles(x86)` environment variables and complemented by a `PATH` search.
+
+---
+
 ## Layout
 
 | File | Layer | Knows about |
 |---|---|---|
 | `winapi.py` | operating system | windows and buttons; nothing about MO2 or the network |
 | `runtime.py` | transport | the Qt main thread, sockets, JSON, the token |
-| `services.py` | domain | `mobase` and the mod setup; nothing about HTTP |
+| `services.py` | domain, facade | assembles the areas and hands the routes their methods under the old names |
+| `base.py` | domain | the areas' context, the shared mutation recipe, the card signature |
+| `busy.py` | domain | MO2 busy state: run bookkeeping and the three lock sources |
+| `reading.py` | domain | reading state and the virtual Data |
+| `install.py` | domain | installing a mod: fresh, merge, replace |
+| `mods.py` | domain | enable, disable, refresh; priority, rename, remove |
+| `loadorder.py` | domain | plugin states and load order, writing `plugins.txt` |
+| `launch.py` | domain | launching programs and their windows |
 | `routes.py` | routing | which path maps to which operation, and nothing else |
 | `plugin.py` | lifecycle | MO2's plugin interface |
+| `config.py` | settings | timeouts, list limits, where to look for 7-Zip; across all layers |
 | `i18n.py` | strings | across all layers |
+
+The domain layer is split by area, and none of the areas knows about HTTP. Every area receives
+one `Context` — the `IOrganizer`, the way onto the main thread, where to leave a trace, the
+settings — and the shared busy lock `BusyGuard`. Mutating routes all follow one recipe,
+`Domain.change`: refuse if MO2 is busy → validate the input → run on the main thread → sign the
+card. `Services` is a thin facade: the same 24 methods, the same names, and the bookkeeping
+attributes (`launched`, `game_exe`, `procs`) where they always were, because tests rely on them.
 
 `__init__.py` deliberately holds only the factory, and imports `mobase` lazily: otherwise
 `from mo2aibridge import i18n` would require a running MO2, and the lower layers could not be checked
