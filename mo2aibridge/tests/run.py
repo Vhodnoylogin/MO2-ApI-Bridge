@@ -1,16 +1,21 @@
 # -*- coding: utf-8 -*-
 """Прогнать все проверки подряд.
 
-Логика занятости идёт без MO2. Остальные три требуют запущенного менеджера и пропускаются,
+Четыре набора идут без MO2: гигиена исходников, логика занятости, строки и контракт всех
+маршрутов на подставном mobase. Остальные четыре требуют запущенного менеджера и пропускаются,
 если мост не отвечает: пропуск - это не сбой, а честное «проверить было нечем».
+
+Автономные наборы стоят первыми намеренно: они видят код, лежащий на диске, а приёмочные -
+код, загруженный в MO2 при её старте. Пока менеджер не перезапущен, это разные версии.
 """
 import os
 import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SUITES = ['test_busy_logic.py', 'test_routes.py', 'test_plugins_txt.py',
-           'test_install_modes.py', 'test_busy_live.py']
+SUITES = ['test_sources.py', 'test_busy_logic.py', 'test_i18n.py', 'test_contract_offline.py',
+          'test_routes.py', 'test_plugins_txt.py', 'test_install_modes.py',
+          'test_busy_live.py']
 SKIPPED = 77
 
 bad = skipped = 0
