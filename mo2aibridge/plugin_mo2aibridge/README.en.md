@@ -223,7 +223,16 @@ date), `downloaded` (this page's archives on disk), `newest`, `items` per role w
 
 The pause between requests and the timeout live in the settings (`updates.delaySec`,
 `updates.timeoutSec`): the Nexus API has a daily quota, and a full pass over a setup of several
-hundred mods has to fit in it. The route is a read and works while MO2 is busy.
+hundred mods has to fit in it. The route is a read and works while MO2 is busy. The reply's `via`
+says which way Nexus was asked and `quota` how many requests remain.
+
+**Two ways to Nexus, one chosen per session.** The first is MO2's own bridge,
+`createNexusBridge()`. In MO2 2.5.2 it does not work from Python: the `filesAvailable` reply
+carries `QList<ModRepositoryFileInfo*>`, and PyQt refuses the subscription. The plugin then takes
+the API key from the Windows credential store — the `ModOrganizer2_APIKEY` entry MO2 itself
+writes when connected to Nexus — and asks `api.nexusmods.com` directly. The key lives only in the
+plugin's memory, is never returned by any route and never logged. Without the entry the reply is
+`ERROR` saying MO2 is not connected to Nexus.
 
 ---
 

@@ -16,11 +16,13 @@ try:
     user32 = ctypes.WinDLL('user32', use_last_error=True)
     kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
     shell32 = ctypes.WinDLL('shell32', use_last_error=True)
+    advapi32 = ctypes.WinDLL('advapi32', use_last_error=True)
 except Exception:
     wintypes = None
     user32 = None
     kernel32 = None
     shell32 = None
+    advapi32 = None
 
 WM_CLOSE = 0x0010
 BM_CLICK = 0x00F5
@@ -194,7 +196,9 @@ if wintypes is not None:
                 (kernel32, 'WaitForSingleObject', (H, D), D),
                 (kernel32, 'GetExitCodeProcess', (H, ctypes.POINTER(D)), B),
                 (kernel32, 'GetProcessId', (H,), D),
-                (shell32, 'SHFileOperationW', (ctypes.c_void_p,), I)):
+                (shell32, 'SHFileOperationW', (ctypes.c_void_p,), I),
+                (advapi32, 'CredReadW', (wintypes.LPCWSTR, D, D, ctypes.c_void_p), B),
+                (advapi32, 'CredFree', (ctypes.c_void_p,), None)):
             fn = getattr(lib, name)
             fn.argtypes = list(args)
             fn.restype = ret
@@ -304,3 +308,51 @@ def pids_by_exe(names):
     finally:
         kernel32.CloseHandle(snap)
     return found
+
+
+# ---------------------------------------------------------------- хранилище учётных данных
+CRED_TYPE_GENERIC = 1
+
+if wintypes is not None:
+    class CREDENTIALW(ctypes.Structure):
+        _fields_ = [('Flags', wintypes.DWORD),
+                    ('Type', wintypes.DWORD),
+                    ('TargetName', wintypes.LPWSTR),
+                    ('Comment', wintypes.LPWSTR),
+                    ('LastWritten', wintypes.FILETIME),
+                    ('CredentialBlobSize', wintypes.DWORD),
+                    ('CredentialBlob', ctypes.POINTER(ctypes.c_ubyte)),
+                    ('Persist', wintypes.DWORD),
+                    ('AttributeCount', wintypes.DWORD),
+                    ('Attributes', ctypes.c_void_p),
+                    ('TargetAlias', wintypes.LPWSTR),
+                    ('UserName', wintypes.LPWSTR)]
+
+
+def read_generic_credential(target):
+    """Секрет из хранилища учётных данных Windows по имени записи, или None.
+
+    Читается запись того же пользователя, под которым работает процесс, - то есть ровно то,
+    что положила туда программа-владелец. Возвращаемая строка нигде не логируется: это
+    забота вызывающего, здесь только чтение. MO2 кладёт ключ как UTF-16, но на всякий
+    случай принимается и UTF-8.
+    """
+    if advapi32 is None or not target:
+        return None
+    pcred = ctypes.c_void_p()
+    if not advapi32.CredReadW(target, CRED_TYPE_GENERIC, 0, ctypes.byref(pcred)):
+        return None
+    try:
+        cred = ctypes.cast(pcred, ctypes.POINTER(CREDENTIALW)).contents
+        n = int(cred.CredentialBlobSize)
+        raw = bytes(bytearray(cred.CredentialBlob[i] for i in range(n))) if n else b''
+    finally:
+        advapi32.CredFree(pcred)
+    for enc in ('utf-16-le', 'utf-8'):
+        try:
+            text = raw.decode(enc).strip('\x00').strip()
+        except UnicodeDecodeError:
+            continue
+        if text and all(32 <= ord(ch) < 127 for ch in text):
+            return text
+    return None

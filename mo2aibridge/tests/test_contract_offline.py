@@ -873,6 +873,62 @@ svc.launched = {k: dict(v) for k, v in ЧУЖОЙ_ЗАПУСК.items()}
 r.case('при занятой MO2 работает', get['/updates']({'mod': ['Beta Mod']})['mods'][0]['verdict'],
        'UP-TO-DATE')
 
+r.head('/updates: прямой путь к API, когда мост MO2 не подключается')
+fx, svc, get, post, log = make()
+svc.cfg.values['updates']['delaySec'] = 0
+API_PAGES = {
+    101: {'files': [
+        {'file_id': 1001, 'name': 'Alpha Mod', 'file_name': 'Alpha Mod-101-1-0.7z',
+         'version': '1.0', 'category_id': 4, 'uploaded_timestamp': fake_mo2.T0},
+        {'file_id': 1002, 'name': 'Alpha Mod', 'file_name': 'Alpha Mod-101-1-1.7z',
+         'version': '1.1', 'category_id': 1, 'uploaded_timestamp': fake_mo2.T0 + 30 * fake_mo2.DAY}]},
+    202: {'files': [
+        {'file_id': 2001, 'name': 'Beta Mod', 'file_name': 'Beta Mod-202-2-1.7z',
+         'version': '2.1', 'category_id': 1, 'uploaded_timestamp': fake_mo2.T0}]},
+}
+seen_urls = []
+def fake_http(url, headers, timeout):
+    seen_urls.append((url, headers.get('apikey')))
+    mod_id = int(url.rstrip('/').split('/mods/')[1].split('/')[0])
+    if mod_id not in API_PAGES:
+        raise urllib_error.HTTPError(url, 404, 'Not Found', {}, None)
+    return 200, {'x-rl-daily-remaining': '2400'}, json.dumps(API_PAGES[mod_id])
+import json
+import urllib.error as urllib_error
+fx.organizer.createNexusBridge = lambda: (_ for _ in ()).throw(
+    TypeError("C++ type 'QList<ModRepositoryFileInfo*>' is not supported as a signal argument type"))
+svc.updater._http_get = fake_http
+cred_was = winapi.read_generic_credential
+winapi.read_generic_credential = lambda target: 'fake-key' if target == 'ModOrganizer2_APIKEY' else None
+try:
+    res = get['/updates']({'mod': ['Alpha Mod', 'Beta Mod', 'Delta Mod']})
+finally:
+    winapi.read_generic_credential = cred_was
+by = dict((m['mod'], m) for m in res['mods'])
+r.case('путь выбран: api', res['via'], 'api')
+r.case('лимит из заголовков', res['quota'].get('daily-remaining'), '2400')
+r.case('ключ ушёл заголовком apikey, в ответе его нет',
+       (seen_urls[0][1], 'fake-key' in json.dumps(res)), ('fake-key', False))
+r.case('адрес: домен игры и modID',
+       seen_urls[0][0].endswith('/v1/games/skyrimspecialedition/mods/101/files.json'), True)
+r.case('Alpha - UPDATE-AVAILABLE тем же правилом', by['Alpha Mod']['verdict'], 'UPDATE-AVAILABLE')
+r.case('Beta - UP-TO-DATE', by['Beta Mod']['verdict'], 'UP-TO-DATE')
+r.case('Delta - ERROR HTTP 404', (by['Delta Mod']['verdict'], 'HTTP 404' in by['Delta Mod']['error']),
+       ('ERROR', True))
+r.case('путь выбирается один раз на сессию', svc.updater._mode, 'api')
+winapi.read_generic_credential = lambda target: None
+svc2 = services.Services(fx.organizer, run_main=lambda f, timeout=None: f(),
+                         docs_path='README.md')
+svc2.game_exe = 'NoSuchProcess.exe'.lower()
+svc2._self_hwnd = 0
+svc2.cfg.values['updates']['delaySec'] = 0
+try:
+    res = svc2.updates({'mod': ['Alpha Mod']})
+finally:
+    winapi.read_generic_credential = cred_was
+r.case('без ключа - ERROR со словами про подключение к Nexus',
+       (res['mods'][0]['verdict'], 'Nexus' in res['mods'][0]['why']), ('ERROR', True))
+
 r.head('/updates: чистые правила решения')
 decide, D = updates_mod.decide, updates_mod.DAY
 def F(name, fid, cat, t, ver='', fn=None):

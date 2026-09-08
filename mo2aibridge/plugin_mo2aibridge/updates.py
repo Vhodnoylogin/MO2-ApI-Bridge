@@ -25,12 +25,15 @@ REUPLOADED, DOWNLOADED-NOT-INSTALLED, NO-NEXUS-ID, ERROR.
 import calendar
 import datetime
 import io
+import json
 import os
 import re
 import threading
 import time
+import urllib.error
+import urllib.request
 
-from . import i18n
+from . import i18n, winapi
 from .base import Domain, one, safe
 
 DAY = 86400
@@ -235,6 +238,11 @@ class Updates(Domain):
         super().__init__(ctx, guard)
         self._bridge = None
         self._how = ''
+        # Каким путём спрашивается Nexus: '' - ещё не выяснено, 'bridge' - через мост MO2,
+        # 'api' - напрямую, ключом MO2 из хранилища учётных данных Windows.
+        self._mode = ''
+        self._api_key = None
+        self._quota = {}
         self._pending = {}
         self._lock = threading.Lock()
         self._seq = 0
@@ -242,7 +250,12 @@ class Updates(Domain):
 
     # ---- мост MO2 к Nexus ------------------------------------------------
     def _ensure_bridge(self):
-        """Создать мост к Nexus один раз и подписаться на его ответы. Зовётся ИЗ главного потока."""
+        """Создать мост к Nexus один раз и подписаться на его ответы. Зовётся ИЗ главного потока.
+
+        В MO2 2.5.2 подписка на filesAvailable из Python невозможна: сигнал несёт
+        QList<ModRepositoryFileInfo*>, а PyQt такой тип не знает и отказывает на connect.
+        Тогда мост MO2 не используется вовсе, и Nexus спрашивается напрямую (см. _api_files).
+        """
         if self._bridge is not None:
             return self._bridge
         bridge = self.o.createNexusBridge()
@@ -251,6 +264,76 @@ class Updates(Domain):
         self._bridge = bridge
         self.note('nexus bridge: %s' % self._how)
         return bridge
+
+    def _choose_mode(self, timeout):
+        """Один раз на сессию: годится ли мост MO2, иначе - прямой запрос ключом MO2."""
+        if self._mode:
+            return self._mode
+        try:
+            self.run_main(self._ensure_bridge, timeout=timeout)
+            self._mode = 'bridge'
+        except Exception as exc:
+            self.note('nexus bridge unusable (%s), asking the API directly' % exc)
+            self._mode = 'api'
+        return self._mode
+
+    # ---- прямой запрос к API ---------------------------------------------
+    def _key(self):
+        """Ключ API Nexus - тот же, что хранит MO2, из хранилища учётных данных Windows.
+
+        Читается один раз и живёт только в памяти этого объекта: наружу мост его не отдаёт
+        ни одним маршрутом и в лог не пишет.
+        """
+        if self._api_key is None:
+            target = self.cfg.get('updates', {}).get('credentialTarget') or ''
+            self._api_key = winapi.read_generic_credential(target) or ''
+        return self._api_key
+
+    def _http_get(self, url, headers, timeout):
+        """GET с заголовками; вынесен отдельно, чтобы проверки могли подставить свой ответ."""
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, dict(r.headers), r.read().decode('utf-8', 'replace')
+
+    def _api_files(self, game, mod_id, timeout):
+        key = self._key()
+        if not key:
+            return None, i18n.t('upd.noApiKey')
+        upd = self.cfg.get('updates', {})
+        domains = self.cfg.get('nexusDomains') or {}
+        domain = domains.get(game or '', self.cfg.get('nexusDomainDefault'))
+        url = '%s/v1/games/%s/mods/%d/files.json' % (
+            (upd.get('apiHost') or 'https://api.nexusmods.com').rstrip('/'), domain, int(mod_id))
+        headers = {'apikey': key, 'Accept': 'application/json',
+                   'Application-Name': 'MO2AIBridge',
+                   'Application-Version': upd.get('appVersion') or ''}
+        try:
+            status, hdrs, body = self._http_get(url, headers, timeout)
+        except urllib.error.HTTPError as e:
+            return None, 'HTTP %d %s' % (e.code, (e.reason or '')[:80])
+        except Exception as exc:
+            return None, str(exc)[:200]
+        low = {k.lower(): v for k, v in hdrs.items()}
+        for h in ('x-rl-daily-remaining', 'x-rl-hourly-remaining', 'x-rl-daily-limit'):
+            if h in low:
+                self._quota[h[5:]] = low[h]
+        try:
+            data = json.loads(body)
+        except Exception as exc:
+            return None, 'bad json: %s' % exc
+        out = []
+        for f in data.get('files') or []:
+            cat = f.get('category_id')
+            try:
+                cat = int(cat)
+            except Exception:
+                cat = 0
+            out.append({'name': f.get('name') or '', 'fileName': f.get('file_name') or '',
+                        'fileId': int(f.get('file_id') or 0),
+                        'version': str(f.get('version') or ''),
+                        'category': CATEGORY.get(cat, str(cat)),
+                        'time': int(f.get('uploaded_timestamp') or 0)})
+        return out, ''
 
     def _take(self, user_data, game=None, mod_id=None):
         with self._lock:
@@ -281,18 +364,24 @@ class Updates(Domain):
         slot['event'].set()
 
     def _fetch(self, game, mod_id, timeout):
-        """Список файлов страницы или ошибка. Ждёт в потоке сервера, ответ приходит в главном."""
-        self._seq += 1
-        token = 'upd%d' % self._seq
-        slot = {'event': threading.Event(), 'files': None, 'error': '', 'modId': int(mod_id)}
-        with self._lock:
-            self._pending[token] = slot
-        # Пауза между запросами - бережём дневной лимит API Nexus
+        """Список файлов страницы или ошибка.
+
+        Через мост MO2 ответ приходит сигналом в главном потоке, а поток сервера ждёт его
+        событием; напрямую - обычный HTTP из потока сервера. Пауза между запросами в обоих
+        случаях: у API Nexus дневной лимит.
+        """
         delay = float(self.cfg.get('updates', {}).get('delaySec') or 0)
         wait_for = self._last_request + delay - time.time()
         if wait_for > 0:
             time.sleep(wait_for)
         self._last_request = time.time()
+        if self._choose_mode(timeout) == 'api':
+            return self._api_files(game, mod_id, timeout)
+        self._seq += 1
+        token = 'upd%d' % self._seq
+        slot = {'event': threading.Event(), 'files': None, 'error': '', 'modId': int(mod_id)}
+        with self._lock:
+            self._pending[token] = slot
         try:
             self.run_main(lambda: self._ensure_bridge().requestFiles(game, int(mod_id), token),
                           timeout=timeout)
@@ -397,7 +486,9 @@ class Updates(Domain):
             rows.append(self._check_one(t, got_all, dl_root, timeout))
         res = {'count': len(rows), 'mods': rows, 'elapsedSec': round(time.time() - started, 1),
                'checked': sum(1 for r in rows if r.get('checked')),
-               'rule': 'files-and-dates, versions never compared'}
+               'rule': 'files-and-dates, versions never compared',
+               # Каким путём спрошен Nexus и сколько запросов осталось по лимиту API
+               'via': self._mode or 'none', 'quota': dict(self._quota)}
         if want_all:
             res.update(offset=offset, limit=limit, total=total,
                        more=offset + len(rows) < total)

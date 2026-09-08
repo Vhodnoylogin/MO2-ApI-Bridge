@@ -70,6 +70,11 @@ DEFAULTS = {
         'timeoutSec': 30,
         'maxPerCall': 50,
         'newerLimit': 3,
+        # Прямой путь к API, когда мост MO2 из Python недоступен: ключ берётся из хранилища
+        # учётных данных Windows под тем именем, под которым его держит сама MO2.
+        'credentialTarget': 'ModOrganizer2_APIKEY',
+        'apiHost': 'https://api.nexusmods.com',
+        'appVersion': '2.1.0',
     },
 }
 

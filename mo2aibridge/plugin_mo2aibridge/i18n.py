@@ -108,6 +108,8 @@ RU = {
 
     # --- обновления: почему вынесен такой вердикт ---
     'upd.noNexusId': 'у мода нет nexusId - с Nexus он не связан',
+    'upd.noApiKey': ('ключ API Nexus не найден в хранилище учётных данных Windows - MO2 не '
+                     'подключена к Nexus (Настройки - Nexus - Connect)'),
     'upd.failed': 'Nexus не ответил: %(error)s',
     'upd.timeout': 'Nexus не ответил за %(sec).0f с',
     'upd.replaced': ('твоего файла на странице больше нет - автор заменил его; скачан %(mine)s, '
@@ -210,6 +212,8 @@ EN = {
     'vfs.fallback': 'virtualFileTree failed (%(error)s), falling back to the breadth-first walk',
 
     'upd.noNexusId': 'the mod has no nexusId - it is not linked to Nexus',
+    'upd.noApiKey': ('no Nexus API key in the Windows credential store - MO2 is not connected '
+                     'to Nexus (Settings - Nexus - Connect)'),
     'upd.failed': 'Nexus did not answer: %(error)s',
     'upd.timeout': 'Nexus did not answer within %(sec).0f s',
     'upd.replaced': ('your file is no longer on the page - the author replaced it; downloaded '
