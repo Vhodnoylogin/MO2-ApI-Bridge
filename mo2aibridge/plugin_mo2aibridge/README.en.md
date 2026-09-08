@@ -56,7 +56,7 @@ python ../tests/run.py
 ```
 
 Eight suites. Four run without MO2 — source hygiene, the busy-state logic, the strings, and the
-contract of all 24 routes over a fake `mobase`; four acceptance suites need a running manager and
+contract of all 25 routes over a fake `mobase`; four acceptance suites need a running manager and
 are skipped with a clear message when it is absent. They live **outside** this package, in
 `tests\` next to it, and are never shipped to MO2. Details in `..\tests\README.md`.
 
@@ -86,6 +86,7 @@ The token is supplied by the wrapper and omitted below for brevity.
 | `/dirs` | `path` | subdirectories of the virtual `Data` |
 | `/procs` | — | what the bridge launched this session: `alive` per entry, `running` count; plus what MO2 considers active |
 | `/windows` | `pid` or `key` | windows of a process and their button captions |
+| `/updates` | `mod` (one or more) or `all`, `offset`, `limit`, `timeout` | updates from live Nexus: a verdict by files and dates, versions are never compared |
 
 ### Writes (POST)
 
@@ -182,6 +183,47 @@ list. Unlike a computation over an external index, this is the real order of the
 
 `conflicts=0` turns off the expensive part: contention is checked by calling `getFileOrigins` on
 every file of the mod, which is noticeable on a mod with thousands of files.
+
+---
+
+## Updates — `/updates`
+
+The single place where the setup asks Nexus whether a newer file exists. The bridge goes to
+Nexus itself, through `IOrganizer.createNexusBridge()` — the same path and the same API key MO2
+uses — and makes the decision itself. Chats and scripts compare nothing and go nowhere: they ask
+the bridge and get the facts together with the verdict. Remembering the result is the build
+index's job: `tools\updates-sync.py` walks every mod through this route and writes the verdicts
+into `index.db`, where `idx.py updates` reads them from.
+
+```
+GET /updates?mod=<name>&mod=<name>        selected mods
+GET /updates?all=1&offset=0&limit=50      the whole setup in pages; the reply carries total and more
+```
+
+The decision rules were carried over from the former page scraper and now live only here:
+
+- **Version numbers are never compared.** The author types them by hand and they disagree
+  between the page header, the file row and `meta.ini`. Two facts decide: which files of the page
+  we downloaded — by `fileID` from the `.meta` next to the archive in `downloads\` — and which
+  section each file sits in now. A downloaded file that slid into Old files is superseded by
+  definition; a downloaded file in a live section is current until the page offers a newer file
+  of the same role.
+- **Role** is the file name with the version and the noise stripped and everything else kept:
+  JContainers SE and JContainers VR stay different roles and never masquerade as updates to each
+  other. A GOG build is not an update to the Steam build, a UNP body is not an update to CBBE.
+- **Doubt resolves towards "there is an update"**: whatever could not be matched confidently
+  lands in `CANNOT-MATCH` rather than being silently called current.
+
+Verdicts use the same words as the index: `UPDATE-AVAILABLE`, `UP-TO-DATE`, `CANNOT-MATCH`,
+`REUPLOADED` (our file vanished from the page and Main is newer), `DOWNLOADED-NOT-INSTALLED`
+(a fresh archive is already in `downloads\` but the mod was built from an older one),
+`NO-NEXUS-ID`, `ERROR`. Every record carries `why` in words, `installed` (archive, `fileId`,
+date), `downloaded` (this page's archives on disk), `newest`, `items` per role with `newer`, and
+`extra` — Main/Update files of another role.
+
+The pause between requests and the timeout live in the settings (`updates.delaySec`,
+`updates.timeoutSec`): the Nexus API has a daily quota, and a full pass over a setup of several
+hundred mods has to fit in it. The route is a read and works while MO2 is busy.
 
 ---
 
@@ -458,6 +500,7 @@ The defaults contain no machine-specific paths: the `7z.exe` candidates are asse
 | `mods.py` | domain | enable, disable, refresh; priority, rename, remove |
 | `loadorder.py` | domain | plugin states and load order, writing `plugins.txt` |
 | `launch.py` | domain | launching programs and their windows |
+| `updates.py` | domain | updates from live Nexus: the request through MO2 and the decision rules |
 | `routes.py` | routing | which path maps to which operation, and nothing else |
 | `plugin.py` | lifecycle | MO2's plugin interface |
 | `config.py` | settings | timeouts, list limits, where to look for 7-Zip; across all layers |
@@ -467,7 +510,7 @@ The domain layer is split by area, and none of the areas knows about HTTP. Every
 one `Context` — the `IOrganizer`, the way onto the main thread, where to leave a trace, the
 settings — and the shared busy lock `BusyGuard`. Mutating routes all follow one recipe,
 `Domain.change`: refuse if MO2 is busy → validate the input → run on the main thread → sign the
-card. `Services` is a thin facade: the same 24 methods, the same names, and the bookkeeping
+card. `Services` is a thin facade: the same 25 methods, the same names, and the bookkeeping
 attributes (`launched`, `game_exe`, `procs`) where they always were, because tests rely on them.
 
 `__init__.py` deliberately holds only the factory, and imports `mobase` lazily: otherwise

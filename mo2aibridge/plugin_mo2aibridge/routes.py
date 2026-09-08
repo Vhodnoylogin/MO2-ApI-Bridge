@@ -24,6 +24,8 @@ def build(svc):
         '/dirs': svc.dirs,
         '/procs': svc.procs_list,
         '/windows': svc.windows,
+        # обновления по живому Nexus - чтение, работает и при занятой MO2
+        '/updates': svc.updates,
     }
     post = {
         '/refresh': svc.refresh,

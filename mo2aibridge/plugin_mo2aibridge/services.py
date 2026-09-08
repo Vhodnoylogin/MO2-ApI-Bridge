@@ -20,7 +20,7 @@
 `game_exe`, `_self_hwnd`, `procs`) тоже остаются здесь - проверки логики занятости ставят
 их напрямую.
 """
-from . import base, busy, config, install, launch, loadorder, mods, reading
+from . import base, busy, config, install, launch, loadorder, mods, reading, updates
 from .base import DANGER_KEY, DANGER_VALUE, one as _one, safe as _safe  # noqa: F401
 from .install import tree_files as _tree_files  # noqa: F401
 from .reading import walk_factory as _walk_factory  # noqa: F401
@@ -49,6 +49,11 @@ class Services(object):
         self.modops = mods.ModOps(ctx, self.guard)
         self.loadorder = loadorder.LoadOrder(ctx, self.guard)
         self.launcher = launch.Launcher(ctx, self.guard)
+        self.updater = updates.Updates(ctx, self.guard)
+
+    # ================================================== обновления
+    def updates(self, q):
+        return self.updater.updates(q)
 
     # ================================================== занятость MO2
     def on_about_to_run(self, path, *rest):

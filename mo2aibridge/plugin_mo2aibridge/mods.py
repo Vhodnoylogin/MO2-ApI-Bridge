@@ -74,10 +74,6 @@ class ModOps(Domain):
         def prepare():
             if not mod or not new:
                 raise ValueError(i18n.t('err.needMod'))
-            stop = self.danger(body, 'rename')
-            if stop:
-                stop.update({'mod': mod, 'newName': new})
-            return stop
 
         def f():
             ml = self.o.modList()
@@ -86,6 +82,13 @@ class ModOps(Domain):
                 raise ValueError(i18n.t('err.noSuchMod', mod=mod))
             was_path = safe(m.absolutePath, '')
             nid = safe(m.nexusId, 0)
+            # Сначала «есть ли мод», потом «есть ли ключ» - как у приоритета и удаления:
+            # переименовать несуществующий мод нельзя, и отказ «нет ключа» на нём вводил бы
+            # в заблуждение. Отказ отдаёт то, что было бы сделано: откуда и что за мод.
+            stop = self.danger(body, 'rename')
+            if stop:
+                stop.update({'mod': mod, 'newName': new, 'fromPath': was_path, 'nexusId': nid})
+                return stop
             res = ml.renameMod(m, new)
             self.o.refresh(True)
             got = ml.getMod(new)

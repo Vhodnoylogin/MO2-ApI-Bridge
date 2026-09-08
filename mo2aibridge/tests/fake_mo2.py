@@ -839,7 +839,16 @@ class Fixture(object):
         _write(os.path.join(prof_dir, 'modlist.txt'), CRLF.join(lines) + CRLF)
         os.makedirs(os.path.join(self.root, 'overwrite'))
         for arc in DOWNLOADS:
-            _write(os.path.join(self.root, 'downloads', arc), 'not a real archive' + chr(10))
+            full = os.path.join(self.root, 'downloads', arc)
+            _write(full, 'not a real archive' + chr(10))
+            # В имени архива нет отметки загрузки, поэтому момент берётся с диска: ставим его
+            # равным времени нашего файла на странице, как у настоящей загрузки
+            os.utime(full, (T0, T0))
+            meta = DOWNLOAD_META.get(arc)
+            if meta:
+                _write(full + '.meta', '[General]' + chr(10) +
+                       'modID=%d' % meta[0] + chr(10) + 'fileID=%d' % meta[1] + chr(10) +
+                       'installed=true' + chr(10))
 
     # --- удобства для проверок
     def path(self, *parts):
@@ -902,3 +911,88 @@ def build_archive(dest, files=None):
     finally:
         shutil.rmtree(stage, ignore_errors=True)
     return dest
+
+
+# ================================================================== Nexus: подставной мост
+# Момент загрузки нашего файла на страницу; от него отсчитываются остальные.
+T0 = 1700000000
+DAY = 86400
+# Что мы скачивали: архив -> (modID, fileID). Отсюда мост узнаёт, какие строки страницы наши.
+DOWNLOAD_META = {'Alpha Mod-101-1-0.7z': (101, 1001), 'Beta Mod-202-2-1.7z': (202, 2001)}
+# Страницы Nexus по modID. Строка вместо списка - отказ запроса с таким текстом.
+NEXUS_FILES = {
+    # Alpha: наш файл уехал в Old files, в Main лежит файл той же роли новее - обновление
+    101: [dict(name='Alpha Mod', fileName='Alpha Mod-101-1-0.7z', fileID=1001, version='1.0',
+               fileCategory=4, fileTime=T0),
+          dict(name='Alpha Mod', fileName='Alpha Mod-101-1-1.7z', fileID=1002, version='1.1',
+               fileCategory=1, fileTime=T0 + 30 * DAY)],
+    # Beta: наш файл - новейший Main; рядом патч другой роли в Optional - актуально
+    202: [dict(name='Beta Mod', fileName='Beta Mod-202-2-1.7z', fileID=2001, version='2.1',
+               fileCategory=1, fileTime=T0),
+          dict(name='Beta Mod - Farming Patch', fileName='Beta Mod Farming Patch-202-1-0.7z',
+               fileID=2002, version='1.0', fileCategory=3, fileTime=T0 + 5 * DAY)],
+    # Delta: страница на модерации, запрос отказан
+    404: 'mod is under moderation',
+}
+
+
+class _When(object):
+    """QDateTime в одном методе: столько мосту и нужно."""
+
+    def __init__(self, secs):
+        self.secs = secs
+
+    def toSecsSinceEpoch(self):
+        return self.secs
+
+
+class FakeFileInfo(object):
+    """ModRepositoryFileInfo: атрибуты, которые читает мост."""
+
+    def __init__(self, name, fileName, fileID, version, fileCategory, fileTime):
+        self.name = name
+        self.fileName = fileName
+        self.fileID = fileID
+        self.version = _Version(version)
+        self.fileCategory = fileCategory
+        self.fileTime = _When(fileTime)
+        self.modID = 0
+        self.fileSize = 1
+        self.description = ''
+
+
+class FakeBridge(object):
+    """IModRepositoryBridge: ответ приходит сразу же, из того же вызова.
+
+    Настоящий мост отвечает позже и из главного потока; подставному это не нужно - ждущий
+    Event уже выставлен к моменту, когда мост станет ждать, и ожидание не блокирует."""
+
+    def __init__(self):
+        self.requests = []
+        self._files = None
+        self._failed = None
+
+    def onFilesAvailable(self, callback):
+        self._files = callback
+
+    def onRequestFailed(self, callback):
+        self._failed = callback
+
+    def requestFiles(self, game, mod_id, user_data):
+        self.requests.append((game, int(mod_id), user_data))
+        spec = NEXUS_FILES.get(int(mod_id))
+        if isinstance(spec, str):
+            self._failed(game, int(mod_id), 0, user_data, spec)
+        else:
+            self._files(game, int(mod_id), user_data,
+                        [FakeFileInfo(**d) for d in (spec or [])])
+
+
+def _create_nexus_bridge(self):
+    self.bridges = getattr(self, 'bridges', [])
+    b = FakeBridge()
+    self.bridges.append(b)
+    return b
+
+
+FakeOrganizer.createNexusBridge = _create_nexus_bridge

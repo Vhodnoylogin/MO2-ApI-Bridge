@@ -47,7 +47,7 @@ KEY = {'iUnderstandTheRisk': 'yes-I-read-the-docs-and-accept-irreversible-change
 ЧУЖОЙ_ЗАПУСК = {'C:' + chr(92) + 'x' + chr(92) + 'foo.exe': {'n': 1, 'mine': False}}
 
 GET_ROUTES = ['/ping', '/api', '/mods', '/mod', '/analyze', '/profiles', '/plugins', '/vfs',
-              '/origins', '/resolve', '/dirs', '/procs', '/windows']
+              '/origins', '/resolve', '/dirs', '/procs', '/windows', '/updates']
 POST_ROUTES = ['/refresh', '/install', '/toggle', '/plugins/state', '/plugins/order',
                '/vfsexport', '/run', '/window', '/mods/priority', '/mods/rename',
                '/mods/remove']
@@ -641,6 +641,12 @@ r.case('нет такого мода с ключом - ValueError',
        is_clean_error(raised(post['/mods/rename'],
                              dict({'mod': 'Nope', 'newName': 'N'}, **KEY)),
                       'err.noSuchMod', mod='Nope'), True)
+r.case('нет такого мода БЕЗ ключа - тоже ValueError, а не отказ замка',
+       is_clean_error(raised(post['/mods/rename'], {'mod': 'Nope', 'newName': 'N'}),
+                      'err.noSuchMod', mod='Nope'), True)
+res = post['/mods/rename']({'mod': 'Gamma Mod', 'newName': 'Gamma Renamed'})
+r.case('отказ замка несёт fromPath и nexusId', has(res, ['fromPath', 'nexusId']),
+       ['fromPath', 'nexusId'])
 
 r.head('/mods/remove')
 res = post['/mods/remove']({'mod': 'Alpha Mod'})
@@ -824,6 +830,87 @@ r.case('t(key=...) не падает на имени key', i18n.t('danger.why', 
 
 for fx in fixtures:
     fx.cleanup()
+# ================================================================ обновления
+r.head('/updates: единственная точка проверки обновлений')
+updates_mod = importlib.import_module(pkg.__name__ + '.updates')
+fx, svc, get, post, log = make()
+svc.cfg.values['updates']['delaySec'] = 0
+r.case('без mod и без all - ValueError',
+       is_clean_error(raised(get['/updates'], {}), 'err.needModOrAll'), True)
+res = get['/updates']({'mod': ['Alpha Mod', 'Beta Mod', 'Gamma Mod', 'Delta Mod', 'Nope']})
+r.case('ключи', has(res, ['count', 'mods', 'checked', 'elapsedSec', 'rule']),
+       ['count', 'mods', 'checked', 'elapsedSec', 'rule'])
+r.case('по записи на мод', res['count'], 5)
+by = dict((m['mod'], m) for m in res['mods'])
+r.case('ключи записи', has(by['Alpha Mod'], ['mod', 'nexusId', 'checked', 'verdict', 'why',
+                                              'installed', 'downloaded', 'newest', 'items',
+                                              'extra', 'files']),
+       ['mod', 'nexusId', 'checked', 'verdict', 'why', 'installed', 'downloaded', 'newest',
+        'items', 'extra', 'files'])
+r.case('Alpha - UPDATE-AVAILABLE', by['Alpha Mod']['verdict'], 'UPDATE-AVAILABLE')
+r.case('Alpha - наш файл опознан по .meta',
+       (by['Alpha Mod']['installed']['fileId'], by['Alpha Mod']['items'][0]['mine']['fileId']),
+       (1001, 1001))
+r.case('Alpha - назван файл новее', by['Alpha Mod']['items'][0]['newer'][0]['fileId'], 1002)
+r.case('Alpha - why словами', by['Alpha Mod']['why'], i18n.t('upd.newer'))
+r.case('Beta - UP-TO-DATE, патч другой роли не обновление', by['Beta Mod']['verdict'],
+       'UP-TO-DATE')
+r.case('Gamma - NO-NEXUS-ID', (by['Gamma Mod']['verdict'], by['Gamma Mod']['checked']),
+       ('NO-NEXUS-ID', False))
+r.case('Delta - ERROR с текстом отказа',
+       (by['Delta Mod']['verdict'], 'moderation' in (by['Delta Mod'].get('error') or '')),
+       ('ERROR', True))
+r.case('Nope - ERROR, нет такого мода', by['Nope']['verdict'], 'ERROR')
+r.case('проверено трое: у двоих нет страницы или ответа', res['checked'], 2)
+r.case('мост к Nexus создан один раз', len(fx.organizer.bridges), 1)
+r.case('запросы ушли по nexusId', sorted(q[1] for q in fx.organizer.bridges[0].requests),
+       [101, 202, 404])
+res = get['/updates']({'all': ['1'], 'limit': ['2']})
+r.case('all: страница из двух', (res['count'], res['total'], res['more']), (2, 4, True))
+res = get['/updates']({'all': ['1'], 'offset': ['2']})
+r.case('all: со смещением до конца', (res['count'], res['more']), (2, False))
+svc.launched = {k: dict(v) for k, v in ЧУЖОЙ_ЗАПУСК.items()}
+r.case('при занятой MO2 работает', get['/updates']({'mod': ['Beta Mod']})['mods'][0]['verdict'],
+       'UP-TO-DATE')
+
+r.head('/updates: чистые правила решения')
+decide, D = updates_mod.decide, updates_mod.DAY
+def F(name, fid, cat, t, ver='', fn=None):
+    return {'name': name, 'fileName': fn or name + '.7z', 'fileId': fid, 'version': ver,
+            'category': cat, 'time': t}
+r.case('версии не сравниваются: новее по дате той же роли',
+       decide([F('Tool SE', 1, 'main', 100, '2.0'), F('Tool SE', 2, 'main', 100 + 2 * D, '1.9')],
+              {1}, set(), 100)['verdict'], 'UPDATE-AVAILABLE')
+r.case('GOG-сборка - сосед, не обновление',
+       decide([F('Tool SE Steam', 1, 'main', 100), F('Tool SE GOG', 2, 'main', 100 + 2 * D)],
+              {1}, set(), 100)['verdict'], 'UP-TO-DATE')
+r.case('та же версия через минуты - сосед одного выпуска',
+       decide([F('Tool', 1, 'main', 100, '1.0'), F('Tool', 2, 'main', 100 + 60, '1.0')],
+              {1}, set(), 100)['verdict'], 'UP-TO-DATE')
+r.case('наш файл в Old files без замены - CANNOT-MATCH',
+       decide([F('Tool', 1, 'old', 100), F('Other Thing', 2, 'main', 100 - D)],
+              {1}, set(), 100)['verdict'], 'CANNOT-MATCH')
+r.case('все наши в Old, Main новее под другим именем - обновление',
+       decide([F('Tool', 1, 'old', 100), F('Tool Redux', 2, 'main', 100 + 3 * D)],
+              {1}, set(), 100)['verdict'], 'UPDATE-AVAILABLE')
+r.case('ничего не помечено скачанным, Main новее архива - REUPLOADED',
+       decide([F('Tool', 5, 'main', 100 + 3 * D)], set(), set(), 100)['verdict'], 'REUPLOADED')
+r.case('ничего не помечено и дат нет - CANNOT-MATCH',
+       decide([F('Tool', 5, 'main', 100 + 3 * D)], set(), set(), None)['verdict'], 'CANNOT-MATCH')
+r.case('свежий архив скачан, мод собран из старого - DOWNLOADED-NOT-INSTALLED',
+       decide([F('Tool', 1, 'old', 100), F('Tool', 2, 'main', 100 + 3 * D)],
+              {1, 2}, set(), 100)['verdict'], 'DOWNLOADED-NOT-INSTALLED')
+r.case('хотфикс в Update - обновление',
+       decide([F('Tool', 1, 'main', 100), F('Tool Hotfix', 2, 'update', 100 + D)],
+              {1}, set(), 100)['verdict'], 'UPDATE-AVAILABLE')
+r.case('файл другой роли в Main - CANNOT-MATCH',
+       decide([F('Tool', 1, 'main', 100), F('Tool Extras Pack', 2, 'main', 100 + 2 * D)],
+              {1}, set(), 100)['verdict'], 'CANNOT-MATCH')
+r.case('момент из имени архива: эпоха', updates_mod.arc_time('x-1234-1-0-1700000000.7z'),
+       1700000000)
+r.case('момент из имени архива: ISO', updates_mod.arc_time('x 1 2026-09-07T09-14Z y.7z') > 0, True)
+r.case('4k не версия', updates_mod.role('Tool 4K v2.1') != updates_mod.role('Tool 2K v2.1'), True)
+
 # ================================================================ подпись карточки
 r.head('подпись карточки: op и applied на каждом изменении, reason на отказе')
 fx, svc, get, post, log = make()

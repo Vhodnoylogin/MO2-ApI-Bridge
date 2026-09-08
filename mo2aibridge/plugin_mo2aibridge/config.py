@@ -62,6 +62,15 @@ DEFAULTS = {
     # Корневые папки Data для запасного обхода VFS вширь.
     'walkRoots': ['meshes', 'textures', 'scripts', 'sound', 'music', 'interface', 'seq',
                   'strings', 'video', 'grass', 'lodsettings', 'shadersfx', 'skse', 'source'],
+    # Проверка обновлений через Nexus: пауза между запросами бережёт дневной лимит API,
+    # maxPerCall ограничивает один вызов /updates?all=1, newerLimit - сколько файлов новее
+    # называть по каждой роли.
+    'updates': {
+        'delaySec': 0.5,
+        'timeoutSec': 30,
+        'maxPerCall': 50,
+        'newerLimit': 3,
+    },
 }
 
 

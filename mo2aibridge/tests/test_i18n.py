@@ -234,6 +234,11 @@ indirect = sorted(k for k in usage.literal if k not in usage.direct)
 for key in indirect:
     r.note('только через переменную: ' + key, ', '.join(usage.literal[key]))
 used = set(usage.literal)
+# Ключи, которые решение отдаёт словом, а t() получает переменной: why='upd.newer' в updates.py.
+# Такие литералы видны в исходнике, и именно по ним ключ считается используемым.
+WHY_LITERAL = re.compile(r'''why=['"]([a-z]+\.[A-Za-z0-9_]+)['"]''')
+for path in package_files():
+    used.update(WHY_LITERAL.findall(open(path, encoding='utf-8').read()))
 for prefix, places in sorted(usage.by_prefix.items()):
     group = sorted(k for k in EN if k.startswith(prefix))
     used.update(group)

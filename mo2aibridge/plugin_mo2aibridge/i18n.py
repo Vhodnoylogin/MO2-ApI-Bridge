@@ -58,6 +58,7 @@ RU = {
     'err.orderIncomplete': ('список неполный или содержит неизвестные плагины - не применяю: '
                             'пропущено %(missing)d, лишних %(extra)d'),
     'err.mainThread': 'главный поток MO2 не ответил за %(sec).0f с',
+    'err.needModOrAll': 'нужен mod (можно несколько) или all=1',
 
     'err.noArchive': 'нет архива: %(archive)s',
     'err.modExists': ('мод "%(mod)s" уже существует. Молча поверх не кладу: укажите mode - '
@@ -105,6 +106,22 @@ RU = {
     # --- выгрузка ---
     'vfs.fallback': 'virtualFileTree не сработал (%(error)s), иду обходом вширь',
 
+    # --- обновления: почему вынесен такой вердикт ---
+    'upd.noNexusId': 'у мода нет nexusId - с Nexus он не связан',
+    'upd.failed': 'Nexus не ответил: %(error)s',
+    'upd.timeout': 'Nexus не ответил за %(sec).0f с',
+    'upd.replaced': ('твоего файла на странице больше нет - автор заменил его; скачан %(mine)s, '
+                     'в Main лежит файл от %(theirs)s'),
+    'upd.unmarked': 'ни один файл страницы не помечен как скачанный',
+    'upd.newer': 'на странице есть файл новее той же роли',
+    'upd.hotfix': 'в разделе Update лежит не скачанный хотфикс к твоей версии',
+    'upd.renamed': 'твой файл в Old files, а в Main лежит более новый под другим именем',
+    'upd.retired': 'скачанный файл переехал в Old files, замены с тем же именем нет',
+    'upd.otherRole': 'основной файл на месте, но в Main появился более свежий файл другой роли',
+    'upd.downloadedNotInstalled': ('свежий файл от %(theirs)s уже лежит в downloads, а мод собран '
+                                   'из архива от %(mine)s'),
+    'upd.current': 'скачанный файл - новейший в своём разделе',
+
     # --- след в логе ---
     'log.stuckReset': 'учёт запусков сброшен вручную',
     'config.writeFailed': 'настройки: не удалось записать умолчания в %(path)s: %(error)s',
@@ -150,6 +167,7 @@ EN = {
     'err.orderIncomplete': ('the list is incomplete or contains unknown plugins - not applied: '
                             '%(missing)d missing, %(extra)d unknown'),
     'err.mainThread': "MO2's main thread did not answer within %(sec).0f s",
+    'err.needModOrAll': 'mod (one or more) or all=1 is required',
 
     'err.noArchive': 'archive not found: %(archive)s',
     'err.modExists': ('mod "%(mod)s" already exists. Nothing is written over it silently: '
@@ -190,6 +208,21 @@ EN = {
                    'consequences, then pass the %(key)s field with the value given there.'),
 
     'vfs.fallback': 'virtualFileTree failed (%(error)s), falling back to the breadth-first walk',
+
+    'upd.noNexusId': 'the mod has no nexusId - it is not linked to Nexus',
+    'upd.failed': 'Nexus did not answer: %(error)s',
+    'upd.timeout': 'Nexus did not answer within %(sec).0f s',
+    'upd.replaced': ('your file is no longer on the page - the author replaced it; downloaded '
+                     '%(mine)s, Main now holds a file from %(theirs)s'),
+    'upd.unmarked': 'no file on the page is marked as downloaded',
+    'upd.newer': 'the page holds a newer file of the same role',
+    'upd.hotfix': 'the Update section holds a hotfix for your version that was not downloaded',
+    'upd.renamed': 'your file is in Old files and Main holds a newer one under another name',
+    'upd.retired': 'the downloaded file moved to Old files and nothing of the same name replaced it',
+    'upd.otherRole': 'the main file is in place, but Main gained a newer file of another role',
+    'upd.downloadedNotInstalled': ('a fresh file from %(theirs)s is already in downloads, but the '
+                                   'mod was built from an archive dated %(mine)s'),
+    'upd.current': 'the downloaded file is the newest in its section',
 
     'log.stuckReset': 'run bookkeeping reset by hand',
     'config.writeFailed': 'settings: could not write the defaults to %(path)s: %(error)s',
