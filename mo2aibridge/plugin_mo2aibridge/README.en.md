@@ -97,7 +97,7 @@ The token is supplied by the wrapper and omitted below for brevity.
 | `/plugins/state` | `set`, `apply` | enable or disable plugins in bulk |
 | `/plugins/order` | `order`, `apply` | set the whole load order |
 | `/vfsexport` | `outDir`, `timeout`, `legacyWalk` | dump the entire virtual `Data` to CSV |
-| `/run` | `binary`, `args`, `cwd`, `wait` | launch a tool **inside the VFS** |
+| `/run` | `binary`, `args`, `cwd`, `wait` | launch a tool **inside the VFS**; **irreversible**, see below |
 | `/window` | `hwnd`, `action`, `button` | `close`, or `click` by button caption |
 | `/mods/priority` | `mod`, `priority` | **irreversible**, see below |
 | `/mods/rename` | `mod`, `newName` | **irreversible** |
@@ -250,6 +250,11 @@ few seconds. Ask `/mods` for live state, not the file.
 `/mods/priority`, `/mods/rename` and `/mods/remove` change the setup irreversibly: reordering
 changes which files win across the whole build, renaming breaks profile lines that reference a mod
 by folder name, and removal deletes the folder **from disk**, not a line from a profile.
+
+`/run` belongs to the same group, and tops it: a foreign process is started under MO2 with the
+virtual `Data` mounted, and whatever it does to the setup — rewrites a generator's output, builds
+a patch, wipes a cache — the bridge neither controls nor can reverse. Launching is therefore
+guarded by both the busy lock and the key.
 
 They therefore do nothing unless the request body contains:
 
@@ -480,3 +485,10 @@ session. It is compared in constant time so it cannot be guessed from response t
 The bridge grants full control over the mod setup: enabling and disabling mods, changing load
 order, launching programs. Those are the same rights any program started by the user already has,
 but reachable over a loopback socket. Keep it enabled while something is using it.
+
+---
+
+## License
+
+MIT, see `LICENSE` next to this file. Use, change and redistribute freely, keeping the author
+line. The author shown in MO2 is the Nexus name: `author()` in `plugin.py`.

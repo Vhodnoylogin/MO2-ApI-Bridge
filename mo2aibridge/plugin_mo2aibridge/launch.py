@@ -28,6 +28,13 @@ class Launcher(Domain):
         def prepare():
             if not body.get('binary'):
                 raise ValueError(i18n.t('err.needBinary'))
+            # Запуск - самая опасная операция моста: под MO2 поднимается чужой процесс
+            # с виртуальной Data, и что он сделает со сборкой, мост не контролирует.
+            # Поэтому сверх замка занятости - ключ необратимого, как у удаления.
+            stop = self.danger(body, 'run')
+            if stop:
+                stop.update({'binary': body.get('binary'), 'args': body.get('args') or []})
+            return stop
 
         return self.change('run', lambda: self._run(body), on_main=False, prepare=prepare)
 

@@ -29,8 +29,12 @@ box = {}
 
 
 def launcher():
+    # Запуск - под ключом необратимого, как и удаление: без него мост ничего не запустит.
     box['res'] = common.call('POST', '/run',
-                             {'binary': APP, 'wait': True, 'timeout': 900}, timeout=900)
+                             {'binary': APP, 'wait': True, 'timeout': 900,
+                              'iUnderstandTheRisk':
+                                  'yes-I-read-the-docs-and-accept-irreversible-changes'},
+                             timeout=900)
 
 
 th = threading.Thread(target=launcher, daemon=True)

@@ -784,13 +784,13 @@ r.head('/run - без запуска процесса')
 fx, svc, get, post, log = make()
 r.case('без binary - ValueError',
        is_clean_error(raised(post['/run'], {}), 'err.needBinary'), True)
-res = post['/run']({'binary': 'FakeTool', 'args': ['-x']})
+res = post['/run'](dict({'binary': 'FakeTool', 'args': ['-x']}, **KEY))
 r.case('ключи', has(res, ['args', 'binary', 'key', 'pid']), ['args', 'binary', 'key', 'pid'])
 r.case('key p1', res['key'], 'p1')
 r.case('pid 0: процесса нет', res['pid'], 0)
 r.case('binary и args возвращаются', (res['binary'], res['args']), ('FakeTool', ['-x']))
 r.case('MO2 просили запустить именно это', fx.organizer.started, [('FakeTool', ['-x'], '')])
-r.case('второй запуск - p2', post['/run']({'binary': 'FakeTool'})['key'], 'p2')
+r.case('второй запуск - p2', post['/run'](dict({'binary': 'FakeTool'}, **KEY))['key'], 'p2')
 res = get['/procs']({})
 r.case('/procs видит оба', (len(res['procs']), res['running']), (2, 0))
 r.case('/procs - ключи записи', has(res['procs'][0], ['alive', 'exit', 'key', 'pid', 'what']), ['alive', 'exit', 'key', 'pid', 'what'])
@@ -800,7 +800,7 @@ r.case('/windows по key с pid 0 - ValueError',
 
 r.head('/run - свой запуск учитывается и снимается сам')
 fx.organizer.onAboutToRun(svc.on_about_to_run)
-post['/run']({'binary': 'FakeTool'})
+post['/run'](dict({'binary': 'FakeTool'}, **KEY))
 r.case('в учёте после onAboutToRun', sorted(svc.launched), ['FakeTool'])
 r.case('помечен своим', svc.launched['FakeTool']['mine'], True)
 r.case('процесса нет - снят с учёта, свободно', (get['/ping']({})['busy'], svc.launched),
@@ -832,7 +832,7 @@ SIGNED = {
     '/toggle': ({'mod': 'Alpha Mod', 'active': True}, 'toggle', True),
     '/plugins/state': ({'set': {'Alpha.esp': False}, 'apply': True}, 'pluginState', True),
     '/plugins/order': ({'order': FULL_ORDER, 'apply': True}, 'pluginOrder', True),
-    '/run': ({'binary': 'FakeTool'}, 'run', True),
+    '/run': (dict({'binary': 'FakeTool'}, **KEY), 'run', True),
     '/mods/priority': (dict({'mod': 'Alpha Mod', 'priority': 1}, **KEY), 'priority', True),
     '/mods/rename': (dict({'mod': 'Gamma Mod', 'newName': 'Gamma Renamed'}, **KEY), 'rename', True),
     '/mods/remove': (dict({'mod': 'Delta Mod'}, **KEY), 'remove', True),
@@ -842,7 +842,8 @@ for route, (body, op, applied) in SIGNED.items():
     r.case('%s - op, applied' % route, (res.get('op'), res.get('applied')), (op, applied))
 for route, body in (('/mods/priority', {'mod': 'Alpha Mod', 'priority': 1}),
                     ('/mods/rename', {'mod': 'Alpha Mod', 'newName': 'X'}),
-                    ('/mods/remove', {'mod': 'Alpha Mod'})):
+                    ('/mods/remove', {'mod': 'Alpha Mod'}),
+                    ('/run', {'binary': 'FakeTool'})):
     res = post[route](body)
     r.case('%s без ключа - reason danger, applied False' % route,
            (res.get('reason'), res.get('applied'), res.get('op')),
@@ -853,7 +854,7 @@ r.case('предпросмотр подписан, applied False', (res.get('op'
 res = post['/plugins/order']({'order': FULL_ORDER})
 r.case('предпросмотр порядка подписан', (res.get('op'), res.get('applied')),
        ('pluginOrder', False))
-res = post['/run']({'binary': 'FakeTool'})
+res = post['/run'](dict({'binary': 'FakeTool'}, **KEY))
 r.case('/run без дескриптора - started False', res.get('started'), False)
 
 r.done()

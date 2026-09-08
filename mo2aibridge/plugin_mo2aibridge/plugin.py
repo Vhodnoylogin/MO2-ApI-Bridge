@@ -86,7 +86,8 @@ class MO2AIBridge(mobase.IPluginTool):
         return PLUGIN_NAME
 
     def author(self):
-        return 'Claude'
+        # Имя владельца, как оно видно на Nexus. Лицензия - MIT, файл LICENSE рядом.
+        return 'Vhodnoylogin'
 
     def description(self):
         return i18n.t('plugin.description')
