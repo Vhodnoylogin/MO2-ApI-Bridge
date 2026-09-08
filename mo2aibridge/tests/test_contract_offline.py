@@ -929,6 +929,29 @@ finally:
 r.case('без ключа - ERROR со словами про подключение к Nexus',
        (res['mods'][0]['verdict'], 'Nexus' in res['mods'][0]['why']), ('ERROR', True))
 
+r.head('/updates: «скачано, не установлено» считается по странице, а не по одному моду')
+fx, svc, get, post, log = make()
+svc.cfg.values['updates']['delaySec'] = 0
+# На диске появился новейший архив страницы Alpha (fileID 1002), но ни один мод из него
+# не собран - DOWNLOADED-NOT-INSTALLED. Как только сосед по странице собран из него,
+# патч, собранный из старого архива, перестаёт быть «не установленным».
+newest_arc = fx.path('downloads', 'Alpha Mod-101-1-1.7z')
+io.open(newest_arc, 'w').write('archive')
+os.utime(newest_arc, (fake_mo2.T0 + 30 * fake_mo2.DAY, fake_mo2.T0 + 30 * fake_mo2.DAY))
+got_all = {101: {1001: 'Alpha Mod-101-1-0.7z', 1002: 'Alpha Mod-101-1-1.7z'}}
+target = {'mod': 'Alpha Mod - Patch', 'nexusId': 101, 'game': 'SkyrimSE',
+          'installationFile': 'Alpha Mod-101-1-0.7z', 'version': '1.0',
+          'mo2NewestVersion': '', 'ignoredVersion': ''}
+dl_root = fx.path('downloads')
+alone = svc.updater._check_one(dict(target), got_all, dl_root, 30, {101: ['Alpha Mod-101-1-0.7z']})
+r.case('без соседа - DOWNLOADED-NOT-INSTALLED', alone['verdict'], 'DOWNLOADED-NOT-INSTALLED')
+mates = svc.updater._check_one(dict(target), got_all, dl_root, 30,
+                               {101: ['Alpha Mod-101-1-0.7z', 'Alpha Mod-101-1-1.7z']})
+r.case('сосед собран из новейшего - UP-TO-DATE', mates['verdict'], 'UP-TO-DATE')
+r.case('дата установки по странице в ответе', mates['installed']['pageTime'],
+       fake_mo2.T0 + 30 * fake_mo2.DAY)
+os.unlink(newest_arc)
+
 r.head('/updates: чистые правила решения')
 decide, D = updates_mod.decide, updates_mod.DAY
 def F(name, fid, cat, t, ver='', fn=None):

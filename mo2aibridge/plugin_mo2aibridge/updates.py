@@ -118,15 +118,22 @@ def _brief(f):
             'date': stamp(f['time'])}
 
 
-def decide(files, got_ids, got_names, installed_time, limit=3):
+def decide(files, got_ids, got_names, installed_time, limit=3, disk_time=None):
     """Решение по одной странице. Чистая функция: файлы страницы, что из них скачано, когда
-    загружен архив, из которого собран мод.
+    загружены архивы, из которых собраны моды этой страницы.
 
     files          [{name, fileName, fileId, version, category, time}], category - слово
     got_ids        fileID скачанных файлов этой страницы (из .meta в downloads)
     got_names      имена архивов этой страницы, лежащих в downloads
-    installed_time момент загрузки архива, из которого собран мод, или None
+    installed_time самый поздний момент загрузки среди архивов, из которых собраны ВСЕ моды
+                   этой страницы, или None. Именно по странице, а не по одному моду: патч
+                   или вторая часть многофайловой страницы собраны из старого архива, но
+                   новейший файл страницы стоит соседним модом - и это не «не установлено»
+    disk_time      самый поздний момент загрузки среди архивов этой страницы на диске
+                   (для случая, когда ни один файл страницы не помечен скачанным)
     """
+    if disk_time is None:
+        disk_time = installed_time
     for f in files:
         f['got'] = f['fileId'] in got_ids or (f['fileName'] or '') in got_names
     live_main = sorted([f for f in files if f['category'] in ('main', 'update')],
@@ -139,9 +146,9 @@ def decide(files, got_ids, got_names, installed_time, limit=3):
         # исчезла - автор заменил файл, а не убрал в Old files. Момент загрузки архива есть
         # в его имени, так что сравнить можно и с ним.
         res['extra'] = [_brief(f) for f in live_main[:4]]
-        if installed_time and live_main and (live_main[0]['time'] or 0) > installed_time + DAY:
+        if disk_time and live_main and (live_main[0]['time'] or 0) > disk_time + DAY:
             res.update(verdict='REUPLOADED', why='upd.replaced',
-                       whyArgs={'mine': stamp(installed_time), 'theirs': stamp(live_main[0]['time'])})
+                       whyArgs={'mine': stamp(disk_time), 'theirs': stamp(live_main[0]['time'])})
         else:
             res.update(verdict='CANNOT-MATCH', why='upd.unmarked', whyArgs={})
         return res
@@ -438,8 +445,19 @@ class Updates(Domain):
     def _targets(self, names, want_all, offset, limit):
         """Карточки модов для проверки. Зовётся В главном потоке."""
         ml = self.o.modList()
+        everyone = list(ml.allModsByProfilePriority())
+        # Страница -> архивы, из которых собраны ВСЕ её моды: решение о «скачано, но не
+        # установлено» принимается по странице, а не по одному моду, поэтому соседи по
+        # странице нужны и тогда, когда спросили об одном моде.
+        pages = {}
+        for n in everyone:
+            m = ml.getMod(n)
+            nid = int(safe(m.nexusId, 0) or 0) if m is not None else 0
+            arc = (safe(m.installationFile, '') or '') if m is not None else ''
+            if nid and arc:
+                pages.setdefault(nid, []).append(arc)
         if want_all:
-            names = [n for n in ml.allModsByProfilePriority()]
+            names = everyone
         out, total = [], 0
         for n in names:
             m = ml.getMod(n)
@@ -459,7 +477,7 @@ class Updates(Domain):
                         'version': safe(lambda: m.version().displayString(), ''),
                         'mo2NewestVersion': safe(lambda: m.newestVersion().displayString(), ''),
                         'ignoredVersion': safe(lambda: m.ignoredVersion().displayString(), '')})
-        return out, total
+        return out, total, pages
 
     # ---- маршрут --------------------------------------------------------
     def updates(self, q):
@@ -479,11 +497,12 @@ class Updates(Domain):
         timeout = float(one(q, 'timeout', str(upd.get('timeoutSec') or 30)))
         started = time.time()
 
-        targets, total = self.run_main(lambda: self._targets(names, want_all, offset, limit))
+        targets, total, pages = self.run_main(
+            lambda: self._targets(names, want_all, offset, limit))
         got_all, dl_root = self._downloads_meta()
         rows = []
         for t in targets:
-            rows.append(self._check_one(t, got_all, dl_root, timeout))
+            rows.append(self._check_one(t, got_all, dl_root, timeout, pages))
         res = {'count': len(rows), 'mods': rows, 'elapsedSec': round(time.time() - started, 1),
                'checked': sum(1 for r in rows if r.get('checked')),
                'rule': 'files-and-dates, versions never compared',
@@ -494,7 +513,7 @@ class Updates(Domain):
                        more=offset + len(rows) < total)
         return res
 
-    def _check_one(self, t, got_all, dl_root, timeout):
+    def _check_one(self, t, got_all, dl_root, timeout, pages=None):
         row = dict(t)
         row['checked'] = False
         if t.get('missing'):
@@ -511,12 +530,21 @@ class Updates(Domain):
         got_names = set(got.values())
         inst_time = self._installed_time(t['installationFile'], dl_root)
         inst_id = next((fid for fid, arc in got.items() if arc == t['installationFile']), 0)
-        d = decide(files, set(got), got_names, inst_time,
-                   limit=int(self.cfg.get('updates', {}).get('newerLimit') or 3))
+        # Момент установки - по всей странице: самый поздний из архивов, из которых собраны
+        # все её моды. Патч, собранный из старого архива, не значит, что новейший файл
+        # страницы не установлен: он стоит соседним модом.
+        mates = list((pages or {}).get(t['nexusId'], [])) + [t['installationFile']]
+        page_time = max([self._installed_time(a, dl_root) or 0 for a in mates] or [0]) or None
+        disk_time = max([page_time or 0] +
+                        [self._installed_time(a, dl_root) or 0 for a in got_names]) or None
+        d = decide(files, set(got), got_names, page_time,
+                   limit=int(self.cfg.get('updates', {}).get('newerLimit') or 3),
+                   disk_time=disk_time)
         row.update(checked=True, verdict=d['verdict'],
                    why=i18n.t(d['why'], **d['whyArgs']),
                    installed={'file': t['installationFile'], 'fileId': inst_id,
-                              'time': inst_time, 'date': stamp(inst_time)},
+                              'time': inst_time, 'date': stamp(inst_time),
+                              'pageTime': page_time, 'pageDate': stamp(page_time)},
                    downloaded=sorted(got.values()),
                    newest=d['newest'], items=d['items'], extra=d['extra'],
                    files=len(files))
