@@ -262,6 +262,7 @@ FO_DELETE = 0x0003
 FOF_ALLOWUNDO = 0x0040
 FOF_NOCONFIRMATION = 0x0010
 FOF_SILENT = 0x0004
+FOF_NOERRORUI = 0x0400
 
 
 def recycle(path):
@@ -276,7 +277,12 @@ def recycle(path):
     op = SHFILEOPSTRUCTW()
     op.wFunc = FO_DELETE
     op.pFrom = path + chr(0) + chr(0)
-    op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT
+    # FOF_NOERRORUI обязателен: FOF_SILENT прячет только окно хода работ, а окно ошибки
+    # остаётся - и всплывает модально, без владельца, в главном потоке Qt. Занятый файл
+    # (архив открыт в 7-Zip, читается антивирусом, лежит на отвалившемся сетевом диске)
+    # вешал так всю MO2 до нажатия кнопки, причём окно могло оказаться позади её
+    # собственного. С этим флагом отказ возвращается кодом, а не окном.
+    op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI
     return shell32.SHFileOperationW(ctypes.byref(op)) == 0 and not op.fAnyOperationsAborted
 
 

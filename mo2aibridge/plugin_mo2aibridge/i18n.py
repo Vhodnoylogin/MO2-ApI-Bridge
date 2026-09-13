@@ -69,11 +69,17 @@ RU = {
     'err.unpack': 'распаковка не удалась: %(detail)s',
     'err.noPathInArchive': 'нет пути в архиве: %(path)s',
     'err.badMode': "mode: merge (положить поверх) или replace (заменить), а не %(mode)s",
-    'err.recycle': 'не удалось отправить в Корзину: %(path)s',
+    'err.badName': ('имя мода должно быть именем папки, без разделителей пути и двоеточия: '
+                    '%(name)s'),
+    'err.badFlag': ('%(key)s: нужно true или false, а не %(value)r - догадываться о значении '
+                    'на выключателе нельзя'),
+    'err.recycle': ('не удалось отправить в Корзину: %(path)s; до этого места ушло записей: '
+                    '%(done)d'),
 
     # --- имена изменяющих операций, общие для обоих замков ---
     'op.refresh': 'перечитывание списков MO2',
     'op.install': 'установка мода',
+    'op.installReplace': 'установка С ЗАМЕНОЙ: прежнее содержимое мода уйдёт в Корзину',
     'op.toggle': 'включение или выключение мода',
     'op.pluginState': 'изменение состояния плагинов',
     'op.pluginOrder': 'изменение порядка загрузки',
@@ -180,10 +186,17 @@ EN = {
     'err.unpack': 'extraction failed: %(detail)s',
     'err.noPathInArchive': 'path not found in archive: %(path)s',
     'err.badMode': 'mode: merge (overlay) or replace (wipe first), not %(mode)s',
-    'err.recycle': 'could not send to the Recycle Bin: %(path)s',
+    'err.badName': ('the mod name must be a plain folder name, with no path separators '
+                    'and no colon: %(name)s'),
+    'err.badFlag': ('%(key)s: expected true or false, not %(value)r - a switch is no place '
+                    'to guess'),
+    'err.recycle': ('could not send to the Recycle Bin: %(path)s; entries already sent '
+                    'before this one: %(done)d'),
 
     'op.refresh': 'refreshing the MO2 lists',
     'op.install': 'installing a mod',
+    'op.installReplace': 'installing WITH REPLACE: the mod\'s previous contents go to the '
+                         'Recycle Bin',
     'op.toggle': 'enabling or disabling a mod',
     'op.pluginState': 'changing plugin states',
     'op.pluginOrder': 'changing the load order',

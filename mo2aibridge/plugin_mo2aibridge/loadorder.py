@@ -6,18 +6,19 @@ MO2. С apply - обычное изменение со всеми замками
 """
 import io
 import os
+import shutil
 
 import mobase
 
 from . import i18n
-from .base import Domain, stamp
+from .base import Domain, flag, stamp
 
 
 class LoadOrder(Domain):
 
     def plugins_state(self, body):
         want = body.get('set') or {}
-        apply_it = bool(body.get('apply'))
+        apply_it = flag(body, 'apply')
         if not isinstance(want, dict) or not want:
             raise ValueError(i18n.t('err.needSet'))
 
@@ -79,9 +80,25 @@ class LoadOrder(Domain):
                 out.append(bare)
         while out and not out[-1]:
             out.pop()
-        io.open(path, 'w', encoding='utf-8', newline='').write(eol.join(out) + eol)
+        text = eol.join(out) + eol
+        # Пишем через черновик и подмену, а не поверх оригинала. plugins.txt - единственный
+        # файл пользователя, который мост правит своими руками, и сбой на записи (кончился
+        # диск, файл держит антивирус, поток обрывается при закрытии MO2) оставил бы его
+        # усечённым или пустым. Пустой plugins.txt - это профиль со всеми выключенными
+        # плагинами, и восстановить его человеку неоткуда. Копия делается один раз: она
+        # нужна как последний рубеж, а не как история правок.
+        backup = path + '.bak'
+        try:
+            if not os.path.isfile(backup):
+                shutil.copyfile(path, backup)
+            draft = path + '.new'
+            io.open(draft, 'w', encoding='utf-8', newline='').write(text)
+            os.replace(draft, path)
+        except Exception as exc:
+            return {'written': False, 'error': str(exc), 'path': path,
+                    'backup': backup if os.path.isfile(backup) else ''}
         return {'written': True, 'path': path, 'changed': sorted(done),
-                'notInFile': sorted(set(wanted) - done)}
+                'backup': backup, 'notInFile': sorted(set(wanted) - done)}
 
     def plugins_order(self, body):
         """Полный порядок загрузки - тем списком, что отдал LOOT.
@@ -90,7 +107,7 @@ class LoadOrder(Domain):
         неполный набор отвергается целиком.
         """
         order = body.get('order') or []
-        apply_it = bool(body.get('apply'))
+        apply_it = flag(body, 'apply')
         if not isinstance(order, list) or not order:
             raise ValueError(i18n.t('err.needOrder'))
         report = self.limit('orderReportLimit')

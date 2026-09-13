@@ -18,7 +18,7 @@ import tempfile
 import mobase
 
 from . import i18n, winapi
-from .base import Domain, safe
+from .base import Domain, folder_name, inside, safe
 
 
 def tree_files(root):
@@ -55,11 +55,16 @@ class Installer(Domain):
             arc = body.get('archive')
             if not arc or not os.path.isfile(arc):
                 raise ValueError(i18n.t('err.noArchive', archive=arc))
-            if not (body.get('name') or '').strip():
-                raise ValueError(i18n.t('err.needName'))
+            folder_name(body.get('name'))
             mode = (body.get('mode') or '').strip().lower()
             if mode and mode not in ('merge', 'replace'):
                 raise ValueError(i18n.t('err.badMode', mode=mode))
+            # Замена уносит прежнее содержимое в Корзину, то есть теряет чужую работу, -
+            # и потому закрыта ключом наравне с удалением. Обычная установка и слияние
+            # ничего не теряют, ключа не требуют и договора не меняют: по ним уже ходят
+            # чужие вызовы, и ломать их ради единственного опасного режима нельзя.
+            if mode == 'replace':
+                return self.danger(body, 'installReplace')
             return None
 
         # Распаковка и копирование главному потоку не нужны, он зовётся точечно изнутри.
@@ -68,7 +73,7 @@ class Installer(Domain):
 
     def _install(self, body):
         arc = body.get('archive')
-        name = (body.get('name') or '').strip()
+        name = folder_name(body.get('name'))
         paths = body.get('paths') or ['']
         mode = (body.get('mode') or '').strip().lower()
 
@@ -79,6 +84,10 @@ class Installer(Domain):
 
         if existed:
             target = os.path.join(mods_root, name)
+            # Имя уже проверено, но путь сверяется ещё раз: между проверкой и работой
+            # стоит связь или стык папок, и убедиться дешевле, чем поверить.
+            if not inside(mods_root, target):
+                raise ValueError(i18n.t('err.badName', name=name))
             before = tree_files(target)
         else:
             def mk():
@@ -87,14 +96,18 @@ class Installer(Domain):
             target = self.run_main(mk)
             if not target:
                 raise RuntimeError(i18n.t('err.createFailed'))
+            if not inside(mods_root, target):
+                raise RuntimeError(i18n.t('err.badName', name=target))
             before = set()
 
+        # Распаковка идёт ПЕРЕД чисткой, и это не вкусовщина: она же и проверяет, есть ли
+        # на машине 7-Zip и цел ли архив. При обратном порядке пользователь без 7-Zip
+        # получал папку мода в Корзине и никакой установки взамен.
         removed = 0
-        if existed and mode == 'replace':
-            removed = self._wipe(target)
-
         tmp = self._unpack(arc)
         try:
+            if existed and mode == 'replace':
+                removed = self._wipe(target)
             copied, skipped_fomod = self._copy(tmp, paths, target)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
@@ -126,7 +139,9 @@ class Installer(Domain):
             if safe(lambda p=full: winapi.recycle(p), False):
                 removed += 1
             else:
-                raise RuntimeError(i18n.t('err.recycle', path=full))
+                # Сколько уже ушло - обязательная часть отказа: чистка прервалась на
+                # середине, и без этого числа вызывающий не знает, что искать в Корзине.
+                raise RuntimeError(i18n.t('err.recycle', path=full, done=removed))
         return removed
 
     def _unpack(self, arc):

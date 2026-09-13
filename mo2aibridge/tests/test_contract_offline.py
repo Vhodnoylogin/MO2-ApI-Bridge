@@ -338,6 +338,27 @@ r.case('нет такого мода - ValueError',
        is_clean_error(raised(post['/toggle'], {'mod': 'Nope', 'active': True}),
                       'err.noSuchMod', mod='Nope'), True)
 
+# Булевы поля разбираются строго. bool("false") в Python - True, и раньше запрос
+# {"active": "false"} ВКЛЮЧАЛ мод, возвращая changed: true, то есть делал обратное
+# заказанному и объявлял это успехом. Клиенты на shell и curl шлют строки постоянно.
+for word, want in (('false', False), ('true', True), ('0', False), ('1', True),
+                   ('no', False), ('yes', True), ('OFF', False)):
+    post['/toggle']({'mod': 'Alpha Mod', 'active': not want})
+    res = post['/toggle']({'mod': 'Alpha Mod', 'active': word})
+    r.case('active=%r понято как %s' % (word, want), res['active'], want)
+for junk in ('maybe', '', 'дa', 2, [], {}):
+    r.case('active=%r отвергнуто, а не угадано' % (junk,),
+           isinstance(raised(post['/toggle'], {'mod': 'Alpha Mod', 'active': junk}),
+                      ValueError), True)
+r.case('withArchive тоже строгий',
+       isinstance(raised(post['/mods/remove'],
+                         dict(KEY, mod='Alpha Mod', withArchive='наверное')),
+                  ValueError), True)
+r.case('apply тоже строгий',
+       isinstance(raised(post['/plugins/state'],
+                         {'set': {'alpha.esp': True}, 'apply': 'наверное'}), ValueError), True)
+post['/toggle']({'mod': 'Alpha Mod', 'active': True})
+
 r.head('/plugins/state - предпросмотр')
 raw_before = fx.read_bytes('profiles', 'Claude', 'plugins.txt')
 res = post['/plugins/state']({'set': {'Alpha.esp': False, 'Beta.esp': True,
@@ -551,9 +572,20 @@ if archive is not None and res is not None:
         r.case('merge - файлы на месте', sorted(fake_mo2.tree_files(fx.mod_path('Zeta Mod'))),
                sorted(['meta.ini', 'zeta.esp', os.path.join('textures', 'zeta.dds')]))
 
-        # замена: прежнее в Корзину, meta.ini остаётся, кладётся другой вариант
+        # замена без ключа: она уносит прежнее содержимое в Корзину, то есть теряет чужую
+        # работу, и потому закрыта замком необратимого наравне с удалением. Слияние и
+        # обычная установка ключа не требуют - они ничего не теряют.
         res = post['/install']({'archive': archive, 'name': 'Zeta Mod', 'paths': ['10 Extra'],
                                 'mode': 'replace'})
+        r.case('replace без ключа - отказ', (res['applied'], res['reason']),
+               (False, 'danger'))
+        r.case('replace без ключа - файлы на месте',
+               sorted(fake_mo2.tree_files(fx.mod_path('Zeta Mod'))),
+               sorted(['meta.ini', 'zeta.esp', os.path.join('textures', 'zeta.dds')]))
+
+        # замена: прежнее в Корзину, meta.ini остаётся, кладётся другой вариант
+        res = post['/install'](dict(KEY, archive=archive, name='Zeta Mod',
+                                    paths=['10 Extra'], mode='replace'))
         r.case('replace - ключи те же', has(res, INSTALL_KEYS), INSTALL_KEYS)
         r.case('replace - mode', res['mode'], 'replace')
         r.case('replace - в Корзину ушли две записи, meta.ini нет',
@@ -579,6 +611,24 @@ if archive is not None and res is not None:
                sorted(fake_mo2.tree_files(fx.mod_path('Zeta Mod'))),
                sorted(['meta.ini', os.path.join('meshes', 'zeta.nif')]))
         r.note('после отказа по пути в %TEMP% осталось', os.listdir(fx.path('temp')))
+
+        # --- имя мода не выпускается из mods\ ---------------------------------------
+        # Имя подставляется в путь, и на Windows os.path.join отбрасывает первый кусок,
+        # если второй абсолютный: 'C:\\Users\\...' указал бы на чужую папку, а '..' - на
+        # уровень выше, где лежат профили, загрузки и overwrite. С mode=replace это
+        # означало бы чужие файлы в Корзине, поэтому имя проверяется до всякой работы.
+        outside = fx.path('outside')
+        os.makedirs(outside, exist_ok=True)
+        io.open(os.path.join(outside, 'важное.txt'), 'w', encoding='utf-8').write('не трогать')
+        for bad in (outside, '..', os.path.join('..', 'profiles'), 'a/b', 'a' + os.sep + 'b',
+                    'C:', '.'):
+            r.case('имя вне mods отвергнуто: %r' % bad,
+                   is_clean_error(raised(post['/install'],
+                                         dict(KEY, archive=archive, name=bad,
+                                              mode='replace')), 'err.badName', name=bad),
+                   True)
+        r.case('чужая папка цела после всех попыток',
+               sorted(os.listdir(outside)), ['важное.txt'])
     finally:
         winapi.recycle = recycle_was
         if temp_was is None:

@@ -15,6 +15,8 @@
 Прежние ключи остаются на месте: форма ответа меняется только добавлением, иначе тихо ломаются
 чужие вызовы.
 """
+import os
+
 from . import i18n
 
 DANGER_KEY = 'iUnderstandTheRisk'
@@ -25,6 +27,60 @@ def one(q, key, default):
     """Один параметр из строки запроса: parse_qs отдаёт списки, а нужна строка."""
     v = (q or {}).get(key)
     return v[0] if isinstance(v, list) and v else (v if isinstance(v, str) else default)
+
+
+def flag(body, key, default=False):
+    """Булево поле тела запроса, строго.
+
+    `bool()` здесь не годится: строка "false" в Python истинна, и запрос
+    {"active": "false"} включал бы мод, рапортуя успех, - то есть делал бы обратное
+    заказанному. Клиенты на shell и curl шлют булевы значения строками постоянно, поэтому
+    строки разбираются явно, а непонятное значение - отказ, а не догадка: на выключателях
+    вроде withArchive цена догадки - файл в Корзине.
+    """
+    v = (body or {}).get(key)
+    if v is None:
+        return default
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, int) and v in (0, 1):
+        return bool(v)
+    if isinstance(v, str):
+        s = v.strip().lower()
+        if s in ('true', 'yes', 'on', '1'):
+            return True
+        if s in ('false', 'no', 'off', '0'):
+            return False
+    raise ValueError(i18n.t('err.badFlag', key=key, value=v))
+
+
+def folder_name(name):
+    """Однокомпонентное имя папки, годное для подстановки в путь, или ValueError.
+
+    Имя мода приходит снаружи и подставляется внутрь mods\\. Однокомпонентное имя выйти
+    оттуда не может, а всё прочее может: os.path.join на Windows отбрасывает первый кусок,
+    если второй абсолютный, поэтому 'C:\\Users\\...' дал бы путь к чужой папке, а '..' увёл бы
+    на уровень выше - к профилям, загрузкам и overwrite. Цена промаха здесь - чужие файлы
+    в Корзине, так что проверка стоит до всякой работы.
+    """
+    n = (name or '').strip()
+    if not n:
+        raise ValueError(i18n.t('err.needName'))
+    if (n in ('.', '..') or os.path.basename(n) != n or ':' in n
+            or os.sep in n or (os.altsep and os.altsep in n)):
+        raise ValueError(i18n.t('err.badName', name=n))
+    return n
+
+
+def inside(root, path):
+    """Лежит ли path внутри root.
+
+    Второй рубеж после folder_name: имя проверено, но саму папку заводит MO2, и убедиться,
+    что она оказалась там, где ждали, дешевле, чем поверить на слово.
+    """
+    r = os.path.realpath(root)
+    p = os.path.realpath(path)
+    return p == r or p.startswith(r + os.sep)
 
 
 def safe(fn, default=None):

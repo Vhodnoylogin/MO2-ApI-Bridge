@@ -10,7 +10,7 @@ import os
 import mobase
 
 from . import i18n, winapi
-from .base import Domain, safe
+from .base import Domain, flag, safe
 
 
 class ModOps(Domain):
@@ -19,9 +19,12 @@ class ModOps(Domain):
         def prepare():
             if not body.get('mod') or body.get('active') is None:
                 raise ValueError(i18n.t('err.needMod'))
+            # Разбор значения стоит в проверке, а не только в работе: отказ о неверном
+            # типе обязан прийти до главного потока, как и всякая проверка входа.
+            flag(body, 'active')
 
         def f():
-            mod, want = body.get('mod'), body.get('active')
+            mod, want = body.get('mod'), flag(body, 'active')
             ml = self.o.modList()
             if ml.getMod(mod) is None:
                 raise ValueError(i18n.t('err.noSuchMod', mod=mod))
@@ -104,13 +107,15 @@ class ModOps(Domain):
 
     def mods_remove(self, body):
         mod = body.get('mod')
-        with_archive = bool(body.get('withArchive'))
-
         def prepare():
             if not mod:
                 raise ValueError(i18n.t('err.needMod'))
+            flag(body, 'withArchive')
 
         def f():
+            # Разбор внутри работы, а не при входе в метод: замок занятости обязан
+            # ответить первым, а исключение до change() опередило бы его.
+            with_archive = flag(body, 'withArchive')
             ml = self.o.modList()
             m = ml.getMod(mod)
             if m is None:
