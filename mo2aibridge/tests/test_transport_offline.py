@@ -1,21 +1,22 @@
 # -*- coding: utf-8 -*-
-"""Транспорт: сокет, токен, коды ответов - без запущенной MO2.
+"""The transport: the socket, the token, the reply codes - without a running MO2.
 
-Зачем. Нижний слой моста не проверялся вовсе: он тянет PyQt6, а тот живёт только внутри
-процесса менеджера. Поэтому три свойства, которые целиком определяют, что видит клиент,
-держались на честном слове - и два из них оказались сломаны.
+Why. The bridge's lowest layer was never checked at all: it pulls in PyQt6, and that lives
+only inside the manager's process. So three properties that entirely determine what a client
+sees rested on nothing but good intentions - and two of them turned out to be broken.
 
-Что здесь проверяется на НАСТОЯЩЕМ сокете петли:
+What is checked here, on a REAL loopback socket:
 
-  привязка   занятый порт обязан дать отказ, а не молчаливый успех. HTTPServer объявляет
-             allow_reuse_address = 1, и на Windows второй мост вставал на уже слушаемый
-             адрес без единой ошибки - писал в лог «поднят» и не получал ни одного запроса.
-  коды       ошибка в запросе (400) отличима от поломки моста (500). Раньше и то, и другое
-             выходило пятисоткой с трассировкой, и вызывающий не мог решить, повторять ли.
-  токен      без заголовка X-Token - 403, и до маршрута дело не доходит.
+  binding  a taken port must refuse rather than succeed silently. HTTPServer declares
+           allow_reuse_address = 1, and on Windows a second bridge bound an already-listening
+           address without a single error - it logged "listening" and received no requests.
+  codes    a mistake in the request (400) is distinguishable from a broken bridge (500).
+           Both used to come back as a 500 with a traceback, and the caller could not decide
+           whether to retry.
+  token    without the X-Token header - 403, and the route is never reached.
 
-PyQt6 подменён пустышкой ровно настолько, чтобы модуль импортировался: сам транспорт
-про Qt знает только в MainThreadRunner, а он здесь не участвует - маршруты подставные.
+PyQt6 is stubbed just enough for the module to import: the transport knows about Qt in one
+place only, MainThreadRunner, and that plays no part here - the routes are stand-ins.
 """
 import json
 import os
@@ -31,10 +32,10 @@ T = common.T
 
 
 def fake_pyqt():
-    """Пустышка PyQt6: хватает на импорт runtime, но не на работу главного потока.
+    """A PyQt6 stub: enough to import runtime, not enough to run the main thread.
 
-    Подменять целиком незачем. Транспорту Qt нужен в одном месте - переносе вызова в
-    главный поток, - а здесь маршруты подставные и переносить нечего.
+    There is no point stubbing the whole thing. The transport needs Qt in one place - moving
+    a call into the main thread - and here the routes are stand-ins with nothing to move.
     """
     class Signal(object):
         def __init__(self, *_a):
@@ -64,12 +65,12 @@ fake_pyqt()
 pkg = common.import_package()
 runtime = __import__(pkg.__name__ + '.runtime', fromlist=['runtime'])
 i18n = pkg.i18n
-i18n.set_language('ru')
+i18n.set_language('en')
 r = common.Report(T('transport.title'))
 
 
 def ask(port, route, token=None, body=None):
-    """Запрос к поднятому мосту. Возвращает (код, разобранный ответ)."""
+    """A request to the raised bridge. Returns (code, parsed reply)."""
     data = json.dumps(body).encode('utf-8') if body is not None else None
     headers = {'Content-Type': 'application/json'}
     if token is not None:
@@ -84,7 +85,7 @@ def ask(port, route, token=None, body=None):
         return exc.code, json.loads(exc.read().decode('utf-8'))
 
 
-# Маршруты подставные: транспорт про их смысл ничего не знает и знать не должен.
+# The routes are stand-ins: the transport knows nothing of their meaning, and must not.
 def route_ok(_arg):
     return {'ok': True}
 
@@ -94,14 +95,15 @@ def route_bad_request(_arg):
 
 
 def route_broken(_arg):
-    raise KeyError('внутренняя поломка')
+    raise KeyError('an internal breakage')
 
 
 GET = {'/ping': route_ok, '/bad': route_bad_request, '/broken': route_broken}
 POST = {'/do': route_ok, '/badpost': route_bad_request}
 
 TOKEN = runtime.new_token()
-# Порт нарочно высокий и не 8930: набор не должен мешать настоящему мосту, если MO2 открыта.
+# The port is high and deliberately not 8930: the suite must not disturb the real bridge
+# if MO2 happens to be open.
 BASE_PORT = int(os.environ.get('MO2AIBRIDGE_TEST_PORT') or 18930)
 
 srv = second = None
@@ -111,22 +113,24 @@ try:
     r.case(T('transport.boundFreePort'), port >= BASE_PORT, True)
     r.case(T('transport.serveReturnsPair'), isinstance(port, int), True)
 
-    # Занятый порт обязан дать отказ. Это и есть то, что чинилось: с наследуемым
-    # allow_reuse_address вторая привязка молча удавалась, и запросы шли первому.
+    # A taken port must refuse. This is exactly what was fixed: with the inherited
+    # allow_reuse_address the second bind silently succeeded and the requests went to the
+    # first one.
     try:
         runtime.Server(('127.0.0.1', port), runtime.make_handler(TOKEN, GET, POST))
-        r.case(T('transport.takenPortRefusedFail'), 'привязка удалась', 'OSError')
+        r.case(T('transport.takenPortRefusedFail'), 'the bind succeeded', 'OSError')
     except OSError:
         r.case(T('transport.takenPortRefused'), True, True)
 
-    # А serve при занятом порте не падает, а отходит на следующий - и говорит, на какой.
+    # And serve does not fail on a taken port: it steps to the next one and says which.
     second, port2 = runtime.serve(port, runtime.make_handler(TOKEN, GET, POST), tries=5)
     r.case(T('transport.secondOnOtherPort'), port2 != port, True)
     r.case(T('transport.secondIsNextFree'), port2 > port, True)
 
     r.head(T('transport.token'))
     r.case(T('transport.noHeader403'), ask(port, '/ping')[0], 403)
-    # Токен в заголовке, а заголовки HTTP - latin-1: нарочно чужой, но ASCII.
+    # The token rides in a header, and HTTP headers are latin-1: deliberately wrong, but
+    # ASCII.
     r.case(T('transport.wrongToken403'), ask(port, '/ping', 'not-the-token')[0], 403)
     r.case(T('transport.emptyToken403'), ask(port, '/ping', '')[0], 403)
     code, res = ask(port, '/ping', TOKEN)
@@ -160,15 +164,15 @@ try:
 
     r.head(T('transport.requestBody'))
     req = urllib.request.Request('http://127.0.0.1:%d/do' % port, method='POST',
-                                 data='{это не json'.encode('utf-8'),
+                                 data='{this is not json'.encode('utf-8'),
                                  headers={'X-Token': TOKEN,
                                           'Content-Type': 'application/json'})
     try:
         urllib.request.urlopen(req, timeout=10)
-        r.case(T('transport.badJson400Fail'), 'ответил 200', 400)
+        r.case(T('transport.badJson400Fail'), 'answered 200', 400)
     except urllib.error.HTTPError as exc:
         r.case(T('transport.badJson400'), exc.code, 400)
-    # Пустое тело - не ошибка: маршрут без параметров зовут именно так.
+    # An empty body is not a mistake: a route without parameters is called exactly so.
     code, res = ask(port, '/do', TOKEN, body={})
     r.case(T('transport.emptyBodyOk'), (code, res), (200, {'ok': True}))
 
@@ -178,11 +182,11 @@ try:
     srv = None
     try:
         ask(port, '/ping', TOKEN)
-        r.case(T('transport.portSilentAfterStopFail'), 'ответил', 'отказ соединения')
+        r.case(T('transport.portSilentAfterStopFail'), 'answered', 'connection refused')
     except Exception:
         r.case(T('transport.portSilentAfterStop'), True, True)
-    # Освободившийся порт снова занимается - значит сокет действительно закрыт, а не
-    # оставлен висеть демоном до конца процесса.
+    # The freed port can be bound again - which means the socket really was closed, not
+    # left hanging as a daemon until the process ends.
     again, port3 = runtime.serve(port, runtime.make_handler(TOKEN, GET, POST), tries=1)
     r.case(T('transport.freedPortBindableAgain'), port3, port)
     again.shutdown()
