@@ -7,6 +7,7 @@
 """
 import json
 import secrets
+import socket
 import threading
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -35,7 +36,10 @@ class MainThreadRunner(QObject):
         try:
             box.append(('ok', fn()))
         except Exception as exc:
-            box.append(('err', '%s: %s' % (type(exc).__name__, exc)))
+            # Исключение переносится целиком, а не строкой. Раньше здесь получался
+            # RuntimeError("ValueError: нужен mod"), и транспорт терял единственный
+            # признак, по которому ошибку в запросе можно отличить от поломки моста.
+            box.append(('err', exc))
         done.set()
 
     def call(self, fn, timeout=120.0):
@@ -49,7 +53,7 @@ class MainThreadRunner(QObject):
             raise RuntimeError(i18n.t('err.mainThread', sec=timeout))
         kind, val = box[0]
         if kind == 'err':
-            raise RuntimeError(val)
+            raise val
         return val
 
 
@@ -93,8 +97,15 @@ def make_handler(token, routes_get, routes_post):
                                         'post': sorted(routes_post)})
             try:
                 self._send(200, fn(arg))
+            except ValueError as exc:
+                # Ошибка в запросе, а не поломка моста: забытый параметр, чужой режим,
+                # неизвестный мод, негодное булево. Раньше и то, и другое выходило
+                # пятисоткой с трассировкой, и вызывающий не мог отличить «спросил
+                # неверно» от «мост сломался» - то есть не мог решить, повторять ли.
+                self._send(400, {'error': str(exc), 'code': 'badRequest'})
             except Exception as exc:
-                self._send(500, {'error': str(exc), 'trace': traceback.format_exc()[-800:]})
+                self._send(500, {'error': str(exc), 'code': 'bridgeFailure',
+                                 'trace': traceback.format_exc()[-800:]})
 
         def do_GET(self):
             if not self._auth():
@@ -114,9 +125,44 @@ def make_handler(token, routes_get, routes_post):
     return Handler
 
 
-def serve(port, handler):
-    """Поднять сервер в фоне. Слушаем только петлю - наружу порт не выставляется никогда."""
-    srv = ThreadingHTTPServer(('127.0.0.1', port), handler)
-    srv.daemon_threads = True
-    threading.Thread(target=srv.serve_forever, name='MO2AIBridge', daemon=True).start()
-    return srv
+class Server(ThreadingHTTPServer):
+    """Своя привязка вместо наследуемой.
+
+    `http.server.HTTPServer` объявляет `allow_reuse_address = 1`, а на Windows это значит,
+    что встать на УЖЕ СЛУШАЕМЫЙ адрес можно. Второй экземпляр MO2 поднимал второй мост без
+    единой ошибки, писал в лог «поднят», показывал в меню «работает» - и не получал ни
+    одного запроса: все они доставались первому. Честный отказ здесь нужнее, чем удобство
+    повторной привязки, поэтому обратно выключаем.
+    """
+    allow_reuse_address = False
+    daemon_threads = True
+
+    def server_bind(self):
+        # Отсутствия SO_REUSEADDR на Windows мало: SO_EXCLUSIVEADDRUSE закрывает и перехват
+        # адреса чужим процессом, который встаёт первым.
+        opt = getattr(socket, 'SO_EXCLUSIVEADDRUSE', None)
+        if opt is not None:
+            try:
+                self.socket.setsockopt(socket.SOL_SOCKET, opt, 1)
+            except OSError:
+                pass
+        ThreadingHTTPServer.server_bind(self)
+
+
+def serve(port, handler, tries=1):
+    """Поднять сервер в фоне. Слушаем только петлю - наружу порт не выставляется никогда.
+
+    Возвращает пару (сервер, порт). Порт возвращается потому, что он не обязан совпасть
+    с заказанным: при занятом пробуем следующие, и вызывающий обязан узнать, где мост в
+    итоге встал, - иначе он напишет в файл токена неверное число.
+    """
+    last = None
+    for step in range(max(1, int(tries))):
+        try:
+            srv = Server(('127.0.0.1', port + step), handler)
+        except OSError as exc:
+            last = exc
+            continue
+        threading.Thread(target=srv.serve_forever, name='MO2AIBridge', daemon=True).start()
+        return srv, port + step
+    raise last

@@ -14,6 +14,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SUITES = ['test_sources.py', 'test_busy_logic.py', 'test_i18n.py', 'test_contract_offline.py',
+          'test_transport_offline.py',
           'test_routes.py', 'test_plugins_txt.py', 'test_install_modes.py',
           'test_busy_live.py']
 SKIPPED = 77

@@ -30,12 +30,16 @@ RU = {
 
     # --- запуск и состояние ---
     'start.ok': 'мост поднят на 127.0.0.1:%(port)s',
+    'start.otherPort': ('порт %(wanted)s был занят - скорее всего вторым экземпляром MO2; '
+                        'встал на %(port)s, токен в %(token)s'),
     'start.failed': 'НЕ УДАЛОСЬ поднять мост',
+    'stop.ok': 'мост опущен, файл токена убран',
     'start.disabled': 'плагин выключен в настройках MO2',
     'init.loaded': 'плагин загружен, жду инициализации интерфейса',
     'ui.ready': 'интерфейс готов, поднимаю мост',
     'dialog.running': 'работает',
     'dialog.stopped': 'НЕ запущен',
+    'dialog.stopButton': 'Опустить мост',
     'dialog.listening': 'Слушает http://127.0.0.1:%(port)s\nТокен лежит в:\n%(token)s\n\n%(state)s',
     'dialog.startFailed': 'Мост НЕ запустился.\n\n%(error)s\n\nПодробности: %(log)s',
 
@@ -147,12 +151,16 @@ EN = {
     'setting.language': 'message language: auto, ru, en',
 
     'start.ok': 'bridge listening on 127.0.0.1:%(port)s',
+    'start.otherPort': ('port %(wanted)s was taken - most likely by a second MO2 instance; '
+                        'listening on %(port)s instead, token in %(token)s'),
     'start.failed': 'FAILED to start the bridge',
+    'stop.ok': 'bridge stopped, token file removed',
     'start.disabled': 'plugin disabled in MO2 settings',
     'init.loaded': 'plugin loaded, waiting for the user interface',
     'ui.ready': 'interface ready, starting the bridge',
     'dialog.running': 'running',
     'dialog.stopped': 'NOT running',
+    'dialog.stopButton': 'Stop the bridge',
     'dialog.listening': ('Listening on http://127.0.0.1:%(port)s\n'
                          'Token file:\n%(token)s\n\n%(state)s'),
     'dialog.startFailed': 'The bridge did NOT start.\n\n%(error)s\n\nDetails: %(log)s',
