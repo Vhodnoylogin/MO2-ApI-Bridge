@@ -10,7 +10,7 @@
 Слушает только петлю. Каждый запрос требует заголовок `X-Token`; токен MO2 создаёт заново при
 каждом запуске и кладёт в `mo2aibridge-token.txt` рядом с плагином.
 
-*English documentation: [README.ru.md](README.ru.md).*
+*This page in English: [README.md](README.md).*
 
 ---
 

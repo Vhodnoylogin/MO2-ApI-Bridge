@@ -10,7 +10,7 @@ without clicking through the MO2 window.
 Binds to loopback only. Every request needs an `X-Token` header; MO2 generates a fresh token on
 each start and writes it to `mo2aibridge-token.txt` next to the plugin.
 
-*Документация на русском: [README.md](README.md).*
+*Эта страница на русском: [README.ru.md](README.ru.md).*
 
 ---
 
