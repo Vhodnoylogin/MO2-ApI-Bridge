@@ -23,11 +23,17 @@
  "routes.profileAndVersion": "the profile and the version",
  "routes.profilesKnowsActive": "/profiles knows the active one",
  "routes.reads": "reads",
+ "routes.reason": "reason: %(why)s",
  "routes.refreshReread": "/refresh re-read the lists",
  "routes.resolveGaveFile": "/resolve gave the file on disk",
  "routes.stateNoApply": "/plugins/state without apply changes nothing",
+ "routes.takesMinutes": "minutes of work",
  "routes.title": "the routes against a live MO2",
  "routes.untouchedOnPurpose": "left untouched on purpose",
  "routes.vfsFoundEsp": "/vfs found an esp at the root of Data",
- "routes.windowsNeedsPid": "/windows without a pid refuses"
+ "routes.windowsNeedsPid": "/windows without a pid refuses",
+ "routes.wouldChangeProfile": "it would change the profile",
+ "routes.wouldCreateMod": "it would create a mod",
+ "routes.wouldLaunchProgram": "it would launch a program",
+ "routes.wouldPressButton": "it would press a button"
 }

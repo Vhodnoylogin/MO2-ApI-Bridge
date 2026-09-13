@@ -13,6 +13,7 @@
  "plugins.refreshKeeps": "/refresh не отменяет правку",
  "plugins.restoring": "возвращаем как было",
  "plugins.subject": "подопытный",
+ "plugins.subjectValue": "%(plugin)s, звёздочка сейчас: %(starred)s",
  "plugins.title": "состояние плагинов доезжает до plugins.txt",
  "plugins.toggleViaBridge": "переключаем через мост"
 }

@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Установка на песочнице: свежая, слияние, замена и уборка за собой.
+"""Installing in a sandbox: fresh, merge, replace, and cleaning up afterwards.
 
-Работает только со СВОИМ модом, имя которого нельзя спутать с настоящим, и в конце сносит его
-вместе с папкой. Ничего чужого не трогается: ни один существующий мод не упоминается.
+It works only with a mod OF ITS OWN, whose name cannot be confused with a real one, and it
+removes that mod and its folder at the end. Nothing belonging to anyone else is touched: not
+one existing mod is even named.
 
-Здесь же единственное место, где ключ необратимости передаётся с верным значением - иначе
-удалить свой же пробник нечем, и путь «ключ принят» не проверен вовсе.
+This is also the single place where the irreversible key is passed with the correct value -
+otherwise there is nothing to remove our own probe with, and the "key accepted" path goes
+unchecked entirely.
 """
 import io
 import os
@@ -22,7 +24,7 @@ T = common.T
 common.need_live()
 r = common.Report(T('install.title'))
 
-PROBE = 'MO2 ApI Bridge - проба установки'
+PROBE = 'MO2 ApI Bridge - install probe'
 KEY = {'iUnderstandTheRisk': 'yes-I-read-the-docs-and-accept-irreversible-changes'}
 
 
@@ -35,12 +37,12 @@ def seven_zip():
 
 SEVEN = seven_zip()
 if not SEVEN:
-    r.note(T('install.skip'), '7-Zip не найден, собрать архив нечем')
+    r.note(T('install.skip'), T('install.no7z'))
     raise SystemExit(77)
 
 
 def make_archive(tag, files):
-    """Крошечный архив с папкой Data внутри - как у настоящего мода."""
+    """A tiny archive with a Data folder inside - like a real mod has."""
     work = os.path.join(tempfile.gettempdir(), 'mo2aibridge-probe-' + tag)
     shutil.rmtree(work, ignore_errors=True)
     os.makedirs(os.path.join(work, 'src', 'SKSE', 'Plugins'))
@@ -56,9 +58,9 @@ def make_archive(tag, files):
 
 
 A = make_archive('a', {r'SKSE\Plugins\probe.ini': 'version=A',
-                       r'SKSE\Plugins\only-in-a.txt': 'старый файл'})
+                       r'SKSE\Plugins\only-in-a.txt': 'the old file'})
 B = make_archive('b', {r'SKSE\Plugins\probe.ini': 'version=B',
-                       r'SKSE\Plugins\only-in-b.txt': 'новый файл'})
+                       r'SKSE\Plugins\only-in-b.txt': 'the new file'})
 
 
 def files_of(path):
@@ -74,7 +76,7 @@ def files_of(path):
 _, ping = common.call('GET', '/ping')
 target = os.path.join(ping['modsPath'].replace('/', os.sep), PROBE)
 if os.path.isdir(target):
-    r.note(T('install.cleanup'), 'пробник остался от прошлого прогона, сношу')
+    r.note(T('install.cleanup'), T('install.leftoverProbe'))
     common.call('POST', '/mods/remove', dict(KEY, mod=PROBE))
 
 try:

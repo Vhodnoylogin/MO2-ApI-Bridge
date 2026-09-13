@@ -23,11 +23,17 @@
  "routes.profileAndVersion": "профиль и версия",
  "routes.profilesKnowsActive": "/profiles знает активный",
  "routes.reads": "чтение",
+ "routes.reason": "причина: %(why)s",
  "routes.refreshReread": "/refresh перечитал списки",
  "routes.resolveGaveFile": "/resolve дал файл на диске",
  "routes.stateNoApply": "/plugins/state без apply ничего не делает",
+ "routes.takesMinutes": "минуты работы",
  "routes.title": "маршруты по живой MO2",
  "routes.untouchedOnPurpose": "не трогалось намеренно",
  "routes.vfsFoundEsp": "/vfs нашёл esp в корне Data",
- "routes.windowsNeedsPid": "/windows без pid отказывает"
+ "routes.windowsNeedsPid": "/windows без pid отказывает",
+ "routes.wouldChangeProfile": "изменил бы состав профиля",
+ "routes.wouldCreateMod": "создал бы мод",
+ "routes.wouldLaunchProgram": "запустил бы программу",
+ "routes.wouldPressButton": "нажал бы кнопку"
 }

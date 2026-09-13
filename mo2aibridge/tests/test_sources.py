@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Гигиена исходников, без MO2.
+r"""Source hygiene, without MO2.
 
-Регрессия на дефект, который не ловится ни одним поведением: в путях к 7-Zip вместо `\\7`
-стояли символы BEL (0x07) - какой-то инструмент по дороге истолковал `\\7` как код символа.
-Пути никогда не совпадали, а установка работала только потому, что на этой машине 7z лежит
-в PATH. Такое видно только в самих байтах файла, поэтому проверяются они.
+A regression check for a defect no behaviour can catch: in the paths to 7-Zip, instead of
+`\7` there stood BEL characters (0x07) - some tool along the way read `\7` as a character
+code. The paths never matched, and installing worked only because 7z happens to be on PATH
+on this machine. That is visible only in the bytes of the file, so the bytes are what gets
+checked.
 
-Заодно: каждый .py пакета компилируется, каждый .py пакета упомянут в разделе «Раскладка»
-обоих README (иначе новый файл остаётся без описания), и ни в одном файле нет путей к
-конкретной машине.
+Alongside it: every .py of the package compiles, every .py of the package is mentioned in
+the "Layout" section of both READMEs (or a new file is left undescribed), and no file holds
+a path to one particular machine.
 """
 import io
 import os
@@ -24,7 +25,7 @@ T = common.T
 r = common.Report(T('sources.title'))
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONTROL = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
-# Абсолютный путь Windows с буквой диска. Разрешён только в примерах документации.
+# An absolute Windows path with a drive letter. Allowed only in documentation examples.
 DRIVE = re.compile(r'(?<![A-Za-z])[A-Z]:\\(?!\\)')
 
 
@@ -66,9 +67,10 @@ for name in ('README.md', 'README.ru.md'):
     r.case(name, missing, [])
 
 r.head(T('sources.archiveComplete'))
-# Проверка ровно того рода поломки, что уже случилась: locale\ стал папкой на язык, обход
-# в pack.py остался на один уровень, и в архив уехало ноль переводов - плагин говорил бы
-# метками. Незаметно до самой выкладки, поэтому спрашиваем сам pack.py, что он возьмёт.
+# A check for exactly the kind of breakage that already happened: locale\ became a folder
+# per language, the walk in pack.py stayed one level deep, and zero translations went into
+# the archive - the plugin would have spoken in bare labels. Invisible until release day, so
+# we ask pack.py itself what it is going to take.
 sys.path.insert(0, common.ROOT)
 pack = __import__('pack')
 taken, _left = pack.collect(common.PKG)
@@ -83,7 +85,7 @@ r.case(T('sources.localOnlyStays'),
        [x for x in taken if 'token' in x or x.endswith('.log') or 'config.json' in x], [])
 
 r.head(T('sources.noMachinePaths'))
-# Только пакет: в проверках подставные пути вроде C:\нет\такого.exe стоят намеренно.
+# The package only: in the checks, stand-in paths like C:\no\such.exe are deliberate.
 for path in files(common.PKG, ('.py',)):
     hits = [i for i, line in enumerate(read(path).split(chr(10)), 1)
             if DRIVE.search(line) and not line.lstrip().startswith('#')]

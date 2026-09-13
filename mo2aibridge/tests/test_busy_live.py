@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Замок занятости на настоящей запущенной программе.
+"""The busy lock against a real running program.
 
-Берётся утилита, а не игра: она тоже запускается через MO2 и тоже держит её замок, но
-ничего не считает, пока не нажать кнопку. Имя задаётся переменной MO2AIBRIDGE_TEST_APP и
-должно быть ЗАРЕГИСТРИРОВАННЫМ в MO2 - startApplication принимает имя, а не путь.
+A tool is used rather than the game: it too is started through MO2 and holds its lock, but
+it computes nothing until a button is pressed. The name comes from MO2AIBRIDGE_TEST_APP and
+must be REGISTERED in MO2 - startApplication takes a name, not a path.
 
-Закрывается она тем же маршрутом /window, которым мост вообще умеет работать с окнами.
+It is closed through the same /window route the bridge uses for windows in general.
 """
 import os
 import sys
@@ -23,7 +23,7 @@ r = common.Report(T('live.title', app=APP))
 
 _, ping = common.call('GET', '/ping')
 if ping.get('busy'):
-    r.note(T('live.skipNoApp'), 'что-то уже запущено, проверка недостоверна: %s' % ping['busy'])
+    r.note(T('live.skipNoApp'), T('live.alreadyBusy', busy=ping['busy']))
     r.done()
 
 r.head(T('live.startingViaMo2'))
@@ -31,7 +31,8 @@ box = {}
 
 
 def launcher():
-    # Запуск - под ключом необратимого, как и удаление: без него мост ничего не запустит.
+    # Launching sits behind the irreversible key, like removal: without it the bridge
+    # starts nothing.
     box['res'] = common.call('POST', '/run',
                              {'binary': APP, 'wait': True, 'timeout': 900,
                               'iUnderstandTheRisk':
@@ -50,15 +51,17 @@ for _ in range(60):
         pid = (ping['busy'].get('pids') or [0])[0]
         break
     if box.get('res') and box['res'][0] != 200:
-        r.note(T('live.skipNotStarted'), 'запустить "%s" не вышло: %s' % (APP, box['res'][1].get('error')))
-        r.note(T('live.blank1'), 'задайте MO2AIBRIDGE_TEST_APP именем утилиты из списка MO2')
+        r.note(T('live.skipNotStarted'),
+               T('live.startFailed', app=APP, error=box['res'][1].get('error')))
+        r.note(T('live.blank1'), T('live.setTestApp'))
         r.done()
 if not pid:
     r.case(T('live.programUp'), False, True)
     r.done()
 
 busy = ping['busy']
-r.note(T('live.busy'), '%s, pid %s, игра: %s' % (busy['app'], busy['pids'], busy['isGame']))
+r.note(T('live.busy'), T('live.busyValue', app=busy['app'], pids=busy['pids'],
+                         game=busy['isGame']))
 
 r.head(T('live.readsMustWork'))
 for route, key in (('/mods', 'count'), ('/plugins', 'count'), ('/profiles', 'current')):
@@ -72,7 +75,7 @@ _, pl = common.call('GET', '/plugins')
 some = mods['mods'][5]['mod']
 for route, body in (
         ('/refresh', {}),
-        ('/install', {'archive': os.path.join(os.sep, 'нет.7z'), 'name': 'Проба занятости'}),
+        ('/install', {'archive': os.path.join(os.sep, 'no-such.7z'), 'name': 'BusyProbe'}),
         ('/toggle', {'mod': some, 'active': True}),
         ('/plugins/state', {'set': {pl['plugins'][0]['plugin']: True}, 'apply': True}),
         ('/plugins/order', {'order': [x['plugin'] for x in pl['plugins']], 'apply': True}),
@@ -88,15 +91,17 @@ _, res = common.call('POST', '/plugins/state', {'set': {pl['plugins'][0]['plugin
 r.case(T('live.noApplyIsNotAChange'), res.get('busy'), None)
 
 r.head(T('live.closingViaBridge'))
-# Окно ищется с ожиданием, а не одним взглядом: процесс появляется раньше своего диалога,
-# и на занятой машине разрыв доходит до десятков секунд. Раньше проверка успевала посмотреть
-# до появления кнопок, не находила выхода и оставляла утилиту работать.
+# The window is waited for rather than glanced at once: the process appears before its
+# dialog does, and on a busy machine the gap reaches tens of seconds. The check used to look
+# before the buttons existed, found no exit, and left the tool running.
 target = None
 for _ in range(60):
     _, wins = common.call('GET', '/windows?pid=%d' % pid, timeout=60)
     for w in wins.get('windows') or []:
         for b in w.get('buttons') or []:
             cap = b.get('text', '')
+            # Russian words on purpose: the tool follows the system language, and its
+            # exit button is captioned in it. These are captions to match, not our own text.
             if any(x in cap.lower() for x in ('exit', 'close', 'выход', 'закрыть')):
                 target = (w['hwnd'], cap)
                 break
@@ -110,11 +115,11 @@ if target:
     _, res = common.call('POST', '/window',
                          {'hwnd': target[0], 'action': 'click', 'button': target[1]}, timeout=60)
     r.case(T('live.buttonPressed'), res.get('did'), 'click')
-    r.note(T('live.blank3'), 'нажато: %s' % res.get('button'))
+    r.note(T('live.blank3'), T('live.pressed', button=res.get('button')))
 else:
     for w in wins.get('windows') or []:
         common.call('POST', '/window', {'hwnd': w['hwnd'], 'action': 'close'}, timeout=60)
-    r.note(T('live.blank4'), 'кнопки выхода не нашлось, закрыл окна')
+    r.note(T('live.blank4'), T('live.noExitButton'))
 
 th.join(timeout=180)
 for _ in range(60):
@@ -124,11 +129,11 @@ for _ in range(60):
         break
 r.head(T('live.afterClosing'))
 if ping.get('busy'):
-    # Утилиту закрыть не удалось - это сбой проверки, а не замка: гасим, чтобы не оставить
-    # сборку занятой для следующего набора и для человека.
+    # The tool could not be closed - that is a failure of the check, not of the lock: we
+    # shut it down so the setup is not left busy for the next suite and for the person.
     for w in (common.call('GET', '/windows?pid=%d' % pid, timeout=60)[1].get('windows') or []):
         common.call('POST', '/window', {'hwnd': w['hwnd'], 'action': 'close'}, timeout=60)
-    r.note(T('live.cleanup'), 'программа не закрылась сама, послал закрытие окнам')
+    r.note(T('live.cleanup'), T('live.sentCloseToWindows'))
 r.case(T('live.freeAgain'), ping.get('busy'), None)
 
 r.done()

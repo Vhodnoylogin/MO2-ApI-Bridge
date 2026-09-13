@@ -13,6 +13,7 @@
  "plugins.refreshKeeps": "/refresh does not undo the edit",
  "plugins.restoring": "putting it back as it was",
  "plugins.subject": "the plugin under test",
+ "plugins.subjectValue": "%(plugin)s, asterisk right now: %(starred)s",
  "plugins.title": "plugin states reach plugins.txt",
  "plugins.toggleViaBridge": "toggling it through the bridge"
 }

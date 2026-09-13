@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Все маршруты по живой MO2.
+"""Every route against a live MO2.
 
-Не трогается ничего, что оставляет след: /install, /toggle, /run, /window и /vfsexport
-меняют сборку или занимают минуты. Необратимая тройка проверяется НАМЕРЕННО без ключа -
-ожидается отказ, и именно он доказывает, что замок на месте.
+Nothing that leaves a trace is touched: /install, /toggle, /run, /window and /vfsexport
+change the setup or take minutes. The irreversible three are checked DELIBERATELY without
+the key - a refusal is expected, and it is the refusal that proves the lock is in place.
 """
 import os
 import subprocess
@@ -20,7 +20,7 @@ r = common.Report(T('routes.title'))
 
 
 def _alive_pids():
-    """Идентификаторы живых процессов - спрашиваем систему, а не мост."""
+    """Ids of live processes - we ask the system, not the bridge."""
     out = subprocess.run(['powershell', '-NoProfile', '-Command',
                           '(Get-Process).Id -join ","'],
                          capture_output=True, text=True).stdout.strip()
@@ -75,8 +75,8 @@ r.case(T('routes.dirsFoundMeshes'), len(d.get('dirs') or []) > 0, True)
 
 code, pr = get('/procs')
 r.case(T('routes.procsAnswers'), 'procs' in pr, True)
-# Регрессия: список запусков копится всю сессию и сам не чистится. Пока в нём не было
-# признака живости, давно закрытые программы выглядели как работающие.
+# A regression check: the launch list accumulates all session and never prunes itself.
+# While it carried no liveness mark, long-closed programs looked like running ones.
 r.case(T('routes.eachEntryAlive'),
        all('alive' in x for x in pr.get('procs') or []), True)
 ghosts = [x for x in pr.get('procs') or []
@@ -103,18 +103,18 @@ r.case(T('routes.orderRejectsPartial'),
 
 r.head(T('routes.dangerKeyWithheld'))
 for route, body in (('/mods/priority', {'mod': sample, 'priority': 5}),
-                    ('/mods/rename', {'mod': sample, 'newName': sample + ' ПРОБА'}),
+                    ('/mods/rename', {'mod': sample, 'newName': sample + ' PROBE'}),
                     ('/mods/remove', {'mod': sample})):
     code, res = common.call('POST', route, body)
     r.case(T('routes.blocked', route=route), res.get('applied'), False)
-    r.note(T('routes.blank'), 'причина: %s' % res.get('blocked'))
+    r.note(T('routes.blank'), T('routes.reason', why=res.get('blocked')))
 
 r.head(T('routes.untouchedOnPurpose'))
-for route, why in (('/install', 'создал бы мод'),
-                   ('/toggle', 'изменил бы состав профиля'),
-                   ('/run', 'запустил бы программу'),
-                   ('/window', 'нажал бы кнопку'),
-                   ('/vfsexport', 'минуты работы')):
+for route, why in (('/install', T('routes.wouldCreateMod')),
+                   ('/toggle', T('routes.wouldChangeProfile')),
+                   ('/run', T('routes.wouldLaunchProgram')),
+                   ('/window', T('routes.wouldPressButton')),
+                   ('/vfsexport', T('routes.takesMinutes'))):
     r.note(route, why)
 
 r.done()

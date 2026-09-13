@@ -1,18 +1,22 @@
 # -*- coding: utf-8 -*-
-"""Прогнать все проверки подряд.
+"""Run every check in turn.
 
-Четыре набора идут без MO2: гигиена исходников, логика занятости, строки и контракт всех
-маршрутов на подставном mobase. Остальные четыре требуют запущенного менеджера и пропускаются,
-если мост не отвечает: пропуск - это не сбой, а честное «проверить было нечем».
+Five suites run without MO2: source hygiene, the busy logic, the strings, the contract of
+every route against a fake mobase, and the transport on a real loopback socket. The other
+four need a running manager and are skipped when the bridge does not answer: a skip is not
+a failure but an honest "there was nothing to check against".
 
-Автономные наборы стоят первыми намеренно: они видят код, лежащий на диске, а приёмочные -
-код, загруженный в MO2 при её старте. Пока менеджер не перезапущен, это разные версии.
+The offline suites come first on purpose: they see the code lying on disk, while the
+acceptance ones see the code MO2 loaded when it started. Until the manager is restarted
+those are different versions.
 """
 import os
 import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import common  # noqa: E402
 SUITES = ['test_sources.py', 'test_busy_logic.py', 'test_i18n.py', 'test_contract_offline.py',
           'test_transport_offline.py',
           'test_routes.py', 'test_plugins_txt.py', 'test_install_modes.py',
@@ -31,5 +35,5 @@ for name in SUITES:
 
 print()
 print('=' * 78)
-print('наборов: %d, со сбоями: %d, пропущено: %d' % (len(SUITES), bad, skipped))
+print(common.T('report.suites', total=len(SUITES), bad=bad, skipped=skipped))
 sys.exit(1 if bad else 0)
