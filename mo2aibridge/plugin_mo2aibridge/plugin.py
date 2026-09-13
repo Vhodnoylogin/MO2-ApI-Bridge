@@ -96,6 +96,10 @@ class MO2ApIBridge(mobase.IPluginTool):
     # ---- the MO2 interface -------------------------------------------------
     def init(self, organizer):
         self._organizer = organizer
+        # Where to report an unreadable translation file. Set before the first t(): with the
+        # strings living in lang\ and nowhere else, a missing folder shows labels instead of
+        # text, and the only way to learn why is the log.
+        i18n.set_note(log)
         i18n.set_language(self._setting('language', 'auto'))
         log(i18n.t('init.loaded'))
         try:

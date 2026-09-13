@@ -33,6 +33,9 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 # What ships. Everything else does not, however useful it may look.
 SHIP_SUFFIX = ('.py',)
 SHIP_EXACT = ('README.md', 'README.ru.md', 'LICENSE')
+# Folders that ship whole. lang\ holds every string the plugin says: the code carries none,
+# so without this folder the plugin speaks in bare labels.
+SHIP_DIRS = ('lang',)
 
 
 def find_package():
@@ -63,12 +66,17 @@ def plugin_id_and_version(pkg):
 
 
 def collect(pkg):
-    """The package files that ship. Returns (taken, left behind)."""
+    """The package files that ship, as paths relative to the package. Returns (taken, left)."""
     take, leave = [], []
     for name in sorted(os.listdir(pkg)):
         full = os.path.join(pkg, name)
         if os.path.isdir(full):
-            leave.append(name + os.sep)
+            if name in SHIP_DIRS:
+                for inner in sorted(os.listdir(full)):
+                    if os.path.isfile(os.path.join(full, inner)):
+                        take.append(os.path.join(name, inner))
+            else:
+                leave.append(name + os.sep)
             continue
         if name in SHIP_EXACT or name.endswith(SHIP_SUFFIX):
             take.append(name)
@@ -87,7 +95,9 @@ def main(out_dir):
         shutil.rmtree(stage)
     os.makedirs(stage)
     for name in take:
-        shutil.copy2(os.path.join(pkg, name), os.path.join(stage, name))
+        dst = os.path.join(stage, name)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copy2(os.path.join(pkg, name), dst)
 
     archive = os.path.join(out_dir, '%s-%s.zip' % (plugin_id, version))
     if os.path.isfile(archive):

@@ -44,7 +44,12 @@ r = common.Report('слой строк')
 # всё определённое обязано звучать хоть где-то.
 KNOWN_UNUSED = set()
 
-RU, EN = i18n.RU, i18n.EN
+# Языки берутся из папки lang\, а не из зашитых словарей: их в коде больше нет. Поэтому
+# набор проверяет ВСЕ переводы, какие лежат рядом с плагином, а не заранее известную пару -
+# положили de.json, и он проверяется наравне с остальными, без правки этого файла.
+LANGS = i18n.languages()
+EN = LANGS.get(i18n.DEFAULT) or {}
+OTHERS = {code: table for code, table in LANGS.items() if code != i18n.DEFAULT}
 
 # %(имя)спецификатор - имя и спецификатор порознь: перевод обязан сохранить и то и другое.
 # %(sec).0f против %(sec)s даст разный текст, а %(missing)d против %(missing)s - разное
@@ -201,21 +206,30 @@ for path in package_files():
     usage.scan(path)
 
 # ---------------------------------------------------------------------------------------
-r.head('1. наборы ключей RU и EN совпадают')
-r.note('ключей в EN', len(EN))
-r.case('в RU нет ключей из EN', sorted(set(EN) - set(RU)), [])
-r.case('в EN нет ключей из RU', sorted(set(RU) - set(EN)), [])
+r.head('1. наборы ключей всех языков совпадают с основным')
+r.note('файлов переводов', '%d: %s' % (len(LANGS), ', '.join(sorted(LANGS))))
+r.note('ключей в %s' % i18n.DEFAULT, len(EN))
+r.case('основной язык вообще прочитан', bool(EN), True)
+for code in sorted(OTHERS):
+    r.case('в %s нет ключей из %s' % (code, i18n.DEFAULT),
+           sorted(set(EN) - set(OTHERS[code])), [])
+    r.case('в %s нет ключей из %s' % (i18n.DEFAULT, code),
+           sorted(set(OTHERS[code]) - set(EN)), [])
 
 # ---------------------------------------------------------------------------------------
-r.head('2. подстановки одинаковы в обоих языках')
-mismatch = []
-for key in sorted(set(RU) & set(EN)):
-    a, b = placeholders(RU[key]), placeholders(EN[key])
-    if a != b:
-        mismatch.append('%s: RU %s, EN %s' % (key, sorted(a), sorted(b)))
+r.head('2. подстановки одинаковы во всех языках')
+mismatch, stray = [], []
+for code in sorted(OTHERS):
+    table = OTHERS[code]
+    for key in sorted(set(EN) & set(table)):
+        a, b = placeholders(table[key]), placeholders(EN[key])
+        if a != b:
+            mismatch.append('%s/%s: %s, %s %s' % (code, key, sorted(a), i18n.DEFAULT, sorted(b)))
+    stray += ['%s/%s' % (code, k) for k in sorted(table) if stray_percent(table[k])]
 r.case('имена и спецификаторы совпадают', mismatch, [])
-r.case('лишних % в RU нет', sorted(k for k in RU if stray_percent(RU[k])), [])
-r.case('лишних % в EN нет', sorted(k for k in EN if stray_percent(EN[k])), [])
+r.case('лишних % в переводах нет', stray, [])
+r.case('лишних %% в %s нет' % i18n.DEFAULT,
+       sorted(k for k in EN if stray_percent(EN[k])), [])
 
 # ---------------------------------------------------------------------------------------
 r.head('3. всё, что зовёт код, есть в EN')
@@ -314,7 +328,7 @@ r.case('op.toggle по-русски', i18n.t('op.toggle'), 'включение �
 r.case("' RU ' нормализуется", i18n.set_language(' RU '), 'ru')
 r.case("неизвестный язык даёт en", i18n.set_language('xx'), 'en')
 r.case('op.toggle по-английски', i18n.t('op.toggle'), 'enabling or disabling a mod')
-r.case("'auto' даёт один из известных языков", i18n.set_language('auto') in i18n.LANGS, True)
+r.case("'auto' даёт один из известных языков", i18n.set_language('auto') in LANGS, True)
 i18n.set_language('en')
 r.case('неизвестный ключ возвращается как есть', i18n.t('нет.такого'), 'нет.такого')
 r.case('неизвестный ключ с подстановками - тоже', i18n.t('нет.такого', a=1), 'нет.такого')
