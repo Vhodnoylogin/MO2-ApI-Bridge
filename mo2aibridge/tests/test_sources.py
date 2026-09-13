@@ -63,6 +63,23 @@ for name in ('README.md', 'README.ru.md'):
     missing = [m for m in modules if '`%s`' % m not in text]
     r.case(name, missing, [])
 
+r.head('архив выкладки несёт всё, что плагину нужно на чужой машине')
+# Проверка ровно того рода поломки, что уже случилась: locale\ стал папкой на язык, обход
+# в pack.py остался на один уровень, и в архив уехало ноль переводов - плагин говорил бы
+# метками. Незаметно до самой выкладки, поэтому спрашиваем сам pack.py, что он возьмёт.
+sys.path.insert(0, common.ROOT)
+pack = __import__('pack')
+taken, _left = pack.collect(common.PKG)
+r.case('строки уезжают', sorted(x for x in taken if x.startswith('locale')) != [], True)
+for code in sorted(common.import_package().i18n.languages()):
+    r.case('язык %s в архиве' % code,
+           any(x.startswith(os.path.join('locale', code)) for x in taken), True)
+r.case('код уезжает', '__init__.py' in taken, True)
+r.case('документация уезжает', [x for x in ('README.md', 'README.ru.md', 'LICENSE')
+                                if x not in taken], [])
+r.case('токен, лог и настройки НЕ уезжают',
+       [x for x in taken if 'token' in x or x.endswith('.log') or 'config.json' in x], [])
+
 r.head('путей к конкретной машине в пакете нет')
 # Только пакет: в проверках подставные пути вроде C:\нет\такого.exe стоят намеренно.
 for path in files(common.PKG, ('.py',)):

@@ -72,9 +72,13 @@ def collect(pkg):
         full = os.path.join(pkg, name)
         if os.path.isdir(full):
             if name in SHIP_DIRS:
-                for inner in sorted(os.listdir(full)):
-                    if os.path.isfile(os.path.join(full, inner)):
-                        take.append(os.path.join(name, inner))
+                # Walked to the bottom, not one level down: locale\ holds a folder per
+                # language, so a single-level listing found only directories and took
+                # nothing - the archive shipped without a word of text in it.
+                for dp, _dn, fs in os.walk(full):
+                    rel = os.path.relpath(dp, pkg)
+                    for inner in sorted(fs):
+                        take.append(os.path.join(rel, inner))
             else:
                 leave.append(name + os.sep)
             continue
