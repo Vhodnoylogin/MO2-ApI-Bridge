@@ -1,0 +1,21 @@
+{
+ "#": "Strings of MO2 ApI Bridge, section \"updates\". Keys are short Latin labels and never change - translate the right-hand sides only. Placeholders like %(mod)s are filled in by the plugin: keep them spelled exactly, or the line is shown raw. A key starting with # is a note for translators and is ignored. To add a language, copy the folder next to this one and translate the files inside; the plugin reads whatever folders it finds, and a section may be added as a new file without touching the others.",
+ "upd.badKey": "Nexus rejected the key (HTTP %(code)d) - the sweep stopped: with a bad key every further request would fail the same way",
+ "upd.current": "the downloaded file is the newest in its section",
+ "upd.downloadedNotInstalled": "a fresh file from %(theirs)s is already in downloads, but the mod was built from an archive dated %(mine)s",
+ "upd.failed": "Nexus did not answer: %(error)s",
+ "upd.hotfix": "the Update section holds a hotfix for your version that was not downloaded",
+ "upd.networkDown": "the connection to Nexus broke: %(fails)d failures in a row, the last one %(error)s; the sweep stopped",
+ "upd.newer": "the page holds a newer file of the same role",
+ "upd.noApiKey": "no Nexus API key in the Windows credential store - MO2 is not connected to Nexus (Settings - Nexus - Connect)",
+ "upd.noDomain": "no Nexus section known for the game %(game)s - MO2 did not name one; add a mapping to nexusDomains in the settings, or there is nobody to ask",
+ "upd.noNexusId": "the mod has no nexusId - it is not linked to Nexus",
+ "upd.otherRole": "the main file is in place, but Main gained a newer file of another role",
+ "upd.quotaLow": "the Nexus daily allowance is running out (%(left)s left) - the sweep stopped so the key keeps working for MO2 itself",
+ "upd.rateLimited": "the Nexus request limit is used up, retry in %(retry)s - the sweep stopped, since each further attempt would only extend the block",
+ "upd.renamed": "your file is in Old files and Main holds a newer one under another name",
+ "upd.replaced": "your file is no longer on the page - the author replaced it; downloaded %(mine)s, Main now holds a file from %(theirs)s",
+ "upd.retired": "the downloaded file moved to Old files and nothing of the same name replaced it",
+ "upd.timeout": "Nexus did not answer within %(sec).0f s",
+ "upd.unmarked": "no file on the page is marked as downloaded"
+}

@@ -1,0 +1,16 @@
+{
+ "#": "Strings of MO2 ApI Bridge, section \"operations\". Keys are short Latin labels and never change - translate the right-hand sides only. Placeholders like %(mod)s are filled in by the plugin: keep them spelled exactly, or the line is shown raw. A key starting with # is a note for translators and is ignored. To add a language, copy the folder next to this one and translate the files inside; the plugin reads whatever folders it finds, and a section may be added as a new file without touching the others.",
+ "busy.why": "%(app)s is running and MO2 is busy with it. Until that program exits the mod setup cannot be changed: the virtual Data is already mounted into its process, so editing mods, order or plugins now would mean the program sees one setup while the files on disk describe another. Nothing was done. Reads remain fully available.",
+ "busy.whyUnknown": "MO2 never reported the run (%(run)s) as finished, so its lock is still held - most likely by a process it did not start itself but inherited from one it did. While the lock is held the mod setup cannot be changed. Nothing was done. Reads remain fully available.",
+ "danger.why": "Irreversible change to the mod setup. Nothing was done. Read the \"Irreversible operations\" section of the documentation, understand the consequences, then pass the %(key)s field with the value given there.",
+ "op.install": "installing a mod",
+ "op.installReplace": "installing WITH REPLACE: the mod's previous contents go to the Recycle Bin",
+ "op.pluginOrder": "changing the load order",
+ "op.pluginState": "changing plugin states",
+ "op.priority": "changing mod priority",
+ "op.refresh": "refreshing the MO2 lists",
+ "op.remove": "DELETING a mod from disk",
+ "op.rename": "renaming a mod",
+ "op.run": "launching another program",
+ "op.toggle": "enabling or disabling a mod"
+}

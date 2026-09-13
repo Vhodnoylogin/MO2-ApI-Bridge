@@ -33,9 +33,9 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 # What ships. Everything else does not, however useful it may look.
 SHIP_SUFFIX = ('.py',)
 SHIP_EXACT = ('README.md', 'README.ru.md', 'LICENSE')
-# Folders that ship whole. lang\ holds every string the plugin says: the code carries none,
-# so without this folder the plugin speaks in bare labels.
-SHIP_DIRS = ('lang',)
+# Folders that ship whole, contents and all. locale\ holds every string the plugin says - the
+# code carries none - so without this folder the plugin would ship speaking in bare labels.
+SHIP_DIRS = ('locale',)
 
 
 def find_package():

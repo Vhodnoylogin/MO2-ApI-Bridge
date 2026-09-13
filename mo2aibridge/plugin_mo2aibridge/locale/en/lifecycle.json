@@ -1,0 +1,16 @@
+{
+ "#": "Strings of MO2 ApI Bridge, section \"lifecycle\". Keys are short Latin labels and never change - translate the right-hand sides only. Placeholders like %(mod)s are filled in by the plugin: keep them spelled exactly, or the line is shown raw. A key starting with # is a note for translators and is ignored. To add a language, copy the folder next to this one and translate the files inside; the plugin reads whatever folders it finds, and a section may be added as a new file without touching the others.",
+ "dialog.listening": "Listening on http://127.0.0.1:%(port)s\nToken file:\n%(token)s\n\n%(state)s",
+ "dialog.running": "running",
+ "dialog.startFailed": "The bridge did NOT start.\n\n%(error)s\n\nDetails: %(log)s",
+ "dialog.stopButton": "Stop the bridge",
+ "dialog.stopped": "NOT running",
+ "dialog.stuck": "MO2 still considers a run active:\n%(run)s\n\nWhile that holds, the bridge refuses to change the mod setup. If the MO2 window is already unlocked and nothing is running, the bookkeeping can be reset.",
+ "init.loaded": "plugin loaded, waiting for the user interface",
+ "start.disabled": "plugin disabled in MO2 settings",
+ "start.failed": "FAILED to start the bridge",
+ "start.ok": "bridge listening on 127.0.0.1:%(port)s",
+ "start.otherPort": "port %(wanted)s was taken - most likely by a second MO2 instance; listening on %(port)s instead, token in %(token)s",
+ "stop.ok": "bridge stopped, token file removed",
+ "ui.ready": "interface ready, starting the bridge"
+}

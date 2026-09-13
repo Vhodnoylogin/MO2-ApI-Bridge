@@ -1,0 +1,15 @@
+{
+ "#": "Strings of MO2 ApI Bridge, section \"diagnostics\". Keys are short Latin labels and never change - translate the right-hand sides only. Placeholders like %(mod)s are filled in by the plugin: keep them spelled exactly, or the line is shown raw. A key starting with # is a note for translators and is ignored. To add a language, copy the folder next to this one and translate the files inside; the plugin reads whatever folders it finds, and a section may be added as a new file without touching the others.",
+ "config.notObject": "a JSON object was expected",
+ "config.unreadable": "settings: %(path)s not read (%(error)s), using the defaults",
+ "config.writeFailed": "settings: could not write the defaults to %(path)s: %(error)s",
+ "log.mo2Finished": "MO2 finished: %(path)s (code %(code)s), still active: %(left)d",
+ "log.mo2Starting": "MO2 is starting: %(path)s%(mine)s",
+ "log.nexusBridge": "MO2 Nexus bridge: %(how)s",
+ "log.nexusDirect": "MO2 Nexus bridge unusable (%(error)s), asking the API directly",
+ "log.oursSuffix": " (our launch)",
+ "log.ownRunEnded": "our own launch ended, dropping it from the bookkeeping: %(path)s",
+ "log.stuckReset": "run bookkeeping reset by hand",
+ "log.sweepStopped": "Nexus: sweep stopped - %(why)s",
+ "vfs.fallback": "virtualFileTree failed (%(error)s), falling back to the breadth-first walk"
+}

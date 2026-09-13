@@ -1,0 +1,9 @@
+{
+ "#": "Strings of MO2 ApI Bridge, section \"plugin\". Keys are short Latin labels and never change - translate the right-hand sides only. Placeholders like %(mod)s are filled in by the plugin: keep them spelled exactly, or the line is shown raw. A key starting with # is a note for translators and is ignored. To add a language, copy the folder next to this one and translate the files inside; the plugin reads whatever folders it finds, and a section may be added as a new file without touching the others.",
+ "plugin.description": "Local HTTP bridge to a running MO2: mod list, virtual Data reads, plugin load order, launching tools inside the VFS.",
+ "plugin.displayName": "MO2 ApI Bridge",
+ "plugin.tooltip": "Show the local bridge address and token",
+ "setting.enabled": "start the bridge together with MO2",
+ "setting.language": "message language: auto, ru, en",
+ "setting.port": "port on 127.0.0.1"
+}
