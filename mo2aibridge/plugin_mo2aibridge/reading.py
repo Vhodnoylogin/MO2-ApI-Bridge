@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Чтение состояния и виртуальной Data. Ничего не меняет и работает всегда, даже когда MO2
-занята запущенной программой.
+"""Reads of state and of the virtual Data. Changes nothing and always works, even while MO2
+is busy with a running program.
 
-Здесь всё, что отвечает на вопрос «что сейчас есть»: карточка и разбор мода, списки модов,
-профилей и плагинов, файлы виртуальной Data и их поставщики, выгрузка VFS целиком.
+Everything here answers the question "what is there right now": a mod's card and analysis,
+the lists of mods, profiles and plugins, the files of the virtual Data and who provides
+them, and a full VFS export.
 """
 import os
 
@@ -15,7 +16,7 @@ from .base import Domain, one, safe
 
 class Reader(Domain):
 
-    # ================================================== состояние
+    # ================================================== state
     def ping(self, _=None):
         def f():
             return {'ok': True,
@@ -25,20 +26,21 @@ class Reader(Domain):
                     'modsPath': self.o.modsPath(),
                     'overwrite': self.o.overwritePath(),
                     'downloads': self.o.downloadsPath()}
-        # Занятость выясняется первой и без главного потока: именно этот вызов нужен,
-        # когда MO2 не отвечает, и ответить он обязан быстро.
+        # Busy is determined first and without the main thread: this is the very call needed
+        # when MO2 is not responding, and it has to answer quickly.
         res = {'busy': self.guard.busy()}
         try:
             res.update(self.run_main(f, timeout=self.timeout('ping')))
             res['mainThread'] = 'ok'
         except Exception as exc:
-            # Не отвечающий главный поток - это ответ, а не ошибка: значит MO2 чем-то занята.
+            # An unresponsive main thread is an answer, not an error: it means MO2 is busy
+            # with something.
             res['ok'] = False
             res['mainThread'] = str(exc)
         return res
 
     def api(self, _=None):
-        """Что на самом деле умеет эта сборка MO2 - без догадок по документации."""
+        """What this MO2 build can actually do - without guessing from the documentation."""
         def f():
             out = {}
             for label, obj in (('IOrganizer', self.o), ('IModList', self.o.modList()),
@@ -72,10 +74,11 @@ class Reader(Domain):
         return self.run_main(f)
 
     def plugins(self, _=None):
-        """Порядок загрузки и всё, что MO2 знает о плагинах.
+        """The load order and everything MO2 knows about the plugins.
 
-        Иначе это сшивается вручную из plugins.txt, loadorder.txt и заголовков TES4, причём
-        esl-флаг и признак «нет записей» в файлах не лежат вовсе.
+        Otherwise this has to be stitched together by hand from plugins.txt, loadorder.txt
+        and the TES4 headers - and the esl flag and the "has no records" mark are not in
+        those files at all.
         """
         def f():
             pl = self.o.pluginList()
@@ -87,8 +90,8 @@ class Reader(Domain):
                             'priority': pl.priority(n),
                             'loadOrder': pl.loadOrder(n),
                             'origin': pl.origin(n),
-                            # isMaster объявлен устаревшим и пишет предупреждение
-                            # в лог MO2 на каждый плагин при каждом вызове /plugins
+                            # isMaster is deprecated and writes a warning into MO2's log for
+                            # every plugin on every /plugins call
                             'master': pl.isMasterFlagged(n) or pl.hasMasterExtension(n),
                             'esl': pl.isLightFlagged(n) or pl.hasLightExtension(n),
                             'empty': pl.hasNoRecords(n),
@@ -97,12 +100,12 @@ class Reader(Domain):
             return {'count': len(out), 'plugins': out}
         return self.run_main(f)
 
-    # ================================================== карточка и разбор
+    # ================================================== card and analysis
     def mod(self, q):
-        """Всё, что MO2 знает о моде. Три поля не лежат в meta.ini вовсе:
-        isSeparator (иначе определяется по суффиксу имени, то есть по соглашению),
-        categories (свои категории MO2 хранит отдельно) и ignoredVersion с endorsed
-        (какие обновления пользователь уже отклонил).
+        """Everything MO2 knows about a mod. Three of these fields are not in meta.ini at all:
+        isSeparator (otherwise deduced from a name suffix, that is, from a convention),
+        categories (MO2 keeps its own categories separately) and ignoredVersion with endorsed
+        (which updates the user has already dismissed).
         """
         name = one(q, 'name', '')
         if not name:
@@ -141,10 +144,10 @@ class Reader(Domain):
         return self.run_main(f)
 
     def analyze(self, q):
-        """Разбор мода одним вызовом: карточка, файлы, плагины и кто с кем спорит.
+        """A mod analysed in one call: the card, the files, the plugins and who contests what.
 
-        В отличие от расчёта по списку модов это реальный порядок активного профиля.
-        conflicts=0 отключает самую дорогую часть - проверку каждого файла.
+        Unlike a calculation over the mod list this is the real order of the active profile.
+        conflicts=0 switches off the most expensive part - checking every file.
         """
         name = one(q, 'name', '')
         if not name:
@@ -183,15 +186,15 @@ class Reader(Domain):
                                   'winsCount': len(wins), 'losesCount': len(loses),
                                   'wins': wins[:limit], 'loses': loses[:limit]}}
         res = self.run_main(f, timeout=self.timeout('analyze'))
-        # карточку берём отдельным вызовом: вкладывать один run_main в другой нельзя,
-        # главный поток уже занят и получится взаимная блокировка
+        # The card is fetched by a separate call: one run_main must not be nested inside
+        # another - the main thread is already busy and the result would be a deadlock.
         try:
             res['card'] = self.mod({'name': [name]})
         except Exception as exc:
             res['card'] = {'error': str(exc)}
         return res
 
-    # ================================================== виртуальная Data
+    # ================================================== the virtual Data
     def vfs(self, q):
         path = one(q, 'path', '.')
         filt = one(q, 'filter', '*')
@@ -205,7 +208,7 @@ class Reader(Domain):
         rel = one(q, 'path', '')
 
         def f():
-            # порядок важен: первый в списке - тот, чей файл реально видит игра
+            # order matters: the first in the list is the one whose file the game sees
             return {'path': rel, 'origins': list(self.o.getFileOrigins(rel))}
         return self.run_main(f)
 
@@ -226,11 +229,11 @@ class Reader(Domain):
         return self.run_main(f)
 
     def vfsexport(self, body):
-        """Выгрузка всей виртуальной Data со всеми поставщиками каждого файла.
+        """Export the whole virtual Data together with every provider of every file.
 
-        Дерево берётся у самой MO2 (virtualFileTree). Обход вширь оставлен запасным путём и
-        включается legacyWalk: он появился лишь потому, что listDirectories('') отдаёт пусто
-        и корень казался недостижимым.
+        The tree comes from MO2 itself (virtualFileTree). The breadth-first walk is kept as a
+        fallback and is selected by legacyWalk: it only ever existed because
+        listDirectories('') returns nothing and the root looked unreachable.
         """
         out_dir = body.get('outDir') or os.path.join(self.o.basePath(), 'vfs-export')
         timeout = float(body.get('timeout') or self.timeout('vfsExport'))
@@ -277,7 +280,7 @@ class Reader(Domain):
 
 
 def walk_factory(o, roots):
-    """Запасной обход вширь: корень собирается из деревьев самих модов."""
+    """The fallback breadth-first walk: the root is assembled from the mods' own trees."""
     def walk():
         ml = o.modList()
         seen_roots = set(x.lower() for x in roots)

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Порядок плагинов: состояние и порядок загрузки, и запись plugins.txt своими руками.
+"""Plugin order: states and load order, and writing plugins.txt by hand.
 
-Оба маршрута умеют предпросмотр: без apply они ничего не меняют и работают даже при занятой
-MO2. С apply - обычное изменение со всеми замками.
+Both routes can preview: without apply they change nothing and work even while MO2 is busy.
+With apply they are ordinary writes, behind every lock.
 """
 import io
 import os
@@ -42,27 +42,30 @@ class LoadOrder(Domain):
                 res['file'] = self.write_plugins_txt(
                     {p['plugin'].lower(): p['to'] for p in plan})
             return res
-        # Предпросмотр доступен всегда: он ничего не меняет.
+        # A preview is always available: it changes nothing.
         if not apply_it:
             return stamp(self.run_main(f), 'pluginState', applied=False)
         return self.change('pluginState', f)
 
     def write_plugins_txt(self, wanted):
-        """Проставить звёздочки в plugins.txt профиля. Зовётся ИЗ главного потока.
+        """Set the asterisks in the profile's plugins.txt. Called FROM the main thread.
 
-        setState меняет список в памяти MO2, а файл она переписывает в свои моменты - обычно
-        при выходе. Игра стартует именно с файла, и любой /refresh между правкой и выходом
-        читает файл обратно, молча отменяя правку. Стоило это трёх сорванных прогонов: мост
-        отвечал applied: true, а плагин в игре оставался выключенным.
+        setState changes a list in MO2's memory, and MO2 rewrites the file at moments of its
+        own choosing - usually on exit. The game starts from the file, and any /refresh
+        between the edit and the exit reads the file back, silently undoing the edit. This
+        cost three ruined test runs: the bridge answered applied: true while the plugin
+        stayed disabled in the game.
 
-        Пишем строго переставляя звёздочку в существующих строках. Набор строк и их порядок
-        не трогаем вовсе - это дело MO2, и переписать файл целиком означало бы взять на себя
-        и порядок загрузки, и признак esl, и всё остальное, что она туда кладёт.
+        We write by moving the asterisk in existing lines and nothing else. The set of lines
+        and their order are not touched at all - that is MO2's business, and rewriting the
+        file whole would mean taking on the load order, the esl flag and everything else it
+        puts there.
         """
         path = os.path.join(self.o.profile().absolutePath(), 'plugins.txt')
         try:
-            # newline='' обязателен: без него текстовый режим схлопывает CRLF в LF,
-            # определение концов строк даёт LF, и файл переписывается чужим форматом
+            # newline='' is mandatory: without it text mode collapses CRLF into LF, the
+            # line-ending detection below sees LF, and the file is rewritten in a foreign
+            # format.
             raw = io.open(path, encoding='utf-8-sig', errors='replace',
                           newline='').read()
         except Exception as exc:
@@ -81,16 +84,16 @@ class LoadOrder(Domain):
         while out and not out[-1]:
             out.pop()
         text = eol.join(out) + eol
-        # Пишем через черновик и подмену, а не поверх оригинала. plugins.txt - единственный
-        # файл пользователя, который мост правит своими руками, и запись поверх означала,
-        # что сбой на ней (кончился диск, файл держит антивирус, поток обрывается при
-        # закрытии MO2) оставит его усечённым или пустым. Пустой plugins.txt - это профиль
-        # со всеми выключенными плагинами, и восстановить его человеку неоткуда.
+        # We write through a draft and a swap, not over the original. plugins.txt is the one
+        # user file the bridge edits with its own hands, and writing over it meant that any
+        # failure during the write (disk full, an antivirus holding the file, the thread cut
+        # short as MO2 closes) would leave it truncated or empty. An empty plugins.txt is a
+        # profile with every plugin disabled, and a person has nowhere to restore it from.
         #
-        # Подмена через os.replace обрыв исключает сама по себе, поэтому копия рядом нужна
-        # не от неё, а от НАШЕЙ ошибки: если мост записал неверные состояния, из .bak
-        # достаётся то, что было мгновением раньше. Отсюда и обновление на каждую запись -
-        # копия недельной давности вернула бы заодно всё, что человек менял с тех пор.
+        # The os.replace swap rules out a torn write by itself, so the copy beside it is not
+        # for that but for OUR OWN mistake: if the bridge wrote the wrong states, .bak holds
+        # what was there a moment earlier. Hence refreshing it on every write - a week-old
+        # copy would also undo everything the person changed since.
         backup = path + '.bak'
         try:
             shutil.copyfile(path, backup)
@@ -104,10 +107,10 @@ class LoadOrder(Domain):
                 'backup': backup, 'notInFile': sorted(set(wanted) - done)}
 
     def plugins_order(self, body):
-        """Полный порядок загрузки - тем списком, что отдал LOOT.
+        """The full load order, as the list LOOT produced.
 
-        Частичный список увёл бы неупомянутые плагины в непредсказуемое место, поэтому
-        неполный набор отвергается целиком.
+        A partial list would send the unmentioned plugins somewhere unpredictable, so an
+        incomplete set is rejected outright.
         """
         order = body.get('order') or []
         apply_it = flag(body, 'apply')
@@ -128,8 +131,9 @@ class LoadOrder(Domain):
                 return res
             before = sorted(known, key=lambda n: pl.loadOrder(n)
                             if pl.loadOrder(n) >= 0 else 10 ** 6)
-            # Прежний порядок отдаётся ЦЕЛИКОМ и всегда: короче его не описать, а без него
-            # операция необратима - плагинов под сотню, и какой где стоял, знать неоткуда.
+            # The previous order is returned IN FULL and always: there is no shorter way to
+            # describe it, and without it the operation is irreversible - there are a hundred
+            # or so plugins, and nothing else records where each one stood.
             res['before'] = before
             res['undo'] = {'route': '/plugins/order',
                            'body': {'order': before, 'apply': True}}

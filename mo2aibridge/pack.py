@@ -1,25 +1,26 @@
 # -*- coding: utf-8 -*-
-r"""Собрать архив плагина для выкладки.
+r"""Build the release archive of the plugin.
 
-Зачем отдельный шаг. Раскладка для разработки - связь или `xcopy /E` всей папки пакета,
-и для выкладки она не годится: рядом с кодом живут файл токена, лог и настройки, которые
-плагин создаёт при каждом запуске, плюс `__pycache__` от каждого импорта. Рекурсивное
-копирование их не различает, и в архив уезжают чужой токен, чужой лог с путями машины
-автора и замороженные настройки - в том числе пути к 7-Zip, которых у другого человека
-может не быть. `.gitignore` от этого не спасает: он про git, а не про копирование файлов.
+Why a separate step. The development layout is a junction, or `xcopy /E` of the whole package
+folder, and for a release neither will do: beside the code live the token file, the log and the
+settings the plugin creates on every start, plus `__pycache__` from every import. Recursive
+copying does not tell them apart, so a stranger's token, a stranger's log with the author's own
+paths, and frozen settings - including paths to a 7-Zip another person may not have - end up in
+the archive. `.gitignore` does not save you here: it is about git, not about copying files.
 
-Поэтому здесь перечислено то, что уезжает, а не то, что исключается. Забытый файл тогда
-означает «не попал в архив», а не «попал чужой»: цена первой ошибки - сообщение о поломке,
-цена второй - утечка.
+So this script lists what SHIPS rather than what is excluded. A forgotten file then means "did
+not make it into the archive" instead of "somebody else's file did": the price of the first
+mistake is a bug report, the price of the second is a leak.
 
-Папка внутри архива называется именем, под которым плагин известен MO2 (PLUGIN_ID), а не
-так, как зовётся в репозитории: Python берёт имя пакета из имени папки, и `plugin_mo2aibridge`
-дал бы пакет, которого MO2 не ищет.
+The folder inside the archive is named after the name MO2 knows the plugin by (PLUGIN_ID), not
+after what it is called in the repository: Python takes the package name from the folder name,
+and `plugin_mo2aibridge` would yield a package MO2 does not look for.
 
-    python pack.py [куда]
+    python pack.py [where]
 
-Без аргумента архив кладётся в `dist\` рядом с модулем. Путей к конкретной машине здесь нет:
-корень выводится от расположения этого файла, версия и имя - у самого плагина.
+With no argument the archive lands in `dist\` next to the module. There are no machine-specific
+paths here: the root is derived from this file's location, and the version and name come from
+the plugin itself.
 """
 import io
 import os
@@ -29,25 +30,26 @@ import zipfile
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
-# Что уезжает. Всё остальное - не уезжает, каким бы нужным ни выглядело.
+# What ships. Everything else does not, however useful it may look.
 SHIP_SUFFIX = ('.py',)
-SHIP_EXACT = ('README.md', 'README.en.md', 'LICENSE')
+SHIP_EXACT = ('README.md', 'README.ru.md', 'LICENSE')
 
 
 def find_package():
-    """Папка пакета - соседняя, та, где лежит __init__.py. Ищем, а не складываем из имени:
-    имя папки в репозитории и имя пакета в MO2 намеренно разные."""
+    """The plugin's own folder - the neighbour holding __init__.py. We search rather than
+    assemble the name: the module root and the package share a name only by convention, and
+    the checks must not depend on conventions."""
     for name in sorted(os.listdir(ROOT)):
         if os.path.isfile(os.path.join(ROOT, name, '__init__.py')):
             return os.path.join(ROOT, name)
-    raise SystemExit('рядом с pack.py нет папки с __init__.py - где плагин?')
+    raise SystemExit('no folder with an __init__.py beside pack.py - where is the plugin?')
 
 
 def plugin_id_and_version(pkg):
-    """Имя для MO2 и номер версии - у самого плагина, чтением __init__.py.
+    """The MO2 name and the version number - from the plugin itself, by reading __init__.py.
 
-    Именно чтением, а не импортом: импорт потянет PyQt6 и mobase, которых вне процесса
-    менеджера нет, и сборка стала бы возможна только внутри MO2.
+    By reading and not by importing: an import would pull in PyQt6 and mobase, which do not
+    exist outside the manager's process, and building would only be possible from inside MO2.
     """
     text = io.open(os.path.join(pkg, '__init__.py'), encoding='utf-8').read()
     out = {}
@@ -56,12 +58,12 @@ def plugin_id_and_version(pkg):
             if line.startswith(key):
                 out[key] = line.split('=', 1)[1].strip().strip('"').strip("'")
     if not out.get('PLUGIN_ID') or not out.get('__version__'):
-        raise SystemExit('в __init__.py не нашлись PLUGIN_ID и __version__')
+        raise SystemExit('PLUGIN_ID and __version__ were not found in __init__.py')
     return out['PLUGIN_ID'], out['__version__']
 
 
 def collect(pkg):
-    """Файлы пакета, которые уезжают. Возвращает (берём, оставляем)."""
+    """The package files that ship. Returns (taken, left behind)."""
     take, leave = [], []
     for name in sorted(os.listdir(pkg)):
         full = os.path.join(pkg, name)
@@ -94,16 +96,16 @@ def main(out_dir):
         for name in take:
             zf.write(os.path.join(stage, name), os.path.join(plugin_id, name))
 
-    print('архив: %s' % archive)
-    print('папка внутри архива: %s%s  (имя, под которым плагин известен MO2)'
+    print('archive: %s' % archive)
+    print('folder inside the archive: %s%s  (the name MO2 knows the plugin by)'
           % (plugin_id, os.sep))
     print()
-    print('взято (%d):' % len(take))
+    print('taken (%d):' % len(take))
     for name in take:
         print('  %s' % name)
     if leave:
         print()
-        print('оставлено на месте (%d) - это создаётся на машине пользователя:' % len(leave))
+        print('left behind (%d) - these are created on the user machine:' % len(leave))
         for name in leave:
             print('  %s' % name)
     return 0

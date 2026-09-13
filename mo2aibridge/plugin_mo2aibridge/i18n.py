@@ -1,34 +1,37 @@
 # -*- coding: utf-8 -*-
-"""Строки плагина и их переводы.
+"""The plugin's strings and their translations.
 
-Зачем отдельным слоем. Пока сообщения были вкраплены в код, перевести плагин мог только тот,
-кто готов править Python и рискует сломать логику опечаткой в кавычках. Здесь текст отделён от
-кода полностью: переводчику достаточно скопировать словарь, заменить правые части и положить
-файл рядом - трогать логику не нужно и невозможно.
+Why a layer of its own. While the messages were scattered through the code, the only person
+who could translate the plugin was one willing to edit Python and risk breaking the logic
+with a misplaced quote. Here the text is separated from the code completely: a translator
+copies a dictionary, replaces the right-hand sides and drops the file in place - touching
+the logic is neither necessary nor possible.
 
-Ключ - короткая латинская метка, а не английская фраза. Фраза меняется при вычитке, и тогда
-все переводы разом отвязываются от кода; метка не меняется никогда.
+A key is a short Latin label, not an English phrase. A phrase changes during proofreading,
+and then every translation comes unstuck from the code at once; a label never changes.
 
-Как добавить язык:
-    1. скопировать словарь EN в новый, например DE
-    2. перевести правые части, левые не трогать
-    3. дописать язык в LANGS
-    4. язык выбирается настройкой плагина `language`; 'auto' берёт язык интерфейса MO2
+Adding a language:
+    1. copy the EN dictionary into a new one, DE for instance
+    2. translate the right-hand sides, leave the left-hand sides alone
+    3. add the language to LANGS
+    4. the language is picked by the plugin setting `language`; 'auto' follows MO2's own UI
 
-Непереведённый ключ не ломает работу: берётся английский, а если нет и его - сама метка.
+An untranslated key does not break anything: English is used, and failing that, the label
+itself.
 """
 
+
 RU = {
-    # --- сам плагин, как он представляется MO2 ---
+    # --- the plugin as it introduces itself to MO2 ---
     'plugin.description': ('Локальный HTTP-мост к работающей MO2: список модов, чтение '
                            'виртуальной Data, порядок плагинов, запуск утилит внутри VFS.'),
-    'plugin.displayName': 'MO2 AI Bridge',
+    'plugin.displayName': 'MO2 ApI Bridge',
     'plugin.tooltip': 'Показать адрес и токен локального моста',
     'setting.enabled': 'запускать мост вместе с MO2',
     'setting.port': 'порт на 127.0.0.1',
     'setting.language': "язык сообщений: auto, ru, en",
 
-    # --- запуск и состояние ---
+    # --- startup and state ---
     'start.ok': 'мост поднят на 127.0.0.1:%(port)s',
     'start.otherPort': ('порт %(wanted)s был занят - скорее всего вторым экземпляром MO2; '
                         'встал на %(port)s, токен в %(token)s'),
@@ -43,7 +46,7 @@ RU = {
     'dialog.listening': 'Слушает http://127.0.0.1:%(port)s\nТокен лежит в:\n%(token)s\n\n%(state)s',
     'dialog.startFailed': 'Мост НЕ запустился.\n\n%(error)s\n\nПодробности: %(log)s',
 
-    # --- ошибки обращения ---
+    # --- request errors ---
     'err.token': 'нужен заголовок X-Token',
     'err.noRoute': 'нет такого пути',
     'err.needName': 'нужен name',
@@ -80,7 +83,7 @@ RU = {
     'err.recycle': ('не удалось отправить в Корзину: %(path)s; до этого места ушло записей: '
                     '%(done)d'),
 
-    # --- имена изменяющих операций, общие для обоих замков ---
+    # --- names of the write operations, shared by both locks ---
     'op.refresh': 'перечитывание списков MO2',
     'op.install': 'установка мода',
     'op.installReplace': 'установка С ЗАМЕНОЙ: прежнее содержимое мода уйдёт в Корзину',
@@ -92,7 +95,7 @@ RU = {
     'op.rename': 'переименование мода',
     'op.remove': 'УДАЛЕНИЕ мода с диска',
 
-    # --- MO2 занята запущенной программой ---
+    # --- MO2 is busy with a running program ---
     'busy.why': ('Сейчас работает %(app)s, и MO2 занята ею. Пока программа не закрыта, '
                  'состав сборки менять нельзя: виртуальная Data уже смонтирована в её '
                  'процесс, и правка модов, порядка или плагинов на ходу означает, что '
@@ -108,15 +111,15 @@ RU = {
                      'менять состав сборки. Если окно MO2 уже разблокировано и ничего не '
                      'работает, учёт можно сбросить.'),
 
-    # --- необратимые операции ---
+    # --- irreversible operations ---
     'danger.why': ('Необратимая операция над сборкой. Ничего не сделано. Прочитай раздел '
                    '"Необратимые операции" в документации, пойми последствия и передай '
                    'поле %(key)s с указанным там значением.'),
 
-    # --- выгрузка ---
+    # --- export ---
     'vfs.fallback': 'virtualFileTree не сработал (%(error)s), иду обходом вширь',
 
-    # --- обновления: почему вынесен такой вердикт ---
+    # --- updates: why this verdict was reached ---
     'upd.noNexusId': 'у мода нет nexusId - с Nexus он не связан',
     'upd.noApiKey': ('ключ API Nexus не найден в хранилище учётных данных Windows - MO2 не '
                      'подключена к Nexus (Настройки - Nexus - Connect)'),
@@ -144,8 +147,15 @@ RU = {
                                    'из архива от %(mine)s'),
     'upd.current': 'скачанный файл - новейший в своём разделе',
 
-    # --- след в логе ---
+    # --- the trail left in the log ---
     'log.stuckReset': 'учёт запусков сброшен вручную',
+    'log.mo2Starting': 'MO2 запускает: %(path)s%(mine)s',
+    'log.oursSuffix': ' (наш запуск)',
+    'log.mo2Finished': 'MO2 закончила: %(path)s (код %(code)s), осталось активных: %(left)d',
+    'log.ownRunEnded': 'свой запуск закончился, снимаю с учёта: %(path)s',
+    'log.nexusBridge': 'мост MO2 к Nexus: %(how)s',
+    'log.nexusDirect': 'мост MO2 к Nexus непригоден (%(error)s), спрашиваю API напрямую',
+    'log.sweepStopped': 'Nexus: обход прекращён - %(why)s',
     'config.writeFailed': 'настройки: не удалось записать умолчания в %(path)s: %(error)s',
     'config.unreadable': 'настройки: %(path)s не прочитан (%(error)s), работаю по умолчаниям',
     'config.notObject': 'ожидался объект JSON',
@@ -154,7 +164,7 @@ RU = {
 EN = {
     'plugin.description': ('Local HTTP bridge to a running MO2: mod list, virtual Data reads, '
                            'plugin load order, launching tools inside the VFS.'),
-    'plugin.displayName': 'MO2 AI Bridge',
+    'plugin.displayName': 'MO2 ApI Bridge',
     'plugin.tooltip': 'Show the local bridge address and token',
     'setting.enabled': 'start the bridge together with MO2',
     'setting.port': 'port on 127.0.0.1',
@@ -271,6 +281,13 @@ EN = {
     'upd.current': 'the downloaded file is the newest in its section',
 
     'log.stuckReset': 'run bookkeeping reset by hand',
+    'log.mo2Starting': 'MO2 is starting: %(path)s%(mine)s',
+    'log.oursSuffix': ' (our launch)',
+    'log.mo2Finished': 'MO2 finished: %(path)s (code %(code)s), still active: %(left)d',
+    'log.ownRunEnded': 'our own launch ended, dropping it from the bookkeeping: %(path)s',
+    'log.nexusBridge': 'MO2 Nexus bridge: %(how)s',
+    'log.nexusDirect': 'MO2 Nexus bridge unusable (%(error)s), asking the API directly',
+    'log.sweepStopped': 'Nexus: sweep stopped - %(why)s',
     'config.writeFailed': 'settings: could not write the defaults to %(path)s: %(error)s',
     'config.unreadable': 'settings: %(path)s not read (%(error)s), using the defaults',
     'config.notObject': 'a JSON object was expected',
@@ -283,7 +300,7 @@ _current = DEFAULT
 
 
 def set_language(code):
-    """Выбрать язык. 'auto' и неизвестный код дают английский."""
+    """Pick the language. 'auto' and any unknown code fall back to English."""
     global _current
     code = (code or '').strip().lower()
     if code in ('auto', ''):
@@ -293,7 +310,8 @@ def set_language(code):
 
 
 def _detect():
-    """Язык интерфейса MO2. Спрашиваем Qt, а не систему: пользователь мог сменить его в MO2."""
+    """MO2's interface language. We ask Qt rather than the system: the user may have
+    changed it inside MO2."""
     try:
         from PyQt6.QtCore import QLocale
         return (QLocale().name() or '').split('_')[0].lower()
@@ -302,12 +320,12 @@ def _detect():
 
 
 def t(key, /, **kw):
-    """Строка по метке. Нет перевода - берём английский, нет и его - саму метку.
+    """A string by its label. No translation - use English; none of that either - the label.
 
-    Метка объявлена позиционной намеренно. Без косой черты подстановка с именем `key`
-    сталкивается с самим параметром, и вызов падает с "t() got multiple values for
-    argument 'key'" - ровно это и случилось с замком на необратимых операциях: маршрут
-    вместо внятного отказа отдавал трассировку.
+    The label is positional-only on purpose. Without the slash, a substitution named `key`
+    collides with the parameter itself and the call dies with "t() got multiple values for
+    argument 'key'" - which is exactly what happened to the irreversible-operations lock:
+    instead of a clear refusal the route returned a traceback.
     """
     table = LANGS.get(_current) or {}
     text = table.get(key) or EN.get(key) or key

@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
-"""Слой операционной системы: окна и кнопки.
+"""The operating-system layer: windows and buttons.
 
-Ниже всех остальных слоёв. Ничего не знает ни про MO2, ни про HTTP - только про Windows.
-Поэтому его можно проверять отдельно, не поднимая ни менеджер, ни сервер.
+Below every other layer. It knows nothing of MO2 or of HTTP - only of Windows. So it can be
+exercised on its own, with neither the manager nor the server running.
 """
 import ctypes
 
 from . import i18n
 
-# Загрузка обёрнута намеренно. WinDLL на уровне модуля роняет импорт целиком, а вместе с ним
-# и весь плагин - то есть из-за двух маршрутов работы с окнами отвалились бы остальные
-# двадцать два. Здесь же отказ остаётся локальным: окна недоступны, всё прочее работает.
+# The load is wrapped deliberately. A WinDLL at module level brings the whole import down,
+# and the entire plugin with it - meaning two window routes would take the other twenty-two
+# along. Here the failure stays local: windows are unavailable, everything else works.
 try:
     from ctypes import wintypes
     user32 = ctypes.WinDLL('user32', use_last_error=True)
@@ -65,11 +65,11 @@ def children(hwnd):
 
 
 def windows_of(pid):
-    """Верхнеуровневые окна процесса вместе с подписями их кнопок.
+    """A process's top-level windows together with the captions of their buttons.
 
-    Отдельно помечаются окна Qt. Qt рисует виджеты сам, нативных дочерних окон у него нет,
-    и пустой список кнопок там означает "не вижу", а не "кнопок нет" - разница принципиальная:
-    по такому окну нельзя заключить, что нажимать нечего.
+    Qt windows are marked separately. Qt draws its widgets itself and has no native child
+    windows, so an empty button list there means "cannot see", not "there are none" - a
+    material difference: such a window says nothing about whether there is anything to press.
     """
     _require()
     found = []
@@ -93,14 +93,15 @@ def windows_of(pid):
 
 
 def main_window(pid):
-    """Главное видимое окно процесса, без чтения его заголовка.
+    """A process's main visible window, without reading its title.
 
-    Отличается от windows_of принципиально: здесь не вызывается GetWindowTextW. Он шлёт
-    окну WM_GETTEXT и ждёт ответа от ЕГО потока, а значит зависает, если тот занят. Для
-    своего же процесса это тупик: поток сервера ждёт поток интерфейса, который в этот
-    момент как раз ничего не разбирает.
+    Materially different from windows_of: GetWindowTextW is never called here. It sends
+    WM_GETTEXT to the window and waits for ITS thread to answer, so it hangs when that thread
+    is busy. For our own process that is a deadlock: the server thread waits on the UI
+    thread, which at that very moment is not dispatching anything.
 
-    GetClassNameW, IsWindowVisible и IsWindowEnabled читают структуру окна и не ждут никого.
+    GetClassNameW, IsWindowVisible and IsWindowEnabled read the window structure and wait for
+    nobody.
     """
     _require()
     found = []
@@ -119,11 +120,11 @@ def main_window(pid):
 
 
 def is_enabled(hwnd):
-    """Принимает ли окно ввод. Выключенное верхнее окно означает, что поверх него модальное.
+    """Does the window accept input. A disabled top-level window means a modal sits over it.
 
-    Так видно замок самой MO2: пока она ждёт запущенную программу, её окно выключено. Свои
-    виджеты Qt рисует внутри одного HWND, но включённость - свойство именно окна, и оно
-    читается снаружи, в отличие от кнопок.
+    This is how MO2's own lock becomes visible: while it waits for a launched program its
+    window is disabled. Qt draws its widgets inside a single HWND, but being enabled is a
+    property of the window itself, and unlike the buttons it can be read from outside.
     """
     _require()
     return bool(user32.IsWindowEnabled(hwnd))
@@ -139,10 +140,10 @@ def close(hwnd):
 
 
 def click_by_caption(hwnd, caption):
-    """Нажать кнопку по её подписи. Возвращает подпись нажатой или None.
+    """Press a button by its caption. Returns the caption pressed, or None.
 
-    Только по тексту и никогда по координатам или порядку: в диалогах генераторов вроде
-    DynDOLOD рядом стоят кнопки выбора параметров, и промах молча испортит результат.
+    By text only and never by coordinates or order: in generator dialogs such as DynDOLOD the
+    option buttons sit side by side, and a miss silently ruins the result.
     """
     want = (caption or '').strip().lower()
     if not want:
@@ -155,7 +156,7 @@ def click_by_caption(hwnd, caption):
     return None
 
 
-# ---------------------------------------------------------------- типы вызовов
+# ---------------------------------------------------------------- call signatures
 if wintypes is not None:
     WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
@@ -170,11 +171,12 @@ if wintypes is not None:
                     ('lpszProgressTitle', wintypes.LPCWSTR)]
 
     def _declare():
-        """Объявить, чем на самом деле являются аргументы и результаты.
+        """Declare what the arguments and results actually are.
 
-        Умолчание ctypes - 32-битный int на всё, а дескриптор на x64 восьмибайтовый.
-        Пока старшие байты нулевые, это сходит с рук; когда нет - в чужой процесс уходит
-        обрезанное значение. Дешевле объявить, чем разбираться потом.
+        The ctypes default is a 32-bit int for everything, while a handle on x64 is eight
+        bytes. As long as the high bytes are zero this goes unpunished; when they are not, a
+        truncated value is handed to another process. Declaring is cheaper than working that
+        out later.
         """
         H, D, B, I = wintypes.HANDLE, wintypes.DWORD, wintypes.BOOL, ctypes.c_int
         HWND, LP = wintypes.HWND, wintypes.LPARAM
@@ -206,7 +208,7 @@ if wintypes is not None:
     _declare()
 
 
-# ---------------------------------------------------------------- процессы
+# ---------------------------------------------------------------- processes
 if wintypes is not None:
     class PROCESSENTRY32W(ctypes.Structure):
         _fields_ = [('dwSize', wintypes.DWORD),
@@ -226,10 +228,10 @@ INFINITE = 0xFFFFFFFF
 
 
 def process_id(handle):
-    """Идентификатор процесса по его дескриптору. 0, если узнать не вышло.
+    """A process id from its handle. 0 when it cannot be determined.
 
-    GetProcessId живёт в kernel32, а не в user32 - обращение к нему через user32 молча
-    оборачивалось нулём, и /run всю дорогу отдавал pid 0.
+    GetProcessId lives in kernel32, not in user32 - calling it through user32 silently came
+    back as zero, and /run reported pid 0 the whole way along.
     """
     if kernel32 is None:
         return 0
@@ -240,12 +242,13 @@ def process_id(handle):
 
 
 def wait_process(handle, timeout_sec=None):
-    """Дождаться конца процесса по его дескриптору. Код возврата, или None по истечении срока.
+    """Wait for a process to end, by handle. The exit code, or None once the time is up.
 
-    Ждём здесь, а не через IOrganizer.waitForApplication, намеренно. Тот вызов уходит в C++
-    и не отпускает GIL, поэтому вместе с главным потоком MO2 останавливается весь встроенный
-    интерпретатор: HTTP-сервер перестаёт принимать даже /ping. Проверено - мост молчал ровно
-    столько, сколько работала утилита, и ожил в ту же секунду, когда она закрылась.
+    We wait here rather than through IOrganizer.waitForApplication, deliberately. That call
+    goes into C++ and never releases the GIL, so the whole embedded interpreter stops along
+    with MO2's main thread: the HTTP server stops accepting even /ping. Observed in practice -
+    the bridge went quiet for exactly as long as the tool ran, and came back the second it
+    closed.
     """
     if kernel32 is None:
         _require()
@@ -266,33 +269,34 @@ FOF_NOERRORUI = 0x0400
 
 
 def recycle(path):
-    """Отправить файл в Корзину. True, если получилось.
+    """Send a file to the Recycle Bin. True if it worked.
 
-    Именно в Корзину, а не мимо: удаление архива - единственное, что мост делает с файлом
-    безвозвратно, и пусть у человека остаётся способ передумать. Файл окончен двойным нулём -
-    список путей в SHFileOperation разделяется нулями и завершается ещё одним.
+    To the Bin and not past it: deleting an archive is the one thing the bridge does to a
+    file irrevocably, so let the person keep a way to change their mind. The path is
+    terminated with a double null - SHFileOperation separates its list of paths with nulls
+    and ends it with one more.
     """
     if shell32 is None:
         _require()
     op = SHFILEOPSTRUCTW()
     op.wFunc = FO_DELETE
     op.pFrom = path + chr(0) + chr(0)
-    # FOF_NOERRORUI обязателен: FOF_SILENT прячет только окно хода работ, а окно ошибки
-    # остаётся - и всплывает модально, без владельца, в главном потоке Qt. Занятый файл
-    # (архив открыт в 7-Zip, читается антивирусом, лежит на отвалившемся сетевом диске)
-    # вешал так всю MO2 до нажатия кнопки, причём окно могло оказаться позади её
-    # собственного. С этим флагом отказ возвращается кодом, а не окном.
+    # FOF_NOERRORUI is mandatory: FOF_SILENT only hides the progress window, the error window
+    # stays - and pops up modal, without an owner, on Qt's main thread. A file in use (an
+    # archive open in 7-Zip, being read by an antivirus, sitting on a dropped network drive)
+    # hung the whole of MO2 that way until a button was pressed, and the window could well be
+    # behind MO2's own. With this flag the failure comes back as a code, not as a window.
     op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI
     return shell32.SHFileOperationW(ctypes.byref(op)) == 0 and not op.fAnyOperationsAborted
 
 
 def pids_by_exe(names):
-    """Идентификаторы живых процессов с такими именами файлов (регистр не важен).
+    """Ids of live processes with these executable names (case does not matter).
 
-    Спрашиваем систему, а не только собственный учёт запусков: программу мог запустить сам
-    пользователь кнопкой в MO2, а не мост, - и тогда в наших списках её нет. Ошибка обхода
-    трактуется как "ничего не найдено": молчаливое "не знаю" здесь безопаснее исключения,
-    потому что вызывающий и так проверит собственный учёт.
+    We ask the system, not only our own launch bookkeeping: a program may have been started
+    by the user with a button in MO2 rather than by the bridge, in which case our lists do
+    not have it. A failure to enumerate is treated as "found nothing": a silent "do not know"
+    is safer here than an exception, because the caller checks its own bookkeeping anyway.
     """
     want = {str(n).lower() for n in names if n}
     if not want or kernel32 is None:
@@ -316,7 +320,7 @@ def pids_by_exe(names):
     return found
 
 
-# ---------------------------------------------------------------- хранилище учётных данных
+# ---------------------------------------------------------------- credential store
 CRED_TYPE_GENERIC = 1
 
 if wintypes is not None:
@@ -336,12 +340,12 @@ if wintypes is not None:
 
 
 def read_generic_credential(target):
-    """Секрет из хранилища учётных данных Windows по имени записи, или None.
+    """A secret from the Windows credential store by entry name, or None.
 
-    Читается запись того же пользователя, под которым работает процесс, - то есть ровно то,
-    что положила туда программа-владелец. Возвращаемая строка нигде не логируется: это
-    забота вызывающего, здесь только чтение. MO2 кладёт ключ как UTF-16, но на всякий
-    случай принимается и UTF-8.
+    It reads the entry of the same user the process runs as - that is, exactly what the
+    owning program put there. The string returned is never logged anywhere: that is the
+    caller's concern, this is a read and nothing else. MO2 stores the key as UTF-16, but
+    UTF-8 is accepted just in case.
     """
     if advapi32 is None or not target:
         return None

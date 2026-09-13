@@ -1,19 +1,19 @@
 # -*- coding: utf-8 -*-
-"""Общее для предметных классов: контекст, обвязка изменяющей операции, форма карточки.
+"""Shared ground for the domain classes: context, the change wrapper, the reply shape.
 
-Предметный слой разобран на классы по областям - занятость, чтение, установка, состав модов,
-порядок плагинов, запуск. Всем им нужно одно и то же: `IOrganizer`, способ попасть в главный
-поток, куда писать след, настройки. Это и есть `Context`. `Domain` - база класса области:
-знает контекст, замок занятости и умеет один общий приём для любого изменения.
+The domain layer is split into classes by area - busy state, reads, installing, the mod
+list, plugin order, launching. They all need the same things: `IOrganizer`, a way into the
+main thread, somewhere to record what happened, the settings. That is `Context`. `Domain`
+is the base of an area class: it holds the context and the busy lock, and it knows one
+shared procedure for any change.
 
-Приём такой, и он один на все девять изменяющих маршрутов:
+The procedure, and it is the same one for all nine write routes:
 
-    отказать, если MO2 занята  ->  проверить входные данные  ->  выполнить  ->  подписать карточку
+    refuse if MO2 is busy  ->  validate the input  ->  do the work  ->  sign the reply
 
-Подпись - это два ключа, которые добавляются к любому ответу об изменении: `op` (какая
-операция) и `applied` (сделано ли), а к любому отказу - ещё `reason` (`busy` или `danger`).
-Прежние ключи остаются на месте: форма ответа меняется только добавлением, иначе тихо ломаются
-чужие вызовы.
+Signing means two keys added to every reply about a change: `op` (which operation) and
+`applied` (was it done), plus `reason` (`busy` or `danger`) on any refusal. Existing keys
+are left alone: a reply shape may only gain keys, or other callers break silently.
 """
 import os
 
@@ -24,19 +24,19 @@ DANGER_VALUE = 'yes-I-read-the-docs-and-accept-irreversible-changes'
 
 
 def one(q, key, default):
-    """Один параметр из строки запроса: parse_qs отдаёт списки, а нужна строка."""
+    """One parameter from the query string: parse_qs hands back lists, we want a string."""
     v = (q or {}).get(key)
     return v[0] if isinstance(v, list) and v else (v if isinstance(v, str) else default)
 
 
 def flag(body, key, default=False):
-    """Булево поле тела запроса, строго.
+    """A boolean field of the request body, strictly.
 
-    `bool()` здесь не годится: строка "false" в Python истинна, и запрос
-    {"active": "false"} включал бы мод, рапортуя успех, - то есть делал бы обратное
-    заказанному. Клиенты на shell и curl шлют булевы значения строками постоянно, поэтому
-    строки разбираются явно, а непонятное значение - отказ, а не догадка: на выключателях
-    вроде withArchive цена догадки - файл в Корзине.
+    `bool()` will not do here: the string "false" is truthy in Python, so a request of
+    {"active": "false"} used to enable a mod and report success - the opposite of what was
+    asked. Shell and curl clients send booleans as strings all the time, so strings are
+    parsed explicitly and anything unrecognised is a refusal rather than a guess: on a
+    switch like withArchive, the price of guessing is a file in the Recycle Bin.
     """
     v = (body or {}).get(key)
     if v is None:
@@ -55,13 +55,14 @@ def flag(body, key, default=False):
 
 
 def folder_name(name):
-    """Однокомпонентное имя папки, годное для подстановки в путь, или ValueError.
+    """A single-component folder name fit to be joined into a path, or ValueError.
 
-    Имя мода приходит снаружи и подставляется внутрь mods\\. Однокомпонентное имя выйти
-    оттуда не может, а всё прочее может: os.path.join на Windows отбрасывает первый кусок,
-    если второй абсолютный, поэтому 'C:\\Users\\...' дал бы путь к чужой папке, а '..' увёл бы
-    на уровень выше - к профилям, загрузкам и overwrite. Цена промаха здесь - чужие файлы
-    в Корзине, так что проверка стоит до всякой работы.
+    A mod name arrives from outside and is joined into a path inside mods\\. A single
+    component cannot escape that folder; anything else can. os.path.join on Windows drops
+    the first part when the second is absolute, so 'C:\\Users\\...' would name a stranger's
+    folder, and '..' would climb one level up - to the profiles, the downloads and
+    overwrite. The price of a miss here is other people's files in the Recycle Bin, so the
+    check comes before any work at all.
     """
     n = (name or '').strip()
     if not n:
@@ -73,10 +74,11 @@ def folder_name(name):
 
 
 def inside(root, path):
-    """Лежит ли path внутри root.
+    """Is path inside root.
 
-    Второй рубеж после folder_name: имя проверено, но саму папку заводит MO2, и убедиться,
-    что она оказалась там, где ждали, дешевле, чем поверить на слово.
+    The second line of defence after folder_name: the name is checked, but the folder
+    itself is created by MO2, and making sure it landed where expected is cheaper than
+    taking it on trust.
     """
     r = os.path.realpath(root)
     p = os.path.realpath(path)
@@ -84,7 +86,7 @@ def inside(root, path):
 
 
 def safe(fn, default=None):
-    """Значение вызова или умолчание: у части модов методы карточки бросают исключение."""
+    """The call's value or a default: on some mods the card methods raise."""
     try:
         v = fn()
         return v if v is not None else default
@@ -93,7 +95,7 @@ def safe(fn, default=None):
 
 
 def stamp(res, op, applied=True):
-    """Подписать карточку операцией. Только добавляет: существующие ключи не трогаются."""
+    """Sign a reply with its operation. It only adds: existing keys are never touched."""
     if isinstance(res, dict):
         res.setdefault('op', op)
         res.setdefault('applied', applied)
@@ -101,7 +103,7 @@ def stamp(res, op, applied=True):
 
 
 class Context(object):
-    """Всё, что нужно любой области: MO2, главный поток, след, документация, настройки."""
+    """Everything any area needs: MO2, the main thread, the log, the docs, the settings."""
 
     def __init__(self, organizer, run_main, docs, note, cfg):
         self.o = organizer
@@ -112,7 +114,7 @@ class Context(object):
 
 
 class Domain(object):
-    """База предметной области. Держит контекст и замок занятости."""
+    """Base of a domain area. Holds the context and the busy lock."""
 
     def __init__(self, ctx, guard):
         self.ctx = ctx
@@ -123,20 +125,21 @@ class Domain(object):
         self.guard = guard
         self._domains = {}
 
-    # ---- общий приём изменения --------------------------------------------
+    # ---- the shared change procedure ---------------------------------------
     def change(self, op, fn, timeout=None, on_main=True, prepare=None):
-        """Выполнить изменяющую операцию по общему приёму.
+        """Run a write operation through the shared procedure.
 
-        op       имя операции без префикса: 'toggle', 'install', ... - ключ i18n 'op.<op>'
-        fn       сама работа; по умолчанию идёт в главном потоке MO2
-        timeout  секунды ожидания главного потока; None - умолчание транспорта
-        on_main  False, если работа сама ходит в главный поток по мере надобности
-                 (установка: распаковка и копирование главному потоку не нужны)
-        prepare  проверка входных данных в потоке сервера до главного; может бросить
-                 ValueError или вернуть готовый отказ (например, замка необратимого)
+        op       operation name without a prefix: 'toggle', 'install', ... - i18n key 'op.<op>'
+        fn       the work itself; by default it runs on MO2's main thread
+        timeout  seconds to wait for the main thread; None means the transport default
+        on_main  False when the work enters the main thread by itself where needed
+                 (installing: unpacking and copying do not need the main thread)
+        prepare  input validation on the server thread, before the main one; it may raise
+                 ValueError or return a ready refusal (the irreversible lock, for instance)
 
-        Занятость проверяется ПЕРВОЙ, до разбора аргументов: отказ «занята» обязан приходить
-        и на заведомо негодный запрос, иначе по ответу не понять, что менеджер занят.
+        Busy is checked FIRST, before the arguments are parsed: a "busy" refusal must come
+        back even for an obviously malformed request, or the reply will not reveal that the
+        manager is busy at all.
         """
         stop = self.guard.refusal('op.' + op)
         if stop:
@@ -152,7 +155,7 @@ class Domain(object):
         return stamp(res, op)
 
     def danger(self, body, op):
-        """Отказ замка необратимого, или None, если ключ передан верно."""
+        """The irreversible lock's refusal, or None when the key was passed correctly."""
         if (body.get(DANGER_KEY) or '') != DANGER_VALUE:
             return self._refusal({'applied': False,
                                   'blocked': i18n.t('op.' + op),
@@ -165,7 +168,7 @@ class Domain(object):
         res.setdefault('reason', reason)
         return stamp(res, op, applied=False)
 
-    # ---- мелочи, нужные нескольким областям ---------------------------------
+    # ---- small things several areas need ------------------------------------
     def timeout(self, name):
         return self.cfg.timeout(name)
 
@@ -173,17 +176,18 @@ class Domain(object):
         return int(self.cfg.get(name) or 0)
 
     def nexus_domain(self, game):
-        """Раздел Nexus для игры, или пустая строка, если выяснить не удалось.
+        """The Nexus section for a game, or an empty string when it cannot be determined.
 
-        Спрашиваем саму MO2: gameNexusName() отдаёт ровно то имя, под которым игра живёт
-        на Nexus, и оно верно для любой игры, которую менеджер вообще умеет вести. Таблица
-        в настройках - только перекрытие для случаев вроде Skyrim VR, у которого своего
-        раздела нет и моды берутся из раздела SSE.
+        Ask MO2 itself: gameNexusName() returns exactly the name the game lives under on
+        Nexus, and it is right for every game the manager can run at all. The table in the
+        settings is only an override for cases like Skyrim VR, which has no section of its
+        own and takes its mods from the SSE one.
 
-        Слепого умолчания здесь быть не должно. Пока оно было, мод незнакомой игры уходил
-        запрашиваться в раздел Skyrim SE, Nexus честно отдавал страницу ДРУГОГО мода с тем
-        же номером, и мост выносил по чужим файлам уверенный вердикт. Ложный ответ хуже
-        отказа: по отказу видно, что ответа нет.
+        There must be no blind default here. While there was one, a mod of an unknown game
+        was looked up in the Skyrim SE section, Nexus honestly returned the page of a
+        DIFFERENT mod with the same id, and the bridge passed confident judgement on
+        someone else's files. A false answer is worse than a refusal: a refusal at least
+        shows that there is no answer.
         """
         key = game or ''
         if key in self._domains:
@@ -199,8 +203,8 @@ class Domain(object):
         return dom
 
     def nexus_url(self, game, nid):
-        """Ссылка на страницу мода. Собирается по nexusId: m.url() у части модов отдаёт голый
-        домен без /mods/<id>, и получается ссылка в никуда."""
+        """A link to the mod page. Built from nexusId: on some mods m.url() returns a bare
+        domain with no /mods/<id>, which makes a link to nowhere."""
         if not nid or nid <= 0:
             return ''
         dom = self.nexus_domain(game)

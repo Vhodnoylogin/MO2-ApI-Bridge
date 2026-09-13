@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Состав модов: включить, выключить, перечитать, и необратимое - приоритет, имя, удаление.
+"""The mod list: enable, disable, refresh, and the irreversible three - priority, name,
+removal.
 
-Необратимая тройка требует в теле запроса ключ из документации. Без него маршрут ничего не
-делает и возвращает объяснение и путь к README: узнать значение можно только прочитав раздел
-о последствиях. Замок занятости проверяется раньше замка необратимого.
+The irreversible three require the key from the documentation in the request body. Without
+it a route does nothing and returns an explanation and the path to the README: the value can
+only be learned by reading the section about the consequences. The busy lock is checked
+before the irreversible one.
 """
 import os
 
@@ -19,8 +21,8 @@ class ModOps(Domain):
         def prepare():
             if not body.get('mod') or body.get('active') is None:
                 raise ValueError(i18n.t('err.needMod'))
-            # Разбор значения стоит в проверке, а не только в работе: отказ о неверном
-            # типе обязан прийти до главного потока, как и всякая проверка входа.
+            # The value is parsed in the validation step, not only in the work: a refusal
+            # about a wrong type must arrive before the main thread, like every input check.
             flag(body, 'active')
 
         def f():
@@ -28,8 +30,9 @@ class ModOps(Domain):
             ml = self.o.modList()
             if ml.getMod(mod) is None:
                 raise ValueError(i18n.t('err.noSuchMod', mod=mod))
-            # Прежнее состояние снимается ДО правки: обратить операцию больше нечем,
-            # запоминать его мост не станет - это дело вызывающего.
+            # The previous state is taken BEFORE the edit: there is nothing else to reverse
+            # the operation with, and the bridge will not remember it - that is the caller's
+            # business.
             was = bool(ml.state(mod) & mobase.ModState.ACTIVE)
             ml.setActive(mod, bool(want))
             return {'mod': mod, 'active': bool(want), 'was': was,
@@ -38,17 +41,18 @@ class ModOps(Domain):
         return self.change('toggle', f, prepare=prepare)
 
     def refresh(self, _=None):
-        """Перечитать mods\\ и профиль.
+        """Re-read mods\\ and the profile.
 
-        Именно это снимает необходимость закрывать MO2: папка мода, созданная мимо менеджера,
-        после refresh попадает в список и дальше включается обычным toggle.
+        This is precisely what removes the need to close MO2: a mod folder created behind
+        the manager's back joins the list after a refresh and is then enabled by an ordinary
+        toggle.
         """
         def f():
             self.o.refresh(True)
             return {'refreshed': True}
         return self.change('refresh', f)
 
-    # ================================================== необратимое
+    # ================================================== irreversible
     def mods_priority(self, body):
         def prepare():
             if not body.get('mod') or body.get('priority') is None:
@@ -61,7 +65,8 @@ class ModOps(Domain):
             if ml.getMod(mod) is None:
                 raise ValueError(i18n.t('err.noSuchMod', mod=mod))
             was = ml.priority(mod)
-            # Отказ замка необратимого отдаётся с тем, что было бы сделано: откуда и куда.
+            # The irreversible lock's refusal carries what would have been done: from where
+            # and to where.
             stop = self.danger(body, 'priority')
             if stop:
                 stop.update({'mod': mod, 'from': was, 'to': int(prio)})
@@ -85,9 +90,10 @@ class ModOps(Domain):
                 raise ValueError(i18n.t('err.noSuchMod', mod=mod))
             was_path = safe(m.absolutePath, '')
             nid = safe(m.nexusId, 0)
-            # Сначала «есть ли мод», потом «есть ли ключ» - как у приоритета и удаления:
-            # переименовать несуществующий мод нельзя, и отказ «нет ключа» на нём вводил бы
-            # в заблуждение. Отказ отдаёт то, что было бы сделано: откуда и что за мод.
+            # First "does the mod exist", then "is the key there" - as with priority and
+            # removal: a mod that does not exist cannot be renamed, and a "no key" refusal
+            # on it would be misleading. The refusal carries what would have been done:
+            # from where, and which mod.
             stop = self.danger(body, 'rename')
             if stop:
                 stop.update({'mod': mod, 'newName': new, 'fromPath': was_path, 'nexusId': nid})
@@ -95,8 +101,8 @@ class ModOps(Domain):
             res = ml.renameMod(m, new)
             self.o.refresh(True)
             got = ml.getMod(new)
-            # Имя папки - это то, чем мод опознают снаружи, поэтому вместе с путями
-            # отдаём nexusId: по нему мод узнаётся, даже если имя уже потеряно.
+            # The folder name is how a mod is identified from outside, so nexusId goes back
+            # along with the paths: by it the mod is recognisable even once the name is gone.
             return {'applied': res is not None, 'mod': mod, 'newName': new,
                     'fromPath': was_path,
                     'toPath': safe(got.absolutePath, '') if got else '',
@@ -107,22 +113,23 @@ class ModOps(Domain):
 
     def mods_remove(self, body):
         mod = body.get('mod')
+
         def prepare():
             if not mod:
                 raise ValueError(i18n.t('err.needMod'))
             flag(body, 'withArchive')
 
         def f():
-            # Разбор внутри работы, а не при входе в метод: замок занятости обязан
-            # ответить первым, а исключение до change() опередило бы его.
+            # Parsed inside the work rather than on entry to the method: the busy lock must
+            # answer first, and an exception before change() would beat it to it.
             with_archive = flag(body, 'withArchive')
             ml = self.o.modList()
             m = ml.getMod(mod)
             if m is None:
                 raise ValueError(i18n.t('err.noSuchMod', mod=mod))
-            # Карточка снимается ДО сноса и отдаётся целиком: после удаления спросить будет
-            # некого, а чтобы мод вернуть, нужно знать всё - из какого архива он собран,
-            # какой версии, где стоял и был ли включён.
+            # The card is taken BEFORE the removal and returned whole: afterwards there is
+            # nobody left to ask, and bringing the mod back needs everything - which archive
+            # it was built from, which version, where it stood and whether it was enabled.
             card = self.removal_card(m, ml)
             stop = self.danger(body, 'remove')
             if stop:
@@ -133,7 +140,8 @@ class ModOps(Domain):
             out = {'applied': bool(ok), 'mod': mod, 'path': card['path'],
                    'card': card, 'archiveKept': True, 'archiveRecycled': False}
             if with_archive and card.get('archivePath'):
-                # Архив - единственное, что мост удаляет сам, поэтому только в Корзину.
+                # The archive is the one thing the bridge deletes itself, so only to the
+                # Recycle Bin.
                 out['archiveRecycled'] = bool(safe(
                     lambda: winapi.recycle(card['archivePath']), False))
                 out['archiveKept'] = not out['archiveRecycled']
@@ -144,7 +152,7 @@ class ModOps(Domain):
         return self.change('remove', f, prepare=prepare)
 
     def removal_card(self, m, ml):
-        """Всё, что понадобится, чтобы вернуть мод. Снимается до удаления, из главного потока."""
+        """Everything needed to bring the mod back. Taken before removal, on the main thread."""
         name = m.name()
         arc = safe(m.installationFile, '') or ''
         arc_path = ''

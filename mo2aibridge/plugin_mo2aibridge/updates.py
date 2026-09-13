@@ -1,27 +1,31 @@
 # -*- coding: utf-8 -*-
-"""Обновления модов: единственная точка, где сборка спрашивает Nexus, есть ли файл новее.
+"""Mod updates: the one place where the setup asks Nexus whether a newer file exists.
 
-Мост спрашивает Nexus сам - через `IOrganizer.createNexusBridge()`, то есть тем же путём и тем
-же ключом API, которыми пользуется MO2. Чаты и скрипты ничего не сравнивают: они получают от
-моста и факты, и решение, а помнить результат - дело индекса.
+The bridge asks Nexus itself - through `IOrganizer.createNexusBridge()`, that is by the same
+route and with the same API key MO2 uses. Chats and scripts compare nothing: they get both the
+facts and the decision from the bridge, and remembering the result is the index's business.
 
-Правила решения перенесены из прежнего разборщика страниц (`tools\\update-scan.py`) и живут
-теперь здесь, в одном месте:
+The decision rules were carried over from the earlier page scraper and now live here, in one
+place:
 
-- **Номера версий не сравниваются никогда.** Их печатает автор руками, и они расходятся между
-  шапкой страницы, строкой файла и meta.ini. Решают два факта: какие файлы страницы мы
-  скачивали (по fileID из `.meta` рядом с архивом в `downloads\\`) и в каком разделе каждый
-  файл лежит сейчас. Скачанный файл, уехавший в Old files, устарел по определению; скачанный
-  файл в живом разделе актуален, пока страница не предлагает файл новее той же роли.
-- **Роль** - имя файла без версии и без шума, но со всем остальным: JContainers SE и
-  JContainers VR, PapyrusUtil AE и PapyrusUtil GOG остаются разными ролями и не выдают себя
-  за обновления друг друга. Патч и ресурс - другая роль, чем основной файл.
-- **Сомнение трактуется как «есть обновление».** Всё, что не сошлось уверенно, попадает
-  в CANNOT-MATCH, а не молча объявляется актуальным: короткий список пользователь разберёт сам.
+- **Version numbers are never compared.** Authors type them by hand, and they disagree between
+  the page header, the file row and meta.ini. Two facts decide instead: which files of the page
+  we downloaded (by fileID from the `.meta` beside the archive in downloads\\) and which section
+  each file sits in now. A downloaded file that moved to Old files is out of date by definition;
+  a downloaded file in a live section is current until the page offers a newer file of the same
+  role.
+- **Role** is the file name stripped of its version and of noise, but of nothing else:
+  JContainers SE and JContainers VR, PapyrusUtil AE and PapyrusUtil GOG stay different roles and
+  do not pass themselves off as updates to one another. A patch and a resource are a different
+  role from the main file.
+- **Doubt counts as "an update exists".** Anything that did not match with confidence lands in
+  CANNOT-MATCH rather than being quietly declared current: a short list is something the user
+  can look through.
 
-Вердикты - те же слова, что в индексе сборки: UPDATE-AVAILABLE, UP-TO-DATE, CANNOT-MATCH,
-REUPLOADED, DOWNLOADED-NOT-INSTALLED, NO-NEXUS-ID, ERROR.
+The verdicts are the same words the build index uses: UPDATE-AVAILABLE, UP-TO-DATE,
+CANNOT-MATCH, REUPLOADED, DOWNLOADED-NOT-INSTALLED, NO-NEXUS-ID, ERROR.
 """
+
 import calendar
 import datetime
 import io
@@ -38,42 +42,44 @@ from .base import Domain, one, safe
 
 DAY = 86400
 
-# Разделы файлов Nexus по номеру категории, как их отдаёт API.
+# Nexus file sections by category number, as the API reports them.
 CATEGORY = {1: 'main', 2: 'update', 3: 'optional', 4: 'old', 5: 'miscellaneous',
             6: 'deleted', 7: 'archived'}
 LIVE = ('main', 'update', 'optional', 'miscellaneous')
 
 RE_VER = re.compile(r'\bv?\d+[\d._-]*[a-z]?\b')
 RE_RES = re.compile(r'^\d+k$')
+# The Cyrillic range is kept on purpose: translated mods carry Cyrillic in their file names,
+# and stripping it would reduce two different files to the same role.
 RE_PUNCT = re.compile(r'[^a-z0-9Ѐ-ӿ ]+')
 RE_NOISE = re.compile(r'\b(main|file|files|version|ver|final|the|of|and|for)\b')
 
-# Два файла, чьи имена различаются только внутри одной из этих групп, - соседи, а не преемники:
-# сборка под GOG не обновление к сборке под Steam, тело UNP не обновление к CBBE.
+# Two files whose names differ only within one of these groups are siblings, not successors:
+# a GOG build is no update to a Steam build, a UNP body is no update to CBBE.
 STORE = set(['gog', 'epic', 'steam', 'gamepass', 'ms'])
 BODY = set(['cbbe', 'unp', 'unpb', 'uunp', 'bhunp', '3ba', '3bbb', 'himbo', 'sos', 'tng', 'sam'])
-# Метки редакции идут в паре со сменой магазина или тела, но сами по себе соседа не делают:
-# сборка AE действительно может быть преемницей SE, и это как раз тот случай, о котором надо
-# сообщить.
+# Edition markers travel alongside a change of store or body, but on their own they do not make
+# a sibling: an AE build really can succeed an SE one, and that is exactly the case worth
+# reporting.
 EDITION = set(['se', 'sse', 'ae', 'vr', 'le', 'oldrim', 'special', 'anniversary', 'edition'])
 
 RE_EPOCH = re.compile(r'-(\d{10})\.[0-9a-z]+$', re.I)
 RE_ISO = re.compile(r'\b(20\d\d)-(\d\d)-(\d\d)T(\d\d)-(\d\d)Z\b')
 
 
-# ================================================================ чистые правила
+# ================================================================ pure rules
 def sibling(a, b):
-    """Тот же продукт, другой магазин или другое тело - никогда не обновление друг к другу."""
+    """Same product, different store or different body - never an update to one another."""
     d = a ^ b
     return bool(d) and d <= (STORE | BODY | EDITION) and bool(d & (STORE | BODY))
 
 
 def arc_time(name):
-    """Когда был загружен на Nexus архив с таким именем - читается из самого имени.
+    """When an archive with this name was uploaded to Nexus - read out of the name itself.
 
-    MO2 хранит каноническое имя Nexus, оканчивающееся временем загрузки в секундах; загрузки
-    через новое именование сайта несут отметку ISO. Так или иначе момент в имени, поэтому
-    файл, уже удалённый со страницы, всё равно датируется."""
+    MO2 keeps the canonical Nexus name, which ends in the upload time in seconds; downloads
+    under the site's newer naming carry an ISO stamp. Either way the moment is in the name, so
+    a file already removed from the page can still be dated."""
     m = RE_EPOCH.search(name or '')
     if m:
         return int(m.group(1))
@@ -85,7 +91,8 @@ def arc_time(name):
 
 
 def stamp(ts):
-    """Дата словами из секунд с эпохи; пусто, если момента нет или он вне диапазона."""
+    """A date in words from seconds since the epoch; empty when there is none or it is out
+    of range."""
     if not ts:
         return ''
     try:
@@ -95,14 +102,14 @@ def stamp(ts):
 
 
 def _drop_version(m):
-    """4k и 2k - разрешения текстур, а не версии: убрав их, файл 4K и файл 2K стали бы одной
-    ролью, и пара обернулась бы призрачным обновлением."""
+    """4k and 2k are texture resolutions, not versions: strip them and a 4K file and a 2K file
+    become one role, and the pair turns into a phantom update."""
     t = m.group(0)
     return t if RE_RES.match(t) else ' '
 
 
 def role(s):
-    """Имя файла, сведённое к тому, что это: версия убрана, вариант оставлен."""
+    """A file name reduced to what it is: the version removed, the variant kept."""
     if not s:
         return ''
     s = s.lower()
@@ -119,18 +126,19 @@ def _brief(f):
 
 
 def decide(files, got_ids, got_names, installed_time, limit=3, disk_time=None):
-    """Решение по одной странице. Чистая функция: файлы страницы, что из них скачано, когда
-    загружены архивы, из которых собраны моды этой страницы.
+    """The decision for one page. A pure function: the page's files, which of them were
+    downloaded, and when the archives the page's mods were built from were uploaded.
 
-    files          [{name, fileName, fileId, version, category, time}], category - слово
-    got_ids        fileID скачанных файлов этой страницы (из .meta в downloads)
-    got_names      имена архивов этой страницы, лежащих в downloads
-    installed_time самый поздний момент загрузки среди архивов, из которых собраны ВСЕ моды
-                   этой страницы, или None. Именно по странице, а не по одному моду: патч
-                   или вторая часть многофайловой страницы собраны из старого архива, но
-                   новейший файл страницы стоит соседним модом - и это не «не установлено»
-    disk_time      самый поздний момент загрузки среди архивов этой страницы на диске
-                   (для случая, когда ни один файл страницы не помечен скачанным)
+    files          [{name, fileName, fileId, version, category, time}], category is a word
+    got_ids        fileIDs of this page's downloaded files (from .meta in downloads)
+    got_names      names of this page's archives present in downloads
+    installed_time the latest upload moment among the archives ALL of this page's mods were
+                   built from, or None. By page rather than by single mod on purpose: a patch,
+                   or the second part of a multi-file page, may be built from an old archive
+                   while the page's newest file stands as a neighbouring mod - and that is not
+                   "not installed"
+    disk_time      the latest upload moment among this page's archives on disk (for the case
+                   where no file of the page is marked as downloaded)
     """
     if disk_time is None:
         disk_time = installed_time
@@ -142,9 +150,10 @@ def decide(files, got_ids, got_names, installed_time, limit=3, disk_time=None):
     got = [f for f in files if f['got']]
 
     if not got:
-        # Ни один файл страницы не помечен скачанным, а мод стоит: строка, с которой качали,
-        # исчезла - автор заменил файл, а не убрал в Old files. Момент загрузки архива есть
-        # в его имени, так что сравнить можно и с ним.
+        # No file of the page is marked as downloaded while the mod is installed: the row it
+        # was downloaded from is gone - the author replaced the file rather than moving it to
+        # Old files. The archive's upload moment is in its name, so a comparison is still
+        # possible.
         res['extra'] = [_brief(f) for f in live_main[:4]]
         if disk_time and live_main and (live_main[0]['time'] or 0) > disk_time + DAY:
             res.update(verdict='REUPLOADED', why='upd.replaced',
@@ -153,7 +162,7 @@ def decide(files, got_ids, got_names, installed_time, limit=3, disk_time=None):
             res.update(verdict='CANNOT-MATCH', why='upd.unmarked', whyArgs={})
         return res
 
-    # Что у нас есть - по одному на роль, побеждает новейший
+    # What we hold - one per role, the newest wins
     held = {}
     for g in got:
         k = role(g['name'])
@@ -164,7 +173,8 @@ def decide(files, got_ids, got_names, installed_time, limit=3, disk_time=None):
         cands = [f for f in files
                  if f['category'] in LIVE and role(f['name']) == k
                  and (f['time'] or 0) > (mine['time'] or 0) and not f['got']
-                 # та же версия, загруженная через минуты, - сосед одного выпуска, а не новее
+                 # the same version uploaded minutes later is a neighbour of one release,
+                 # not something newer
                  and not (f['version'] and f['version'] == mine['version']
                           and (f['time'] - (mine['time'] or 0)) < DAY)]
         cands.sort(key=lambda f: -(f['time'] or 0))
@@ -172,8 +182,8 @@ def decide(files, got_ids, got_names, installed_time, limit=3, disk_time=None):
         if cands:
             item['state'] = 'UPDATE-AVAILABLE'
         elif mine['category'] == 'old':
-            # Наш файл убран в Old files, и ничего с тем же именем его не заменило: автор
-            # переименовал или слил файлы, страницу надо смотреть глазами
+            # Our file was moved to Old files and nothing of the same name replaced it: the
+            # author renamed or merged files, and the page needs human eyes
             item['state'] = 'CANNOT-MATCH'
             item['newer'] = [_brief(f) for f in live_main[:limit]]
         else:
@@ -190,12 +200,12 @@ def decide(files, got_ids, got_names, installed_time, limit=3, disk_time=None):
             continue
         if f['version'] and any(f['version'] == g['version'] and (f['time'] - (g['time'] or 0)) < DAY
                                 for g in got):
-            continue                      # сосед того же выпуска, загружен рядом
-        # сравнивается с каждым нашим файлом отдельно: страница может держать несколько, и
-        # объединение их слов спрятало бы тот, чьим соседом кандидат является
+            continue                      # a neighbour of the same release, uploaded beside it
+        # compared against each of our files separately: a page may hold several, and merging
+        # their words would hide the one the candidate is actually a sibling of
         ft = set(role(f['name']).split())
         if any(sibling(ht, ft) for ht in held_tok):
-            continue                      # сборка под GOG или другое тело, а не новее
+            continue                      # a GOG build or another body, not something newer
         res['extra'].append(_brief(f))
     res['extra'].sort(key=lambda f: -(f['time'] or 0))
     hotfix = [f for f in res['extra'] if f['category'] == 'update']
@@ -203,9 +213,10 @@ def decide(files, got_ids, got_names, installed_time, limit=3, disk_time=None):
     states = set(i['state'] for i in res['items'])
     newest_main = max([(f['time'] or 0) for f in live_main] or [0])
 
-    # Новейший файл Main уже помечен скачанным: что бы ни лежало в Old files, это история
-    # загрузок. Чего это не доказывает - что файл установлен: MO2 помнит, из какого архива
-    # собран мод, и момент его загрузки есть в имени, так что их можно сравнить.
+    # The newest Main file is already marked as downloaded: whatever sits in Old files is
+    # download history. What that does not prove is that the file is installed: MO2 remembers
+    # which archive a mod was built from, and that archive's upload moment is in its name, so
+    # the two can be compared.
     top = [f for f in live_main if (f['time'] or 0) == newest_main]
     if top and any(f['got'] for f in top) and 'UPDATE-AVAILABLE' not in states:
         res['items'] = [i for i in res['items'] if i['state'] == 'UPDATE-AVAILABLE']
@@ -220,8 +231,8 @@ def decide(files, got_ids, got_names, installed_time, limit=3, disk_time=None):
             res['extra'] = []
         return res
 
-    # Все наши файлы в Old files, а Main ушёл дальше них: автор переименовал файл между
-    # выпусками, и это всё ещё обновление, а не сомнение
+    # All our files are in Old files and Main has moved past them: the author renamed the file
+    # between releases, and this is still an update rather than a doubt
     all_old = all(i['mine']['category'] == 'old' for i in res['items'])
     if 'UPDATE-AVAILABLE' in states:
         res.update(verdict='UPDATE-AVAILABLE', why='upd.newer', whyArgs={})
@@ -239,12 +250,12 @@ def decide(files, got_ids, got_names, installed_time, limit=3, disk_time=None):
 
 
 class SweepStop(Exception):
-    """Дальше обход идти не должен: ключ негоден, лимит исчерпан или связь оборвалась.
+    """The sweep must go no further: the key is bad, the allowance is spent, or the link died.
 
-    Отдельный род ошибки нужен потому, что отказ ОДНОГО мода и отказ КАНАЛА - разные вещи.
-    Первый - строка в ответе рядом с остальными; второй означает, что и следующая тысяча
-    запросов провалится точно так же. Обход прекращается, уже собранное отдаётся, а причина
-    называется одна на весь ответ.
+    A separate kind of error is needed because the failure of ONE mod and the failure of the
+    CHANNEL are different things. The first is a row in the answer beside the others; the second
+    means the next thousand requests will fail in exactly the same way. The sweep stops, what
+    was gathered is returned, and one reason is named for the whole answer.
     """
 
     def __init__(self, key, **kw):
@@ -252,15 +263,15 @@ class SweepStop(Exception):
         self.key = key
 
 
-# ================================================================ область
+# ================================================================ the area
 class Updates(Domain):
 
     def __init__(self, ctx, guard):
         super().__init__(ctx, guard)
         self._bridge = None
         self._how = ''
-        # Каким путём спрашивается Nexus: '' - ещё не выяснено, 'bridge' - через мост MO2,
-        # 'api' - напрямую, ключом MO2 из хранилища учётных данных Windows.
+        # How Nexus is being asked: '' - not decided yet, 'bridge' - through MO2's own
+        # bridge, 'api' - directly, with MO2's key from the Windows credential store.
         self._mode = ''
         self._api_key = None
         self._quota = {}
@@ -268,17 +279,20 @@ class Updates(Domain):
         self._lock = threading.Lock()
         self._seq = 0
         self._last_request = 0.0
-        # Подряд идущие сетевые отказы. У обрыва связи нет кода ответа, и отличить его от
-        # единичной неудачи можно только счётом: одна - бывает, пять подряд - канал лёг.
+        # Consecutive network failures. A dead link has no response code, and the only way to
+        # tell it from a single mishap is by counting: one happens, five in a row means the
+        # channel is down.
         self._net_fails = 0
 
-    # ---- мост MO2 к Nexus ------------------------------------------------
+    # ---- MO2's own Nexus bridge -------------------------------------------
     def _ensure_bridge(self):
-        """Создать мост к Nexus один раз и подписаться на его ответы. Зовётся ИЗ главного потока.
+        """Create the Nexus bridge once and subscribe to its replies. Called FROM the main
+        thread.
 
-        В MO2 2.5.2 подписка на filesAvailable из Python невозможна: сигнал несёт
-        QList<ModRepositoryFileInfo*>, а PyQt такой тип не знает и отказывает на connect.
-        Тогда мост MO2 не используется вовсе, и Nexus спрашивается напрямую (см. _api_files).
+        In MO2 2.5.2 subscribing to filesAvailable from Python is impossible: the signal
+        carries QList<ModRepositoryFileInfo*>, a type PyQt does not know, and connect is
+        refused. MO2's bridge is then not used at all and Nexus is asked directly - see
+        _api_files.
         """
         if self._bridge is not None:
             return self._bridge
@@ -286,27 +300,28 @@ class Updates(Domain):
         self._how = '%s/%s' % (_connect(bridge, 'filesAvailable', self._on_files),
                                _connect(bridge, 'requestFailed', self._on_failed))
         self._bridge = bridge
-        self.note('nexus bridge: %s' % self._how)
+        self.note(i18n.t('log.nexusBridge', how=self._how))
         return bridge
 
     def _choose_mode(self, timeout):
-        """Один раз на сессию: годится ли мост MO2, иначе - прямой запрос ключом MO2."""
+        """Once per session: is MO2's bridge usable, or do we ask the API directly with
+        MO2's key."""
         if self._mode:
             return self._mode
         try:
             self.run_main(self._ensure_bridge, timeout=timeout)
             self._mode = 'bridge'
         except Exception as exc:
-            self.note('nexus bridge unusable (%s), asking the API directly' % exc)
+            self.note(i18n.t('log.nexusDirect', error=exc))
             self._mode = 'api'
         return self._mode
 
-    # ---- прямой запрос к API ---------------------------------------------
+    # ---- asking the API directly -------------------------------------------
     def _key(self):
-        """Ключ API Nexus - тот же, что хранит MO2, из хранилища учётных данных Windows.
+        """The Nexus API key - the very one MO2 keeps, from the Windows credential store.
 
-        Читается один раз и живёт только в памяти этого объекта: наружу мост его не отдаёт
-        ни одним маршрутом и в лог не пишет.
+        Read once and living only in this object's memory: the bridge hands it out through no
+        route and never writes it to the log.
         """
         if self._api_key is None:
             target = self.cfg.get('updates', {}).get('credentialTarget') or ''
@@ -314,16 +329,16 @@ class Updates(Domain):
         return self._api_key
 
     def _http_get(self, url, headers, timeout):
-        """GET с заголовками; вынесен отдельно, чтобы проверки могли подставить свой ответ."""
+        """A GET with headers; separated out so the checks can substitute their own reply."""
         req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.status, dict(r.headers), r.read().decode('utf-8', 'replace')
 
     def _absorb_quota(self, hdrs):
-        """Снять заголовки лимита с ответа - любого, включая отказ.
+        """Take the allowance headers off a reply - any reply, a failure included.
 
-        Раньше разбор стоял только на удачном ответе, и потому 429 - единственный ответ,
-        который ОБЯЗАН обновить остаток и принести Retry-After, - до него не доходил никогда.
+        The parsing used to sit on the successful path only, so a 429 - the one reply that MUST
+        refresh the remaining count and carry Retry-After - never reached it at all.
         """
         low = {str(k).lower(): v for k, v in dict(hdrs or {}).items()}
         for h in ('x-rl-daily-remaining', 'x-rl-hourly-remaining', 'x-rl-daily-limit'):
@@ -333,11 +348,11 @@ class Updates(Domain):
             self._quota['retry-after'] = low['retry-after']
 
     def quota_exhausted(self):
-        """Остался ли запас по суточному лимиту, или дальше идти нельзя.
+        """Is there room left in the daily allowance, or must we stop here.
 
-        Ключ принадлежит не мосту, а самой MO2: исчерпав его, человек остаётся без
-        обновлений и без загрузок в менеджере и будет искать причину где угодно, только
-        не в плагине. Поэтому небольшой запас оставляется всегда.
+        The key belongs not to the bridge but to MO2 itself: spend it and the person is left
+        without updates and without downloads in the manager, and will look for the cause
+        anywhere but in this plugin. So a small reserve is always left behind.
         """
         try:
             left = int(self._quota.get('daily-remaining'))
@@ -356,16 +371,16 @@ class Updates(Domain):
         url = '%s/v1/games/%s/mods/%d/files.json' % (
             (upd.get('apiHost') or 'https://api.nexusmods.com').rstrip('/'), domain, int(mod_id))
         headers = {'apikey': key, 'Accept': 'application/json',
-                   'Application-Name': 'MO2AIBridge',
+                   'Application-Name': 'MO2ApIBridge',
                    'Application-Version': upd.get('appVersion') or ''}
         try:
             status, hdrs, body = self._http_get(url, headers, timeout)
         except urllib.error.HTTPError as e:
             self._absorb_quota(getattr(e, 'headers', None))
-            # Отказ СТРАНИЦЫ и отказ КАНАЛА - разные вещи, и раньше они были одним. Ключ
-            # негоден или лимит исчерпан не для одного мода, а для всех: продолжать обход
-            # значило слать полторы тысячи заведомо провальных запросов, а на 429 - ещё и
-            # продлевать наказание каждым из них.
+            # A PAGE failing and the CHANNEL failing are different things, and they used to
+            # be one. A bad key or a spent allowance applies not to one mod but to all of
+            # them: carrying on meant sending fifteen hundred certainly-doomed requests, and
+            # on a 429 extending the punishment with every one of them.
             if e.code in (401, 403):
                 raise SweepStop('upd.badKey', code=e.code)
             if e.code == 429:
@@ -404,7 +419,8 @@ class Updates(Domain):
         with self._lock:
             slot = self._pending.pop(str(user_data), None)
             if slot is None and mod_id is not None:
-                # Подпись не совпала - ищем по паре игра/мод: это тот же ответ
+                # The token did not match - look up by the game/mod pair: it is the same
+                # reply
                 for key, cand in list(self._pending.items()):
                     if cand['modId'] == int(mod_id):
                         return self._pending.pop(key)
@@ -418,8 +434,8 @@ class Updates(Domain):
         slot['event'].set()
 
     def _on_failed(self, game, mod_id, *rest):
-        # Сигнатуры различаются между сборками MO2: (game, modId, fileId, userData, error)
-        # или (game, modId, userData, error). Сообщение об ошибке - всегда последнее.
+        # Signatures differ between MO2 builds: (game, modId, fileId, userData, error) or
+        # (game, modId, userData, error). The error message is always last.
         error = str(rest[-1]) if rest else ''
         user_data = rest[-2] if len(rest) >= 2 else None
         slot = self._take(user_data, game, mod_id)
@@ -429,11 +445,11 @@ class Updates(Domain):
         slot['event'].set()
 
     def _fetch(self, game, mod_id, timeout):
-        """Список файлов страницы или ошибка.
+        """The page's file list, or an error.
 
-        Через мост MO2 ответ приходит сигналом в главном потоке, а поток сервера ждёт его
-        событием; напрямую - обычный HTTP из потока сервера. Пауза между запросами в обоих
-        случаях: у API Nexus дневной лимит.
+        Through MO2's bridge the reply arrives as a signal on the main thread while the server
+        thread waits on an event; directly it is plain HTTP from the server thread. There is a
+        pause between requests either way: the Nexus API has a daily allowance.
         """
         delay = float(self.cfg.get('updates', {}).get('delaySec') or 0)
         wait_for = self._last_request + delay - time.time()
@@ -460,9 +476,10 @@ class Updates(Domain):
             return None, i18n.t('upd.timeout', sec=timeout)
         return slot['files'], slot['error']
 
-    # ---- местные факты ---------------------------------------------------
+    # ---- local facts -------------------------------------------------------
     def _downloads_meta(self):
-        """Что мы скачивали: по .meta рядом с архивами. modID -> {fileID: имя архива}."""
+        """What we downloaded, from the .meta files beside the archives.
+        modID -> {fileID: archive name}."""
         root = safe(self.o.downloadsPath, '') or ''
         got = {}
         try:
@@ -501,12 +518,12 @@ class Updates(Domain):
             return None
 
     def _targets(self, names, want_all, offset, limit):
-        """Карточки модов для проверки. Зовётся В главном потоке."""
+        """The mod cards to check. Called ON the main thread."""
         ml = self.o.modList()
         everyone = list(ml.allModsByProfilePriority())
-        # Страница -> архивы, из которых собраны ВСЕ её моды: решение о «скачано, но не
-        # установлено» принимается по странице, а не по одному моду, поэтому соседи по
-        # странице нужны и тогда, когда спросили об одном моде.
+        # Page -> the archives ALL of its mods were built from: the "downloaded but not
+        # installed" decision is made per page rather than per mod, so the page neighbours are
+        # needed even when a single mod was asked about.
         pages = {}
         for n in everyone:
             m = ml.getMod(n)
@@ -537,11 +554,11 @@ class Updates(Domain):
                         'ignoredVersion': safe(lambda: m.ignoredVersion().displayString(), '')})
         return out, total, pages
 
-    # ---- маршрут --------------------------------------------------------
+    # ---- the route ---------------------------------------------------------
     def updates(self, q):
-        """GET /updates?mod=A&mod=B  или  /updates?all=1&offset=0&limit=50
+        """GET /updates?mod=A&mod=B  or  /updates?all=1&offset=0&limit=50
 
-        Проверка по живому Nexus через MO2. Работает и при занятой MO2: это чтение.
+        A check against a live Nexus through MO2. Works while MO2 is busy: it is a read.
         """
         names = (q or {}).get('mod') or []
         if isinstance(names, str):
@@ -560,9 +577,9 @@ class Updates(Domain):
         got_all, dl_root = self._downloads_meta()
         rows, stopped = [], ''
         for t in targets:
-            # Запас по суточному лимиту проверяется ПЕРЕД запросом, а не после: ключ здесь
-            # общий с самой MO2, и доесть его до нуля значит оставить человека и без
-            # обновлений, и без загрузок в менеджере.
+            # The daily-allowance reserve is checked BEFORE the request, not after: the key
+            # here is shared with MO2 itself, and eating it down to zero leaves the person
+            # without updates and without downloads in the manager.
             if self.quota_exhausted():
                 stopped = i18n.t('upd.quotaLow', left=self._quota.get('daily-remaining'))
                 break
@@ -570,22 +587,22 @@ class Updates(Domain):
                 rows.append(self._check_one(t, got_all, dl_root, timeout, pages))
             except SweepStop as exc:
                 stopped = str(exc)
-                # Мод, на котором обход споткнулся, всё равно попадает в ответ. Иначе по
-                # ответу не видно, где именно остановились, а при запросе одного мода не
-                # осталось бы вообще ничего - только общая причина без привязки к моду.
+                # The mod the sweep stumbled on still goes into the answer. Otherwise the
+                # answer does not show where it stopped, and for a single-mod request nothing
+                # would be left at all - only a general reason tied to no mod.
                 row = dict(t)
                 row.update(checked=False, verdict='ERROR', why=stopped, error=stopped)
                 rows.append(row)
-                self.note('nexus: обход прекращён - %s' % stopped)
+                self.note(i18n.t('log.sweepStopped', why=stopped))
                 break
         res = {'count': len(rows), 'mods': rows, 'elapsedSec': round(time.time() - started, 1),
                'checked': sum(1 for r in rows if r.get('checked')),
                'rule': 'files-and-dates, versions never compared',
-               # Обход мог прекратиться раньше списка: тогда сказано, почему и сколько
-               # модов осталось неспрошенными. Молча укороченный ответ выглядел бы как
-               # «проверено всё», а это была бы неправда.
+               # The sweep may have stopped short of the list: then it says why, and how
+               # many mods went unasked. A silently truncated answer would read as
+               # "everything was checked", and that would be untrue.
                'stopped': stopped, 'unchecked': max(0, len(targets) - len(rows)),
-               # Каким путём спрошен Nexus и сколько запросов осталось по лимиту API
+               # How Nexus was asked, and how many API requests remain in the allowance
                'via': self._mode or 'none', 'quota': dict(self._quota)}
         if want_all:
             res.update(offset=offset, limit=limit, total=total,
@@ -609,9 +626,9 @@ class Updates(Domain):
         got_names = set(got.values())
         inst_time = self._installed_time(t['installationFile'], dl_root)
         inst_id = next((fid for fid, arc in got.items() if arc == t['installationFile']), 0)
-        # Момент установки - по всей странице: самый поздний из архивов, из которых собраны
-        # все её моды. Патч, собранный из старого архива, не значит, что новейший файл
-        # страницы не установлен: он стоит соседним модом.
+        # The install moment is taken per page: the latest among the archives all of its mods
+        # were built from. A patch built from an old archive does not mean the page's newest
+        # file is not installed - it stands as a neighbouring mod.
         mates = list((pages or {}).get(t['nexusId'], [])) + [t['installationFile']]
         page_time = max([self._installed_time(a, dl_root) or 0 for a in mates] or [0]) or None
         disk_time = max([page_time or 0] +
@@ -630,12 +647,12 @@ class Updates(Domain):
         return row
 
 
-# ================================================================ обвязка mobase
+# ================================================================ mobase plumbing
 def _connect(bridge, name, callback):
-    """Подписаться на ответ моста тем способом, какой есть у этой сборки MO2.
+    """Subscribe to the bridge's reply by whichever means this MO2 build offers.
 
-    В одних сборках это метод onFilesAvailable(callback), в других - сигнал Qt
-    filesAvailable или filesAvailable_ с .connect(). Пробуются все, по порядку.
+    In some builds it is a method onFilesAvailable(callback), in others a Qt signal
+    filesAvailable or filesAvailable_ with .connect(). All are tried, in order.
     """
     cap = name[0].upper() + name[1:]
     reg = getattr(bridge, 'on' + cap, None)
@@ -652,7 +669,7 @@ def _connect(bridge, name, callback):
 
 
 def _secs(value):
-    """QDateTime, число или строка -> секунды с эпохи, либо 0."""
+    """A QDateTime, a number or a string -> seconds since the epoch, or 0."""
     if value is None:
         return 0
     f = getattr(value, 'toSecsSinceEpoch', None)
@@ -672,7 +689,7 @@ def _text(value):
 
 
 def _file_record(f):
-    """Плоская запись файла из ModRepositoryFileInfo: только то, что нужно решению."""
+    """A flat file record out of ModRepositoryFileInfo: only what the decision needs."""
     g = lambda attr, default=None: safe(lambda: getattr(f, attr), default)
     cat = g('fileCategory', 0)
     try:

@@ -1,6 +1,28 @@
-MIT License
-
+MO2 ApI Bridge
 Copyright (c) 2026 Vhodnoylogin
+
+In plain words
+--------------
+This tool is free. Use it, copy it, change it, bundle it with your own modlist,
+publish it again — no permission needed and no payment ever. The one thing asked
+in return is that you say where it came from: keep this file with the code, and
+name the original when you redistribute it or build on it.
+
+There is no warranty. It drives a live Mod Organizer 2 instance and can change
+or delete mods; you run it at your own risk.
+
+По-русски, коротко
+------------------
+Утилита бесплатная. Пользуйтесь, копируйте, меняйте, кладите в свою сборку,
+выкладывайте заново — разрешения не нужно и денег не надо. Просьба одна: указывать
+источник. Оставьте этот файл рядом с кодом и назовите оригинал, когда будете
+распространять утилиту или делать на её основе своё.
+
+Гарантий никаких. Утилита управляет работающей Mod Organizer 2 и может изменить
+или удалить моды; вы пользуетесь ею на свой страх и риск.
+
+The legal text (MIT License)
+----------------------------
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

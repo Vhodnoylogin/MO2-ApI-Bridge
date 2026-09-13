@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Транспортный слой: главный поток Qt и HTTP-сервер.
+"""The transport layer: Qt's main thread and the HTTP server.
 
-Знает про потоки, сокеты, JSON и токен. Не знает ни про MO2, ни про то, что именно делают
-маршруты - ему передают готовую таблицу «путь -> функция». Поэтому логику можно менять,
-не трогая транспорт, и наоборот.
+It knows threads, sockets, JSON and the token. It knows nothing of MO2 or of what the routes
+actually do - it is handed a ready "path -> function" table. So the logic can change without
+touching the transport, and the other way round.
 """
 import json
 import secrets
@@ -19,11 +19,11 @@ from . import i18n
 
 
 class MainThreadRunner(QObject):
-    """Переносит вызов из потока сервера в главный поток Qt и ждёт результата.
+    """Carries a call from the server thread into Qt's main thread and waits for the result.
 
-    Без этого никак: mobase и Qt живут в главном потоке, и обращение к IOrganizer из чужого
-    потока роняет MO2 не сразу и непонятно где. Плата - последовательность: пока идёт долгий
-    вызов, окно менеджера не отвечает.
+    There is no way around it: mobase and Qt live on the main thread, and touching
+    IOrganizer from another one brings MO2 down later and elsewhere. The price is
+    serialisation: while a long call runs, the manager's window does not respond.
     """
     _fire = pyqtSignal(object)
 
@@ -36,15 +36,15 @@ class MainThreadRunner(QObject):
         try:
             box.append(('ok', fn()))
         except Exception as exc:
-            # Исключение переносится целиком, а не строкой. Раньше здесь получался
-            # RuntimeError("ValueError: нужен mod"), и транспорт терял единственный
-            # признак, по которому ошибку в запросе можно отличить от поломки моста.
+            # The exception is carried over whole, not as a string. This used to produce a
+            # RuntimeError("ValueError: mod is required"), and the transport lost the one
+            # marker that tells a mistake in the request from a broken bridge.
             box.append(('err', exc))
         done.set()
 
     def call(self, fn, timeout=120.0):
-        # Из главного потока задание выполняется на месте. Иначе получилось бы, что поток
-        # ставит задание сам себе и ждёт, пока сам же его выполнит, - тупик до таймаута.
+        # From the main thread the job runs in place. Otherwise the thread would queue a job
+        # for itself and wait for itself to run it - a deadlock until the timeout.
         if QThread.currentThread() is self.thread():
             return fn()
         box, done = [], threading.Event()
@@ -62,10 +62,10 @@ def new_token():
 
 
 def make_handler(token, routes_get, routes_post):
-    """Собрать обработчик HTTP поверх готовых таблиц маршрутов."""
+    """Build the HTTP handler on top of ready route tables."""
 
     class Handler(BaseHTTPRequestHandler):
-        # молчим в консоль: логи MO2 не должны тонуть в строчках вида "GET /mods 200"
+        # stay quiet on the console: MO2's log must not drown in "GET /mods 200" lines
         def log_message(self, *a):
             pass
 
@@ -78,8 +78,9 @@ def make_handler(token, routes_get, routes_post):
             self.wfile.write(body)
 
         def _auth(self):
-            # compare_digest, а не '!=': обычное сравнение строк выходит на первом
-            # несовпавшем символе, и по времени ответа токен подбирается посимвольно.
+            # compare_digest, not '!=': an ordinary string comparison returns on the first
+            # mismatched character, and the token could be guessed one character at a time
+            # from the response timing.
             given = self.headers.get('X-Token') or ''
             if not secrets.compare_digest(given, token):
                 self._send(403, {'error': i18n.t('err.token')})
@@ -90,18 +91,18 @@ def make_handler(token, routes_get, routes_post):
             u = urlparse(self.path)
             fn = table.get(u.path)
             if fn is None:
-                # список отдаём разделённым: половина ошибок - это чтение, посланное как
-                # POST, и наоборот. Общий список путей на такое не намекает никак.
+                # The list is returned split in two: half of all mistakes are a read sent as
+                # a POST, or the other way round. A single combined list hints at none of it.
                 return self._send(404, {'error': i18n.t('err.noRoute'),
                                         'get': sorted(routes_get),
                                         'post': sorted(routes_post)})
             try:
                 self._send(200, fn(arg))
             except ValueError as exc:
-                # Ошибка в запросе, а не поломка моста: забытый параметр, чужой режим,
-                # неизвестный мод, негодное булево. Раньше и то, и другое выходило
-                # пятисоткой с трассировкой, и вызывающий не мог отличить «спросил
-                # неверно» от «мост сломался» - то есть не мог решить, повторять ли.
+                # A mistake in the request, not a broken bridge: a forgotten parameter, an
+                # unknown mode, an unknown mod, a bad boolean. Both used to come back as a
+                # 500 with a traceback, and the caller could not tell "you asked wrong" from
+                # "the bridge broke" - that is, could not decide whether to retry.
                 self._send(400, {'error': str(exc), 'code': 'badRequest'})
             except Exception as exc:
                 self._send(500, {'error': str(exc), 'code': 'bridgeFailure',
@@ -126,20 +127,20 @@ def make_handler(token, routes_get, routes_post):
 
 
 class Server(ThreadingHTTPServer):
-    """Своя привязка вместо наследуемой.
+    """Our own binding instead of the inherited one.
 
-    `http.server.HTTPServer` объявляет `allow_reuse_address = 1`, а на Windows это значит,
-    что встать на УЖЕ СЛУШАЕМЫЙ адрес можно. Второй экземпляр MO2 поднимал второй мост без
-    единой ошибки, писал в лог «поднят», показывал в меню «работает» - и не получал ни
-    одного запроса: все они доставались первому. Честный отказ здесь нужнее, чем удобство
-    повторной привязки, поэтому обратно выключаем.
+    `http.server.HTTPServer` declares `allow_reuse_address = 1`, and on Windows that means
+    binding to an ALREADY LISTENING address is allowed. A second MO2 instance raised a second
+    bridge without a single error, logged "listening", showed "running" in the menu - and
+    received no requests at all: they all went to the first one. An honest refusal matters
+    more here than the convenience of rebinding, so it goes back off.
     """
     allow_reuse_address = False
     daemon_threads = True
 
     def server_bind(self):
-        # Отсутствия SO_REUSEADDR на Windows мало: SO_EXCLUSIVEADDRUSE закрывает и перехват
-        # адреса чужим процессом, который встаёт первым.
+        # The absence of SO_REUSEADDR is not enough on Windows: SO_EXCLUSIVEADDRUSE also
+        # closes off an address being taken over by a foreign process that binds first.
         opt = getattr(socket, 'SO_EXCLUSIVEADDRUSE', None)
         if opt is not None:
             try:
@@ -150,11 +151,11 @@ class Server(ThreadingHTTPServer):
 
 
 def serve(port, handler, tries=1):
-    """Поднять сервер в фоне. Слушаем только петлю - наружу порт не выставляется никогда.
+    """Raise the server in the background. Loopback only - the port is never exposed outside.
 
-    Возвращает пару (сервер, порт). Порт возвращается потому, что он не обязан совпасть
-    с заказанным: при занятом пробуем следующие, и вызывающий обязан узнать, где мост в
-    итоге встал, - иначе он напишет в файл токена неверное число.
+    Returns the pair (server, port). The port comes back because it need not be the one
+    asked for: when it is taken we try the next ones, and the caller must learn where the
+    bridge actually ended up - otherwise it writes the wrong number into the token file.
     """
     last = None
     for step in range(max(1, int(tries))):
@@ -163,6 +164,6 @@ def serve(port, handler, tries=1):
         except OSError as exc:
             last = exc
             continue
-        threading.Thread(target=srv.serve_forever, name='MO2AIBridge', daemon=True).start()
+        threading.Thread(target=srv.serve_forever, name='MO2ApIBridge', daemon=True).start()
         return srv, port + step
     raise last

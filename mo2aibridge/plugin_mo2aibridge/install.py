@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Установка мода без единого диалога: createMod плюс собственная распаковка.
+"""Installing a mod without a single dialog: createMod plus our own unpacking.
 
-installMod намеренно не используется. Он запускает установщик MO2, а тот всегда спрашивает
-имя, при совпадении имён спрашивает «заменить или слить», а на архиве с fomod/ModuleConfig.xml
-открывает мастера. Автоматизировать эти окна нельзя: MO2 на Qt, её виджеты нарисованы внутри
-одного HWND, нативных кнопок для нажатия по подписи нет.
+installMod is deliberately not used. It runs MO2's installer, which always asks for a name,
+asks "replace or merge" when names collide, and opens the wizard for an archive carrying
+fomod/ModuleConfig.xml. Those windows cannot be automated: MO2 is Qt, its widgets are drawn
+inside a single HWND, and there are no native buttons to press by caption.
 
-createMod же заводит зарегистрированную пустую папку, а файлы кладёт мост сам - ровно те,
-что нужны. Для FOMOD это и так единственный верный путь: выбор опций разбирается чтением
-ModuleConfig.xml, а не кликами.
+createMod, by contrast, registers an empty folder and the bridge places the files itself -
+exactly the ones wanted. For FOMOD this is the only correct path anyway: the option choice
+is worked out by reading ModuleConfig.xml, not by clicking.
 """
 import os
 import shutil
@@ -22,11 +22,11 @@ from .base import Domain, folder_name, inside, safe
 
 
 def tree_files(root):
-    """Пути всех файлов папки относительно неё самой, в нижнем регистре.
+    """Paths of every file in a folder, relative to it, lower-cased.
 
-    Нужны для честного «было и стало»: по разнице видно, что добавилось, а по пересечению -
-    что перекрыто. Регистр снят, потому что Windows его не различает, а архивы приносят
-    и то, и другое написание.
+    Needed for an honest "before and after": the difference shows what was added, the
+    intersection what was overwritten. Case is dropped because Windows does not distinguish
+    it while archives carry both spellings.
     """
     out = set()
     for dp, _dn, fs in os.walk(root):
@@ -39,17 +39,18 @@ def tree_files(root):
 class Installer(Domain):
 
     def install(self, body):
-        """body: {archive, name, paths: ["подпапка в архиве", ...], mode}
+        """body: {archive, name, paths: ["subfolder in the archive", ...], mode}
 
-        mode нужен только когда папка мода уже занята, и повторяет то, что установщик MO2
-        спрашивает диалогом:
+        mode is only needed when the mod folder is already taken, and it mirrors what MO2's
+        installer asks with a dialog:
 
-            merge    положить выбранное поверх прежнего содержимого
-            replace  убрать прежнее содержимое и положить выбранное
+            merge    lay the selection over the previous contents
+            replace  remove the previous contents, then lay the selection down
 
-        Без mode занятая папка - отказ: перезаписать чужую работу молча нельзя. При замене
-        прежнее содержимое уходит В КОРЗИНУ, а meta.ini остаётся: в нём nexusId, категория и
-        имя архива, то есть опознание мода помимо имени папки.
+        Without mode, a taken folder is a refusal: nothing is written over someone's work
+        silently. On replace the previous contents go TO THE RECYCLE BIN, while meta.ini
+        stays: it holds nexusId, the category and the archive name - the mod's identity
+        beyond its folder name.
         """
         def prepare():
             arc = body.get('archive')
@@ -59,15 +60,15 @@ class Installer(Domain):
             mode = (body.get('mode') or '').strip().lower()
             if mode and mode not in ('merge', 'replace'):
                 raise ValueError(i18n.t('err.badMode', mode=mode))
-            # Замена уносит прежнее содержимое в Корзину, то есть теряет чужую работу, -
-            # и потому закрыта ключом наравне с удалением. Обычная установка и слияние
-            # ничего не теряют, ключа не требуют и договора не меняют: по ним уже ходят
-            # чужие вызовы, и ломать их ради единственного опасного режима нельзя.
+            # Replace sends the previous contents to the Recycle Bin, losing someone's work,
+            # and so it sits behind the key just like removal. A plain install and a merge
+            # lose nothing, need no key and change no contract: other callers already use
+            # them, and breaking those for the sake of the one dangerous mode is not on.
             if mode == 'replace':
                 return self.danger(body, 'installReplace')
             return None
 
-        # Распаковка и копирование главному потоку не нужны, он зовётся точечно изнутри.
+        # Unpacking and copying do not need the main thread; it is entered pointwise inside.
         return self.change('install', lambda: self._install(body), on_main=False,
                            prepare=prepare)
 
@@ -84,8 +85,9 @@ class Installer(Domain):
 
         if existed:
             target = os.path.join(mods_root, name)
-            # Имя уже проверено, но путь сверяется ещё раз: между проверкой и работой
-            # стоит связь или стык папок, и убедиться дешевле, чем поверить.
+            # The name is already checked, but the path is verified once more: a junction or
+            # a mount point can sit between the check and the work, and making sure is
+            # cheaper than taking it on trust.
             if not inside(mods_root, target):
                 raise ValueError(i18n.t('err.badName', name=name))
             before = tree_files(target)
@@ -100,9 +102,10 @@ class Installer(Domain):
                 raise RuntimeError(i18n.t('err.badName', name=target))
             before = set()
 
-        # Распаковка идёт ПЕРЕД чисткой, и это не вкусовщина: она же и проверяет, есть ли
-        # на машине 7-Zip и цел ли архив. При обратном порядке пользователь без 7-Zip
-        # получал папку мода в Корзине и никакой установки взамен.
+        # Unpacking comes BEFORE wiping, and that is not a matter of taste: unpacking is
+        # also what checks whether 7-Zip is on the machine and whether the archive is
+        # intact. The other way round, a user without 7-Zip got the mod folder in the
+        # Recycle Bin and no install in exchange.
         removed = 0
         tmp = self._unpack(arc)
         try:
@@ -114,8 +117,8 @@ class Installer(Domain):
         self.run_main(lambda: (self.o.refresh(True), True)[1])
         after = tree_files(target)
         limit = self.limit()
-        # «Что было и что стало» - целиком: слияние молча перекрывает прежние файлы, и без
-        # списка перекрытых вызывающий не узнает, что именно потерял.
+        # "What was and what became", in full: a merge silently overwrites previous files,
+        # and without the list of them the caller never learns what was lost.
         overwritten = sorted(before & after) if mode == 'merge' else []
         return {'mod': name, 'path': target, 'files': copied,
                 'created': not existed, 'existed': existed, 'mode': mode or 'new',
@@ -128,9 +131,9 @@ class Installer(Domain):
                          if not existed else None)}
 
     def _wipe(self, target):
-        """Убрать прежнее содержимое В КОРЗИНУ, а не мимо: замена - единственная установка,
-        которая что-то теряет, и терять её надо обратимо. meta.ini не трогаем: он принадлежит
-        MO2 и хранит опознание мода помимо имени папки."""
+        """Send the previous contents TO THE RECYCLE BIN, not past it: replace is the one
+        install that loses something, and it has to lose it reversibly. meta.ini is left
+        alone - it belongs to MO2 and holds the mod's identity beyond its folder name."""
         removed = 0
         for entry in sorted(os.listdir(target)):
             if entry.lower() == 'meta.ini':
@@ -139,14 +142,15 @@ class Installer(Domain):
             if safe(lambda p=full: winapi.recycle(p), False):
                 removed += 1
             else:
-                # Сколько уже ушло - обязательная часть отказа: чистка прервалась на
-                # середине, и без этого числа вызывающий не знает, что искать в Корзине.
+                # How many already went is a mandatory part of the refusal: the wipe broke
+                # off midway, and without that number the caller cannot know what to look
+                # for in the Recycle Bin.
                 raise RuntimeError(i18n.t('err.recycle', path=full, done=removed))
         return removed
 
     def _unpack(self, arc):
-        """Распаковать архив в свою временную папку. Папка у каждого вызова своя: две
-        установки подряд не должны затирать друг друга."""
+        """Unpack the archive into a temporary folder of its own. Each call gets its own:
+        two installs in a row must not overwrite each other."""
         seven = self.cfg.seven_zip()
         if not seven:
             raise RuntimeError(i18n.t('err.no7z'))
@@ -168,7 +172,7 @@ class Installer(Domain):
                 raise ValueError(i18n.t('err.noPathInArchive', path=sub))
             for dp, _dn, fs in os.walk(root):
                 rel = os.path.relpath(dp, root)
-                # fomod - описание мастера установки, игре оно не нужно
+                # fomod describes the install wizard; the game has no use for it
                 if rel.lower().split(os.sep)[0] == 'fomod':
                     skipped_fomod = True
                     continue

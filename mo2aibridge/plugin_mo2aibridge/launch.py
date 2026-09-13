@@ -1,36 +1,39 @@
 # -*- coding: utf-8 -*-
-"""Запуск программ внутри VFS и работа с их окнами.
+"""Launching programs inside the VFS, and driving their windows.
 
-Запуск - самая опасная операция моста: под MO2 поднимается чужой процесс с виртуальной
-Data. Он закрыт замком занятости, как и остальные изменения. Окна нужны ради утилит на WinAPI
-(диалоги DynDOLOD и TexGen): их закрывают тем же мостом, и именно это снимает занятость.
+Launching is the bridge's most dangerous operation: a foreign process is raised under MO2
+with the virtual Data mounted. It sits behind the busy lock like every other change, and
+behind the irreversible key as well. The window work exists for WinAPI tools (the DynDOLOD
+and TexGen dialogs): closing them through the bridge is what releases the busy state.
 """
 import os
 
 from . import i18n, winapi
-from .base import Domain, one, safe
+from .base import Domain, flag, one, safe
 
 
 class Launcher(Domain):
 
     def __init__(self, ctx, guard):
         super().__init__(ctx, guard)
-        # Что мост запускал за эту сессию: ключ -> (дескриптор, pid, имя)
+        # What the bridge launched this session: key -> (handle, pid, name)
         self.procs = {}
         self.seq = 0
 
     def run(self, body):
-        """Запуск утилиты внутри VFS.
+        """Launch a tool inside the VFS.
 
-        binary - ЗАРЕГИСТРИРОВАННОЕ в MO2 имя исполняемого файла, а не путь: с полным путём
-        startApplication молча не создаёт процесс.
+        binary is the executable's name AS REGISTERED in MO2, not a path: given a full path,
+        startApplication silently creates no process at all.
         """
         def prepare():
             if not body.get('binary'):
                 raise ValueError(i18n.t('err.needBinary'))
-            # Запуск - самая опасная операция моста: под MO2 поднимается чужой процесс
-            # с виртуальной Data, и что он сделает со сборкой, мост не контролирует.
-            # Поэтому сверх замка занятости - ключ необратимого, как у удаления.
+            flag(body, 'wait')
+            # Launching is the bridge's most dangerous operation: a foreign process comes up
+            # under MO2 with the virtual Data, and what it does to the setup is beyond the
+            # bridge's control. So on top of the busy lock there is the irreversible key,
+            # the same one removal uses.
             stop = self.danger(body, 'run')
             if stop:
                 stop.update({'binary': body.get('binary'), 'args': body.get('args') or []})
@@ -42,11 +45,11 @@ class Launcher(Domain):
         binary = body.get('binary')
         args = body.get('args') or []
         cwd = body.get('cwd') or ''
-        wait = bool(body.get('wait'))
+        wait = flag(body, 'wait')
 
         def start():
-            # Флаг живёт внутри одного задания главного потока: onAboutToRun MO2 зовёт
-            # синхронно из startApplication, а задания выполняются по одному.
+            # The flag lives inside a single main-thread job: MO2 calls onAboutToRun
+            # synchronously from startApplication, and jobs run one at a time.
             with self.guard.starting():
                 return self.o.startApplication(binary, args, cwd)
         handle = self.run_main(start)
@@ -54,25 +57,28 @@ class Launcher(Domain):
         key = 'p%d' % self.seq
         pid = winapi.process_id(handle) if handle else 0
         self.procs[key] = (handle, pid, os.path.basename(str(binary)))
-        # started говорит, дал ли MO2 дескриптор вообще: с полным путём вместо имени
-        # startApplication молча возвращает пусто, и раньше это выглядело как запуск.
+        # `started` says whether MO2 handed back a handle at all: given a full path instead
+        # of a registered name, startApplication silently returns nothing, and that used to
+        # look exactly like a successful launch.
         res = {'key': key, 'pid': pid, 'binary': binary, 'args': args,
                'started': bool(handle)}
         if wait and handle:
-            # Ждём сами, а не через waitForApplication: тот не отпускает GIL и останавливает
-            # весь интерпретатор вместе с сервером - мост замолкает целиком.
+            # We wait ourselves rather than through waitForApplication: that one never
+            # releases the GIL and stalls the whole interpreter along with the server - the
+            # bridge goes silent entirely.
             res['exit'] = winapi.wait_process(
                 handle, float(body.get('timeout') or self.timeout('runWait')))
             res['waitedBy'] = 'WaitForSingleObject'
         return res
 
     def procs_list(self, _=None):
-        """Что мост запускал за эту сессию - с признаком, жив ли процесс до сих пор.
+        """What the bridge launched this session - with a mark for whether it is still alive.
 
-        Список копится с первого запуска и сам не чистится: о завершении своих запусков MO2
-        не сообщает, ждать её слова тут нечего. Пока признака не было, три давно закрытых
-        TexGen из проверок выглядели как три работающие программы и подняли ложную тревогу
-        в соседнем чате. Поэтому живость спрашивается у системы на каждый вызов.
+        The list accumulates from the first launch and never prunes itself: MO2 does not
+        report the completion of our own launches, so there is nothing to wait for. While
+        the mark was missing, three long-closed TexGen runs from the checks looked like three
+        running programs and raised a false alarm in a neighbouring chat. So liveness is
+        asked of the system on every call.
         """
         out = []
         for k, (handle, pid, what) in self.procs.items():

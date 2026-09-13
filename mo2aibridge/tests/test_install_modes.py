@@ -20,7 +20,7 @@ import common  # noqa: E402
 common.need_live()
 r = common.Report('установка: свежая, слияние, замена')
 
-PROBE = 'MO2 AI Bridge - проба установки'
+PROBE = 'MO2 ApI Bridge - проба установки'
 KEY = {'iUnderstandTheRisk': 'yes-I-read-the-docs-and-accept-irreversible-changes'}
 
 

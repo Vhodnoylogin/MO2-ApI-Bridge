@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Настраиваемые значения плагина: таймауты, лимиты списков, где искать 7-Zip.
+"""The plugin's configurable values: timeouts, list limits, where to look for 7-Zip.
 
-Всё, что раньше было константой в коде, живёт здесь одним словарём умолчаний. Файл
-`<PLUGIN_ID>-config.json` рядом с плагином создаётся при первом запуске из этих умолчаний,
-а дальше читается поверх них: чего в файле нет, берётся из умолчаний, так что старый файл
-переживает добавление новых ключей.
+Everything that used to be a constant in the code lives here in one defaults dictionary.
+The file `<PLUGIN_ID>-config.json` next to the plugin is created from those defaults on
+first start and is then read on top of them: whatever the file omits comes from the
+defaults, so an old file survives the addition of new keys.
 
-Абсолютных путей здесь нет. Кандидаты на 7z.exe складываются из переменных окружения
-`ProgramFiles` и `ProgramFiles(x86)`, а не пишутся руками, - и дополняются поиском по PATH.
+There are no absolute paths here. The 7z.exe candidates are assembled from the
+`ProgramFiles` and `ProgramFiles(x86)` environment variables rather than written by hand,
+and are backed up by a PATH lookup.
 """
 import io
 import json
@@ -18,7 +19,7 @@ from . import i18n
 
 
 def _seven_zip_candidates():
-    """Где обычно лежит 7z.exe. Установщик 7-Zip в PATH не пишет, поэтому смотрим сами."""
+    """Where 7z.exe usually lives. The 7-Zip installer does not touch PATH, so we look."""
     out = []
     for var in ('ProgramFiles', 'ProgramW6432', 'ProgramFiles(x86)'):
         base = os.environ.get(var)
@@ -30,8 +31,8 @@ def _seven_zip_candidates():
 
 
 DEFAULTS = {
-    # Секунды ожидания главного потока MO2 по видам работы. Ping короткий намеренно:
-    # именно он нужен, когда MO2 не отвечает, и ответить он обязан быстро.
+    # Seconds to wait for MO2's main thread, by kind of work. Ping is short on purpose:
+    # it is the one needed when MO2 is unresponsive, and it has to answer quickly.
     'timeouts': {
         'ping': 15,
         'gameName': 10,
@@ -40,17 +41,17 @@ DEFAULTS = {
         'vfsExport': 1800,
         'runWait': 3600,
     },
-    # Сколько строк отдавать в списках added/overwritten/sample, чтобы ответ не разрастался.
+    # How many rows to return in the added/overwritten/sample lists, so a reply stays sane.
     'listLimit': 200,
     'analyzeLimit': 80,
     'orderReportLimit': 20,
-    # Хвост вывода 7-Zip, попадающий в текст ошибки распаковки.
+    # The tail of 7-Zip's output that goes into the text of an unpack error.
     'unpackErrorTail': 300,
-    # Пути к 7z.exe по порядку; пустой список означает «только поиск по PATH».
+    # Paths to 7z.exe in order; an empty list means "PATH lookup only".
     'sevenZip': _seven_zip_candidates(),
-    # Имя папки распаковки внутри %TEMP%; к нему добавляется уникальный хвост на каждый вызов.
+    # Name of the unpack folder inside %TEMP%; a unique suffix is added per call.
     'unpackDirName': 'mo2aibridge-unpack',
-    # Домен Nexus по имени игры MO2 - для ссылки на страницу мода.
+    # Nexus section by MO2's game name - used for the link to a mod page.
     'nexusDomains': {
         'SkyrimSE': 'skyrimspecialedition',
         'SkyrimVR': 'skyrimspecialedition',
@@ -58,41 +59,44 @@ DEFAULTS = {
         'Fallout4': 'fallout4',
         'Fallout4VR': 'fallout4',
     },
-    # Пусто намеренно: раздел Nexus спрашивается у самой MO2 (gameNexusName), а таблица
-    # выше - только перекрытие для случаев вроде Skyrim VR, у которого своего раздела нет.
-    # Прежнее умолчание 'skyrimspecialedition' отправляло мод незнакомой игры в чужой
-    # раздел, и мост выносил уверенный вердикт по файлам другого мода с тем же номером.
-    # Значение здесь - последняя соломинка для того, у кого MO2 имени не отдаёт.
+    # Empty on purpose: the Nexus section is asked of MO2 itself (gameNexusName), and the
+    # table above is only an override for cases like Skyrim VR, which has no section of its
+    # own. The previous default of 'skyrimspecialedition' sent a mod of an unknown game
+    # into a foreign section, and the bridge passed confident judgement on the files of a
+    # different mod with the same id. The value here is a last resort for anyone whose MO2
+    # will not name the section.
     'nexusDomainDefault': '',
-    # Корневые папки Data для запасного обхода VFS вширь.
+    # Data root folders for the fallback breadth-first VFS walk.
     'walkRoots': ['meshes', 'textures', 'scripts', 'sound', 'music', 'interface', 'seq',
                   'strings', 'video', 'grass', 'lodsettings', 'shadersfx', 'skse', 'source'],
-    # Проверка обновлений через Nexus: пауза между запросами бережёт дневной лимит API,
-    # maxPerCall ограничивает один вызов /updates?all=1, newerLimit - сколько файлов новее
-    # называть по каждой роли.
+    # Update checks through Nexus: the pause between requests protects the daily API
+    # allowance, maxPerCall bounds a single /updates?all=1 call, and newerLimit says how
+    # many newer files to name per role.
     'updates': {
         'delaySec': 0.5,
         'timeoutSec': 30,
         'maxPerCall': 50,
         'newerLimit': 3,
-        # Прямой путь к API, когда мост MO2 из Python недоступен: ключ берётся из хранилища
-        # учётных данных Windows под тем именем, под которым его держит сама MO2.
+        # The direct path to the API, used when MO2's own Nexus bridge is unusable from
+        # Python: the key comes from the Windows credential store, under the name MO2
+        # itself keeps it.
         'credentialTarget': 'ModOrganizer2_APIKEY',
         'apiHost': 'https://api.nexusmods.com',
         'appVersion': '2.1.0',
-        # Сколько подряд идущих сетевых отказов считать обрывом канала и прекращать обход.
-        # Одна неудача бывает у кого угодно; пять подряд означают, что и остальная тысяча
-        # запросов провалится так же, только дольше - каждый по своему таймауту.
+        # How many consecutive network failures count as a dead channel and stop the sweep.
+        # One failure happens to anyone; five in a row mean the remaining thousand requests
+        # will fail the same way, only slower - each waiting out its own timeout.
         'netFailsBeforeStop': 5,
-        # Запас по суточному лимиту, ниже которого обход прекращается. Ключ общий с самой
-        # MO2: доев его до нуля, мост оставит человека и без обновлений, и без загрузок.
+        # The daily-allowance reserve below which the sweep stops. The key is shared with
+        # MO2 itself: eating it down to zero leaves the user without updates and without
+        # downloads in the manager.
         'quotaReserve': 50,
     },
 }
 
 
 def _merge(base, over):
-    """Словарь поверх словаря: вложенные словари сливаются, остальное заменяется."""
+    """A dictionary over a dictionary: nested dictionaries merge, everything else replaces."""
     out = dict(base)
     for k, v in (over or {}).items():
         if isinstance(v, dict) and isinstance(out.get(k), dict):
@@ -103,7 +107,7 @@ def _merge(base, over):
 
 
 class Config(object):
-    """Значения по ключам с умолчаниями. Экземпляр без файла - просто умолчания."""
+    """Values by key with defaults. An instance without a file is just the defaults."""
 
     def __init__(self, values=None, path=None):
         self.path = path
@@ -111,9 +115,10 @@ class Config(object):
 
     @classmethod
     def load(cls, path, note=None):
-        """Прочитать файл; нет файла - записать умолчания и работать по ним.
+        """Read the file; with no file, write the defaults out and work from them.
 
-        Испорченный файл не роняет плагин: сообщается через note, берутся умолчания.
+        A corrupted file does not bring the plugin down: it is reported through note and
+        the defaults are used.
         """
         note = note or (lambda _m: None)
         if not os.path.isfile(path):
@@ -140,7 +145,7 @@ class Config(object):
         return float(self.values['timeouts'].get(name) or DEFAULTS['timeouts'][name])
 
     def seven_zip(self):
-        """Путь к 7z.exe: сначала настроенные кандидаты, затем PATH. None, если нет нигде."""
+        """Path to 7z.exe: the configured candidates first, then PATH. None if nowhere."""
         for p in self.values.get('sevenZip') or []:
             if p and os.path.isfile(p):
                 return p

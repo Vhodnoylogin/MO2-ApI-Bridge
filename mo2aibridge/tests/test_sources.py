@@ -58,7 +58,7 @@ for path in files(common.PKG, ('.py',)):
 r.head('каждый модуль описан в раскладке README')
 modules = sorted(os.path.basename(p) for p in files(common.PKG, ('.py',))
                  if os.path.basename(p) != '__init__.py')
-for name in ('README.md', 'README.en.md'):
+for name in ('README.md', 'README.ru.md'):
     text = read(os.path.join(common.PKG, name))
     missing = [m for m in modules if '`%s`' % m not in text]
     r.case(name, missing, [])

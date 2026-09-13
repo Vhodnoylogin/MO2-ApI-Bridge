@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Слой маршрутизации: какой путь какую операцию вызывает.
+"""The routing layer: which path calls which operation.
 
-Знает про имена путей и ничего больше. Ни mobase, ни сокетов, ни JSON здесь нет - только
-таблицы соответствий. Добавить маршрут значит дописать строку, а не трогать транспорт
-или предметный слой.
+It knows path names and nothing else. No mobase, no sockets, no JSON here - only the
+mapping tables. Adding a route means adding a line, not touching the transport or the
+domain layer.
 """
 
 
 def build(svc):
-    """Собрать две таблицы: чтение и изменения. Разделение не косметическое - транспорт
-    по нему решает, брать ли параметры из строки запроса или из тела."""
+    """Build the two tables: reads and writes. The split is not cosmetic - the transport
+    uses it to decide whether arguments come from the query string or from the body."""
     get = {
         '/ping': svc.ping,
         '/api': svc.api,
@@ -24,7 +24,7 @@ def build(svc):
         '/dirs': svc.dirs,
         '/procs': svc.procs_list,
         '/windows': svc.windows,
-        # обновления по живому Nexus - чтение, работает и при занятой MO2
+        # update checks against a live Nexus - a read, so it works while MO2 is busy
         '/updates': svc.updates,
     }
     post = {
@@ -36,7 +36,7 @@ def build(svc):
         '/vfsexport': svc.vfsexport,
         '/run': svc.run,
         '/window': svc.window,
-        # необратимое: без ключа из документации эти маршруты ничего не делают
+        # irreversible: without the key from the documentation these routes do nothing
         '/mods/priority': svc.mods_priority,
         '/mods/rename': svc.mods_rename,
         '/mods/remove': svc.mods_remove,

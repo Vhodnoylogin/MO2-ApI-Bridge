@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
-"""MO2 AI Bridge — локальный HTTP-мост к работающей Mod Organizer 2.
+"""MO2 ApI Bridge - a local HTTP bridge to a running Mod Organizer 2.
 
-Верхний слой: жизненный цикл плагина и сборка остальных слоёв воедино. Сам ничего не делает
-руками — только соединяет.
+The top layer: the plugin lifecycle and the wiring of everything below it. It does nothing
+by hand - it only connects.
 
-Слои снизу вверх, каждый знает лишь про тот, что под ним:
+Layers, bottom to top; each knows only the one below it:
 
-    winapi.py    окна и кнопки Windows          — не знает ни про MO2, ни про сеть
-    runtime.py   главный поток Qt и HTTP        — не знает, что делают маршруты
-    services.py  операции над сборкой, фасад    — не знает про HTTP и JSON
-    routes.py    какой путь во что отображается — не знает ни про mobase, ни про сокеты
-    plugin.py    жизненный цикл плагина         — этот файл
+    winapi.py    Windows windows and buttons     - knows nothing of MO2 or networking
+    runtime.py   Qt main thread and HTTP         - knows nothing of what the routes do
+    services.py  operations on the setup, facade - knows nothing of HTTP or JSON
+    routes.py    which path maps to what         - knows nothing of mobase or sockets
+    plugin.py    the plugin lifecycle            - this file
 
-Строки вынесены в i18n.py, настраиваемые значения — в config.py.
+Strings live in i18n.py, configurable values in config.py.
 """
 import os
 import traceback
@@ -25,10 +25,11 @@ from .services import Services
 
 from . import PLUGIN_ID, __version__
 
-PLUGIN_NAME = 'MO2AIBridge'
+PLUGIN_NAME = 'MO2 ApI Bridge'
 DEFAULT_PORT = 8930
-# Сколько портов подряд пробовать, если заказанный занят. Занимает его обычно второй
-# экземпляр MO2 - и это не беда, а обычный день: Skyrim и Fallout держат открытыми оба.
+# How many consecutive ports to try when the requested one is taken. The usual culprit is a
+# second MO2 instance - and that is not trouble but an ordinary day: Skyrim and Fallout are
+# often both open.
 PORT_TRIES = 10
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOKEN_FILE = os.path.join(HERE, PLUGIN_ID + '-token.txt')
@@ -38,13 +39,14 @@ DOCS = os.path.join(HERE, 'README.md')
 
 
 def token_file(port, wanted):
-    """Куда писать токен для моста, вставшего на порт `port` при заказанном `wanted`.
+    """Where to write the token for a bridge that bound `port` having asked for `wanted`.
 
-    Досталcя заказанный порт - имя привычное, и у кого один экземпляр MO2, для того не
-    меняется ничего, каким бы порт ни был настроен. Второй экземпляр встаёт на следующий
-    свободный и получает собственный файл: один общий они перетирали друг другу, и клиент,
-    взявший токен последним, стучался им в чужой мост. Порт вынесен в имя намеренно - по
-    нему клиент и узнаёт, куда стучаться, не спрашивая ни у кого.
+    If the requested port was granted, the name is the familiar one - so for anyone with a
+    single MO2 instance nothing changes, whatever the port is configured to. A second
+    instance binds the next free port and gets a file of its own: one shared file had them
+    overwriting each other, and the client that read the token last knocked on the wrong
+    bridge with it. The port is in the name deliberately - it is how a client learns where to
+    knock without asking anyone.
     """
     if int(port) == int(wanted):
         return TOKEN_FILE
@@ -52,11 +54,11 @@ def token_file(port, wanted):
 
 
 def log(msg):
-    """Писать и в лог MO2, и в файл рядом с плагином.
+    """Write both to MO2's log and to a file next to the plugin.
 
-    В файл — потому что уровень логирования MO2 по умолчанию отбрасывает предупреждения
-    плагинов, и тогда причина отказа теряется совсем. Именно это однажды стоило часов поиска:
-    мост молчал, а исключение проглатывалось.
+    To a file because MO2's default log level drops plugin warnings, and then the reason for
+    a refusal is lost entirely. That once cost hours of searching: the bridge went quiet
+    while an exception was being swallowed.
     """
     line = '[%s] %s' % (PLUGIN_NAME, msg)
     try:
@@ -72,14 +74,14 @@ def log(msg):
 
 
 def _version_info():
-    """VersionInfo из __version__: номер задаётся один раз, в __init__.py."""
+    """VersionInfo out of __version__: the number is stated once, in __init__.py."""
     parts = [int(x) for x in __version__.split('.')[:3]]
     while len(parts) < 3:
         parts.append(0)
     return mobase.VersionInfo(parts[0], parts[1], parts[2], 0)
 
 
-class MO2AIBridge(mobase.IPluginTool):
+class MO2ApIBridge(mobase.IPluginTool):
     def __init__(self):
         super().__init__()
         self._organizer = None
@@ -91,7 +93,7 @@ class MO2AIBridge(mobase.IPluginTool):
         self._token_file = None
         self._quit_hooked = False
 
-    # ---- интерфейс MO2 ----------------------------------------------------
+    # ---- the MO2 interface -------------------------------------------------
     def init(self, organizer):
         self._organizer = organizer
         i18n.set_language(self._setting('language', 'auto'))
@@ -106,7 +108,8 @@ class MO2AIBridge(mobase.IPluginTool):
         return PLUGIN_NAME
 
     def author(self):
-        # Имя владельца, как оно видно на Nexus. Лицензия - MIT, файл LICENSE рядом.
+        # The owner's name as it appears on Nexus. Licence is MIT; the LICENSE file is next
+        # to this one.
         return 'Vhodnoylogin'
 
     def description(self):
@@ -121,11 +124,11 @@ class MO2AIBridge(mobase.IPluginTool):
                 mobase.PluginSetting('language', i18n.t('setting.language'), 'auto')]
 
     def isActive(self):
-        """Мягкая проверка намеренно.
+        """Lenient on purpose.
 
-        Галочка «Включено» на панели плагина в MO2 2.5 — собственный выключатель менеджера,
-        а не настройка с именем enabled: pluginSetting возвращает по ней None. Строгое
-        сравнение `is True` не проходило никогда, и мост молча не поднимался.
+        The "Enabled" checkbox on the plugin panel in MO2 2.5 is the manager's own switch,
+        not a setting named enabled: pluginSetting returns None for it. A strict `is True`
+        comparison never passed, and the bridge silently failed to come up.
         """
         v = self._setting('enabled', True)
         if v is None:
@@ -148,8 +151,8 @@ class MO2AIBridge(mobase.IPluginTool):
         self._parent = widget
 
     def display(self):
-        """Пункт меню служит и ручным запуском: если автостарт не сработал, мост можно
-        поднять отсюда и сразу увидеть настоящую причину отказа."""
+        """The menu entry doubles as a manual start: if autostart did not fire, the bridge
+        can be raised from here and the real reason for a failure seen at once."""
         from PyQt6.QtWidgets import QMessageBox
         if not self._server:
             err = self.start()
@@ -157,8 +160,8 @@ class MO2AIBridge(mobase.IPluginTool):
                 QMessageBox.critical(self._parent, i18n.t('plugin.displayName'),
                                      i18n.t('dialog.startFailed', error=err, log=ERROR_LOG))
                 return
-        # Застрявший учёт запусков виден только здесь и сбрасывается только отсюда:
-        # маршрута для этого нет намеренно, иначе замок обходился бы одним запросом.
+        # Stuck launch bookkeeping is visible only here and reset only from here: there is
+        # deliberately no route for it, or one request would bypass the busy lock.
         if self._svc is not None and self._svc.launched:
             btn = QMessageBox.question(
                 self._parent, i18n.t('plugin.displayName'),
@@ -167,16 +170,17 @@ class MO2AIBridge(mobase.IPluginTool):
             if btn == QMessageBox.StandardButton.Reset:
                 self._svc.launched.clear()
                 log(i18n.t('log.stuckReset'))
-        # Порт показывается тот, на котором мост реально встал, а не тот, что заказан
-        # настройкой: при занятом заказанном он не совпадает, и человек, читая окно,
-        # должен видеть правду, а не намерение.
+        # The port shown is the one the bridge actually bound, not the one the setting asked
+        # for: when the requested port was taken they differ, and a person reading this
+        # window must see the truth rather than the intention.
         state = i18n.t('dialog.running' if self._server else 'dialog.stopped')
         box = QMessageBox(self._parent)
         box.setWindowTitle(i18n.t('plugin.displayName'))
         box.setText(i18n.t('dialog.listening', port=self._port or DEFAULT_PORT,
                            token=self._token_file or TOKEN_FILE, state=state))
-        # Кнопка остановки - единственный способ опустить мост, не выходя из MO2: галочка
-        # «Включено» читается только при запуске, и снять её на ходу мало.
+        # The stop button is the only way to bring the bridge down without leaving MO2: the
+        # "Enabled" checkbox is read at startup only, and clearing it mid-session is not
+        # enough.
         stop_btn = (box.addButton(i18n.t('dialog.stopButton'),
                                   QMessageBox.ButtonRole.DestructiveRole)
                     if self._server else None)
@@ -185,7 +189,7 @@ class MO2AIBridge(mobase.IPluginTool):
         if stop_btn is not None and box.clickedButton() is stop_btn:
             self.stop()
 
-    # ---- запуск -----------------------------------------------------------
+    # ---- startup -----------------------------------------------------------
     def _setting(self, key, default=None):
         try:
             v = self._organizer.pluginSetting(self.name(), key)
@@ -194,14 +198,14 @@ class MO2AIBridge(mobase.IPluginTool):
             return default
 
     def _subscribe_runs(self, svc):
-        """Подписаться на запуски программ через MO2.
+        """Subscribe to programs launched through MO2.
 
-        Через эти два вызова видно всё, что запускает менеджер, - и мостом, и кнопкой в
-        окне. Без них мост знал бы только о собственных запусках и спокойно переставил бы
-        моды под работающей игрой.
+        These two calls make everything the manager starts visible - both through the bridge
+        and through a button in its window. Without them the bridge would know only about its
+        own launches and would happily reorder mods under a running game.
 
-        Отказ подписки не смертелен: остаётся перечисление процессов, которое всё равно
-        поймает игру. Поэтому пишем в лог и работаем дальше.
+        A failed subscription is not fatal: process enumeration remains, and it catches the
+        game anyway. So we log it and carry on.
         """
         try:
             self._organizer.onAboutToRun(svc.on_about_to_run)
@@ -216,10 +220,11 @@ class MO2AIBridge(mobase.IPluginTool):
             log('%s: %s' % (i18n.t('start.failed'), err))
 
     def start(self):
-        """Поднять сервер. None при успехе, текст ошибки иначе.
+        """Raise the server. None on success, the error text otherwise.
 
-        Молча глотать исключение здесь нельзя: при отказе не остаётся ни файла токена, ни
-        порта, ни записи — снаружи это неотличимо от «плагин не загрузился вообще».
+        Swallowing the exception here is not an option: on failure there is no token file, no
+        port and no record - from outside that is indistinguishable from "the plugin never
+        loaded at all".
         """
         if self._server:
             return None
@@ -228,7 +233,7 @@ class MO2AIBridge(mobase.IPluginTool):
         try:
             wanted = int(self._setting('port', DEFAULT_PORT) or DEFAULT_PORT)
             token = runtime.new_token()
-            # Настройки читаются один раз на запуск; файла нет - он создаётся из умолчаний.
+            # Settings are read once per start; with no file, one is created from defaults.
             cfg = Config.load(CONFIG_FILE, note=log)
             self._runner = runtime.MainThreadRunner()
             svc = self._svc = Services(self._organizer, self._runner.call, DOCS,
@@ -236,8 +241,8 @@ class MO2AIBridge(mobase.IPluginTool):
             svc.prime()
             self._subscribe_runs(svc)
             get, post = routes_mod.build(svc)
-            # Сервер поднимается ДО записи токена: при отказе привязки файла не остаётся,
-            # и клиент не получит ключ к мосту, которого нет.
+            # The server comes up BEFORE the token is written: if the bind fails, no file is
+            # left behind, and no client gets a key to a bridge that does not exist.
             self._server, self._port = runtime.serve(
                 wanted, runtime.make_handler(token, get, post), tries=PORT_TRIES)
             self._token_file = token_file(self._port, wanted)
@@ -255,12 +260,12 @@ class MO2AIBridge(mobase.IPluginTool):
             return '%s: %s' % (type(exc).__name__, exc)
 
     def _hook_quit(self):
-        """Опустить мост при выходе из MO2.
+        """Bring the bridge down when MO2 exits.
 
-        Отдельного вызова выгрузки у плагина в mobase 2.5.2 нет, а сигнал приложения есть
-        и приходит до финализации встроенного интерпретатора. Без него поток сервера
-        обрывался финализацией прямо внутри ожидания, а файл токена оставался лежать -
-        ключом к мосту, которого уже нет.
+        A plugin in mobase 2.5.2 gets no unload call of its own, but the application signal
+        exists and arrives before the embedded interpreter is finalised. Without it the
+        server thread was cut short by finalisation mid-wait, and the token file was left
+        lying around - a key to a bridge that no longer exists.
         """
         if self._quit_hooked:
             return
@@ -274,11 +279,11 @@ class MO2AIBridge(mobase.IPluginTool):
             log('aboutToQuit: ' + traceback.format_exc())
 
     def stop(self):
-        """Опустить мост: закрыть сокет, дождаться потока, убрать файл токена.
+        """Bring the bridge down: close the socket, let the thread finish, remove the token.
 
-        Зовётся из трёх мест: при выходе из MO2, кнопкой в своём окне и при неудачном
-        запуске - чтобы половина поднятого не осталась висеть. Каждый шаг отдельно и
-        молча: остановка обязана доработать до конца, чем бы ни кончился предыдущий шаг.
+        Called from three places: on MO2 exit, from the button in its own window, and after a
+        failed start - so half a raised bridge is not left hanging. Each step separately and
+        silently: shutting down has to run to the end whatever the previous step did.
         """
         srv, self._server = self._server, None
         if srv is not None:

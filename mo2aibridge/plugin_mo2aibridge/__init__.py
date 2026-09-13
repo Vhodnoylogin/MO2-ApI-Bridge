@@ -1,41 +1,42 @@
 # -*- coding: utf-8 -*-
-"""MO2 AI Bridge — локальный HTTP-мост к работающей Mod Organizer 2.
+"""MO2 ApI Bridge - a local HTTP bridge to a running Mod Organizer 2.
 
-Слои снизу вверх, каждый знает лишь про тот, что под ним:
+Layers, bottom to top; each knows only the one below it:
 
-    winapi.py    окна и процессы Windows          — не знает ни про MO2, ни про сеть
-    runtime.py   главный поток Qt и HTTP          — не знает, что делают маршруты
-    services.py  операции над сборкой, фасад      — не знает про HTTP и JSON
-      base.py       контекст и общий приём изменения
-      busy.py       занятость MO2
-      reading.py    чтение состояния и виртуальной Data
-      install.py    установка мода
-      mods.py       состав модов и необратимое
-      loadorder.py  порядок плагинов и plugins.txt
-      launch.py     запуск программ и окна
-      updates.py    обновления по живому Nexus
-    routes.py    какой путь во что отображается   — не знает ни про mobase, ни про сокеты
-    plugin.py    жизненный цикл плагина MO2
-    config.py    настраиваемые значения, поперёк всех слоёв
-    i18n.py      строки и переводы, поперёк всех слоёв
+    winapi.py    Windows processes and windows   - knows nothing of MO2 or networking
+    runtime.py   Qt main thread and HTTP         - knows nothing of what the routes do
+    services.py  operations on the setup, facade - knows nothing of HTTP or JSON
+      base.py       context and the shared change procedure
+      busy.py       whether MO2 is busy
+      reading.py    reads of state and of the virtual Data
+      install.py    installing a mod
+      mods.py       the mod list and the irreversible operations
+      loadorder.py  plugin order and plugins.txt
+      launch.py     launching programs, and their windows
+      updates.py    update checks against a live Nexus
+    routes.py    which path maps to what          - knows nothing of mobase or sockets
+    plugin.py    the MO2 plugin lifecycle
+    config.py    configurable values, across all layers
+    i18n.py      strings and translations, across all layers
 
-Здесь намеренно пусто, кроме фабрики. `mobase` есть только внутри процесса MO2, и если тянуть
-его на уровне пакета, то `from mo2aibridge import i18n` перестаёт работать где угодно ещё —
-включая проверку переводов и разбор winapi без запущенного менеджера. Импорт отложен внутрь
-функции, поэтому нижние слои проверяются по отдельности.
+This file is deliberately empty apart from the factory. `mobase` exists only inside the MO2
+process, and importing it at package level would break `from mo2aibridge import i18n`
+everywhere else - including the translation checks and the winapi work that run without a
+live manager. The import is deferred into the function, so the lower layers stay testable
+on their own.
 
-Документация: README.md и README.en.md рядом с этим файлом.
+Documentation: README.md and README.ru.md next to this file.
 """
 
 __version__ = '2.1.0'
 
-# Имя, под которым плагин известен MO2: так называется папка в её plugins\ и так же
-# зовётся пакет при импорте оттуда. Имя папки в репозитории с ним не совпадает намеренно -
-# там plugin_mo2aibridge, чтобы не повторять имя модуля трижды подряд, - поэтому имя
-# задаётся строкой здесь, а не выводится из расположения файла.
+# The name MO2 knows this plugin by: the folder in its plugins\ is called this, and so is
+# the package when imported from there. The repository folder name deliberately differs -
+# it is plugin_mo2aibridge, so the module name is not repeated three times over - which is
+# why this is a literal here rather than something derived from the file location.
 PLUGIN_ID = 'mo2aibridge'
 
 
 def createPlugin():
-    from .plugin import MO2AIBridge
-    return MO2AIBridge()
+    from .plugin import MO2ApIBridge
+    return MO2ApIBridge()
