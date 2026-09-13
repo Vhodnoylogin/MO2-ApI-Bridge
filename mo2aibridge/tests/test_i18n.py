@@ -33,6 +33,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
 
+T = common.T
+
 pkg = common.import_package()
 i18n = pkg.i18n
 r = common.Report('слой строк')

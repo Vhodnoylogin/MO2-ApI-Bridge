@@ -1,0 +1,8 @@
+{
+ "#": "Wording of the check runner itself. Keys are short Latin labels and never change - translate the right-hand sides only. Placeholders like %(got)r are filled in by the runner: keep them spelled exactly, or the line is shown raw. A key starting with # is a note for translators and is ignored. To add a language, copy this folder next to it and translate the files inside.",
+ "report.ok": "OK",
+ "report.failed": "FAIL",
+ "report.gotWanted": "got %(got)r, wanted %(want)r",
+ "report.total": "TOTAL: passed %(ok)d, failed %(bad)d",
+ "report.skipped": "  SKIPPED: the bridge does not answer on %(base)s - is MO2 running?"
+}

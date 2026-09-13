@@ -27,6 +27,8 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
 
+T = common.T
+
 
 def fake_pyqt():
     """Пустышка PyQt6: хватает на импорт runtime, но не на работу главного потока.

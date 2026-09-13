@@ -1,0 +1,12 @@
+{
+ "#": "Wording of the checks in test_sources.py. Keys are short Latin labels and never change - translate the right-hand sides only. Placeholders like %(mod)s are filled in by the check: keep them spelled exactly. A key starting with # is a note for translators and is ignored.",
+ "sources.archiveComplete": "the release archive carries all the plugin needs on a foreign machine",
+ "sources.codeShips": "the code ships",
+ "sources.compiles": "every module of the package compiles",
+ "sources.controlChars": "no control characters",
+ "sources.docsShip": "the documentation ships",
+ "sources.inReadme": "every module is listed in the README layout",
+ "sources.localOnlyStays": "the token, the log and the settings do NOT ship",
+ "sources.noMachinePaths": "no machine-specific paths in the package",
+ "sources.stringsShip": "the strings ship"
+}

@@ -16,6 +16,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
 
+T = common.T
+
 pkg = common.import_package()
 services, i18n = pkg.services, pkg.i18n
 i18n.set_language('ru')

@@ -34,6 +34,8 @@ import fake_mo2  # noqa: E402
 fake_mo2.install()
 import common  # noqa: E402
 
+T = common.T
+
 pkg = common.import_package(with_mobase=True)
 # routes не входит в список import_package - подгружается отдельно, под именем самого пакета
 routes = importlib.import_module(pkg.__name__ + '.routes')

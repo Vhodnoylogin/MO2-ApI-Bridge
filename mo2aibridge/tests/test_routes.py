@@ -13,6 +13,8 @@ import urllib.parse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
 
+T = common.T
+
 common.need_live()
 r = common.Report('маршруты по живой MO2')
 

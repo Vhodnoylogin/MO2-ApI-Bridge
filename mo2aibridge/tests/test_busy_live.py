@@ -15,6 +15,8 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
 
+T = common.T
+
 common.need_live()
 APP = os.environ.get('MO2AIBRIDGE_TEST_APP') or 'TexGen'
 r = common.Report('замок занятости на запущенной программе (%s)' % APP)
