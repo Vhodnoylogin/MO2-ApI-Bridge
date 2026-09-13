@@ -121,6 +121,7 @@ class Domain(object):
         self.note = ctx.note
         self.cfg = ctx.cfg
         self.guard = guard
+        self._domains = {}
 
     # ---- общий приём изменения --------------------------------------------
     def change(self, op, fn, timeout=None, on_main=True, prepare=None):
@@ -171,11 +172,38 @@ class Domain(object):
     def limit(self, name='listLimit'):
         return int(self.cfg.get(name) or 0)
 
+    def nexus_domain(self, game):
+        """Раздел Nexus для игры, или пустая строка, если выяснить не удалось.
+
+        Спрашиваем саму MO2: gameNexusName() отдаёт ровно то имя, под которым игра живёт
+        на Nexus, и оно верно для любой игры, которую менеджер вообще умеет вести. Таблица
+        в настройках - только перекрытие для случаев вроде Skyrim VR, у которого своего
+        раздела нет и моды берутся из раздела SSE.
+
+        Слепого умолчания здесь быть не должно. Пока оно было, мод незнакомой игры уходил
+        запрашиваться в раздел Skyrim SE, Nexus честно отдавал страницу ДРУГОГО мода с тем
+        же номером, и мост выносил по чужим файлам уверенный вердикт. Ложный ответ хуже
+        отказа: по отказу видно, что ответа нет.
+        """
+        key = game or ''
+        if key in self._domains:
+            return self._domains[key]
+        domains = self.cfg.get('nexusDomains') or {}
+        dom = domains.get(key) or ''
+        if not dom:
+            dom = (safe(lambda: self.run_main(
+                lambda: self.o.managedGame().gameNexusName()), '') or '').strip()
+        if not dom:
+            dom = (self.cfg.get('nexusDomainDefault') or '').strip()
+        self._domains[key] = dom
+        return dom
+
     def nexus_url(self, game, nid):
         """Ссылка на страницу мода. Собирается по nexusId: m.url() у части модов отдаёт голый
         домен без /mods/<id>, и получается ссылка в никуда."""
         if not nid or nid <= 0:
             return ''
-        domains = self.cfg.get('nexusDomains') or {}
-        dom = domains.get(game or '', self.cfg.get('nexusDomainDefault'))
+        dom = self.nexus_domain(game)
+        if not dom:
+            return ''
         return 'https://www.nexusmods.com/%s/mods/%d' % (dom, nid)

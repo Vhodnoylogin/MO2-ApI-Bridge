@@ -979,6 +979,98 @@ finally:
 r.case('без ключа - ERROR со словами про подключение к Nexus',
        (res['mods'][0]['verdict'], 'Nexus' in res['mods'][0]['why']), ('ERROR', True))
 
+r.head('/updates: отказ канала прерывает обход, а не повторяется на каждый мод')
+
+
+def sweep(http, names=('Alpha Mod', 'Beta Mod', 'Delta Mod'), key='fake-key'):
+    """Один обход с подставным ответом сети. Возвращает (ответ, сколько раз спросили)."""
+    f = make()[0]
+    s = services.Services(f.organizer, run_main=lambda fn, timeout=None: fn(),
+                          docs_path='README.md')
+    s.game_exe = 'NoSuchProcess.exe'.lower()
+    s._self_hwnd = 0
+    s.cfg.values['updates']['delaySec'] = 0
+    f.organizer.createNexusBridge = lambda: (_ for _ in ()).throw(TypeError('нет сигнала'))
+    calls = []
+
+    def wrapped(url, headers, timeout):
+        calls.append(url)
+        return http(url, headers, timeout)
+
+    s.updater._http_get = wrapped
+    was = winapi.read_generic_credential
+    winapi.read_generic_credential = lambda target: key
+    try:
+        return s.updates({'mod': list(names)}), len(calls)
+    finally:
+        winapi.read_generic_credential = was
+
+
+def raise_http(code, headers=None):
+    def http(url, _h, _t):
+        raise urllib_error.HTTPError(url, code, 'нет', headers or {}, None)
+    return http
+
+
+# Негодный ключ: раньше каждый из полутора тысяч модов честно шёл в сеть и честно
+# получал 401. Теперь первый же отказ прекращает обход.
+res, calls = sweep(raise_http(401))
+r.case('401 - обход прекращён после первого запроса', calls, 1)
+r.case('401 - сказано, почему прекращён', 'HTTP 401' in res['stopped'] or
+       'ключ' in res['stopped'], True)
+r.case('401 - неспрошенные посчитаны', res['unchecked'], 2)
+r.case('401 - мод, на котором споткнулись, в ответе', res['mods'][0]['verdict'], 'ERROR')
+
+# Исчерпанный лимит: продолжать значило бы продлевать запрет каждым запросом.
+res, calls = sweep(raise_http(429, {'Retry-After': '600'}))
+r.case('429 - обход прекращён после первого запроса', calls, 1)
+r.case('429 - Retry-After снят с ОТКАЗА, а не с удачного ответа',
+       res['quota'].get('retry-after'), '600')
+r.case('429 - в причине названа пауза', '600' in res['stopped'], True)
+
+# Обрыв связи: одна неудача - не беда, пять подряд означают, что канал лёг.
+def broken(_url, _h, _t):
+    raise OSError('соединение оборвано')
+
+
+res, calls = sweep(broken, names=('Alpha Mod', 'Beta Mod', 'Delta Mod'))
+r.case('обрыв связи: три мода - три попытки, порог не достигнут', calls, 3)
+r.case('обрыв связи: обход не прерван, все моды в ответе', len(res['mods']), 3)
+r.case('обрыв связи: каждый мод - ERROR',
+       sorted(set(m['verdict'] for m in res['mods'])), ['ERROR'])
+
+# Кончающийся запас суточного лимита: ключ общий с самой MO2, и доедать его нельзя.
+def near_limit(url, _h, _t):
+    mod_id = int(url.rstrip('/').split('/mods/')[1].split('/')[0])
+    page = API_PAGES.get(mod_id) or {'files': []}
+    return 200, {'x-rl-daily-remaining': '3'}, json.dumps(page)
+
+
+res, calls = sweep(near_limit)
+r.case('запас кончился - обход прекращён после первого мода', calls, 1)
+r.case('запас кончился - сказано, сколько осталось', '3' in res['stopped'], True)
+r.case('запас кончился - ключ остаётся рабочим для MO2', res['unchecked'], 2)
+
+r.head('/updates: раздел Nexus берётся у MO2, а не подставляется наугад')
+fx_d = make()[0]
+svc_d = services.Services(fx_d.organizer, run_main=lambda fn, timeout=None: fn(),
+                          docs_path='README.md')
+# Таблица перекрытий пуста, зато MO2 знает имя своего раздела: спрашивать надо её.
+svc_d.cfg.values['nexusDomains'] = {}
+svc_d.cfg.values['nexusDomainDefault'] = ''
+fx_d.organizer.managedGame().nexus_name = 'fallout4'
+r.case('домен спрошен у MO2', svc_d.updater.nexus_domain('ЧужаяИгра'), 'fallout4')
+r.case('ссылка собрана по нему',
+       svc_d.updater.nexus_url('ЧужаяИгра', 7).endswith('fallout4/mods/7'), True)
+# MO2 молчит, перекрытия нет - честный отказ, а не чужой раздел с тем же номером мода.
+svc_e = services.Services(make()[0].organizer, run_main=lambda fn, timeout=None: fn(),
+                          docs_path='README.md')
+svc_e.cfg.values['nexusDomains'] = {}
+svc_e.cfg.values['nexusDomainDefault'] = ''
+svc_e.o.managedGame().nexus_name = ''
+r.case('имени нет - домена нет, а не Skyrim SE', svc_e.updater.nexus_domain('ЧужаяИгра'), '')
+r.case('без домена ссылки не будет', svc_e.updater.nexus_url('ЧужаяИгра', 7), '')
+
 r.head('/updates: «скачано, не установлено» считается по странице, а не по одному моду')
 fx, svc, get, post, log = make()
 svc.cfg.values['updates']['delaySec'] = 0

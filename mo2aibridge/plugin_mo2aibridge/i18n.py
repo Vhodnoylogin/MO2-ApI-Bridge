@@ -122,6 +122,16 @@ RU = {
                      'подключена к Nexus (Настройки - Nexus - Connect)'),
     'upd.failed': 'Nexus не ответил: %(error)s',
     'upd.timeout': 'Nexus не ответил за %(sec).0f с',
+    'upd.noDomain': ('не знаю раздел Nexus для игры %(game)s - MO2 его не назвала; впиши '
+                     'соответствие в nexusDomains настроек, иначе спрашивать будет некого'),
+    'upd.badKey': ('Nexus отверг ключ (HTTP %(code)d) - обход прекращён: с негодным ключом '
+                   'провалится и каждый следующий запрос'),
+    'upd.rateLimited': ('лимит запросов к Nexus исчерпан, повторить можно через %(retry)s - '
+                        'обход прекращён, иначе каждая попытка только продлевала бы запрет'),
+    'upd.networkDown': ('связь с Nexus оборвалась: %(fails)d отказа подряд, последний - '
+                        '%(error)s; обход прекращён'),
+    'upd.quotaLow': ('запас суточного лимита Nexus кончается (осталось %(left)s) - обход '
+                     'прекращён, чтобы ключ остался рабочим для самой MO2'),
     'upd.replaced': ('твоего файла на странице больше нет - автор заменил его; скачан %(mine)s, '
                      'в Main лежит файл от %(theirs)s'),
     'upd.unmarked': 'ни один файл страницы не помечен как скачанный',
@@ -237,6 +247,17 @@ EN = {
                      'to Nexus (Settings - Nexus - Connect)'),
     'upd.failed': 'Nexus did not answer: %(error)s',
     'upd.timeout': 'Nexus did not answer within %(sec).0f s',
+    'upd.noDomain': ('no Nexus section known for the game %(game)s - MO2 did not name one; '
+                     'add a mapping to nexusDomains in the settings, or there is nobody '
+                     'to ask'),
+    'upd.badKey': ('Nexus rejected the key (HTTP %(code)d) - the sweep stopped: with a bad '
+                   'key every further request would fail the same way'),
+    'upd.rateLimited': ('the Nexus request limit is used up, retry in %(retry)s - the sweep '
+                        'stopped, since each further attempt would only extend the block'),
+    'upd.networkDown': ('the connection to Nexus broke: %(fails)d failures in a row, the '
+                        'last one %(error)s; the sweep stopped'),
+    'upd.quotaLow': ('the Nexus daily allowance is running out (%(left)s left) - the sweep '
+                     'stopped so the key keeps working for MO2 itself'),
     'upd.replaced': ('your file is no longer on the page - the author replaced it; downloaded '
                      '%(mine)s, Main now holds a file from %(theirs)s'),
     'upd.unmarked': 'no file on the page is marked as downloaded',

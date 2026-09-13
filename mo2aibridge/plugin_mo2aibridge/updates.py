@@ -238,6 +238,20 @@ def decide(files, got_ids, got_names, installed_time, limit=3, disk_time=None):
     return res
 
 
+class SweepStop(Exception):
+    """Дальше обход идти не должен: ключ негоден, лимит исчерпан или связь оборвалась.
+
+    Отдельный род ошибки нужен потому, что отказ ОДНОГО мода и отказ КАНАЛА - разные вещи.
+    Первый - строка в ответе рядом с остальными; второй означает, что и следующая тысяча
+    запросов провалится точно так же. Обход прекращается, уже собранное отдаётся, а причина
+    называется одна на весь ответ.
+    """
+
+    def __init__(self, key, **kw):
+        super().__init__(i18n.t(key, **kw))
+        self.key = key
+
+
 # ================================================================ область
 class Updates(Domain):
 
@@ -254,6 +268,9 @@ class Updates(Domain):
         self._lock = threading.Lock()
         self._seq = 0
         self._last_request = 0.0
+        # Подряд идущие сетевые отказы. У обрыва связи нет кода ответа, и отличить его от
+        # единичной неудачи можно только счётом: одна - бывает, пять подряд - канал лёг.
+        self._net_fails = 0
 
     # ---- мост MO2 к Nexus ------------------------------------------------
     def _ensure_bridge(self):
@@ -302,13 +319,40 @@ class Updates(Domain):
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.status, dict(r.headers), r.read().decode('utf-8', 'replace')
 
+    def _absorb_quota(self, hdrs):
+        """Снять заголовки лимита с ответа - любого, включая отказ.
+
+        Раньше разбор стоял только на удачном ответе, и потому 429 - единственный ответ,
+        который ОБЯЗАН обновить остаток и принести Retry-After, - до него не доходил никогда.
+        """
+        low = {str(k).lower(): v for k, v in dict(hdrs or {}).items()}
+        for h in ('x-rl-daily-remaining', 'x-rl-hourly-remaining', 'x-rl-daily-limit'):
+            if h in low:
+                self._quota[h[5:]] = low[h]
+        if 'retry-after' in low:
+            self._quota['retry-after'] = low['retry-after']
+
+    def quota_exhausted(self):
+        """Остался ли запас по суточному лимиту, или дальше идти нельзя.
+
+        Ключ принадлежит не мосту, а самой MO2: исчерпав его, человек остаётся без
+        обновлений и без загрузок в менеджере и будет искать причину где угодно, только
+        не в плагине. Поэтому небольшой запас оставляется всегда.
+        """
+        try:
+            left = int(self._quota.get('daily-remaining'))
+        except Exception:
+            return False
+        return left <= int(self.cfg.get('updates', {}).get('quotaReserve') or 50)
+
     def _api_files(self, game, mod_id, timeout):
         key = self._key()
         if not key:
-            return None, i18n.t('upd.noApiKey')
+            raise SweepStop('upd.noApiKey')
         upd = self.cfg.get('updates', {})
-        domains = self.cfg.get('nexusDomains') or {}
-        domain = domains.get(game or '', self.cfg.get('nexusDomainDefault'))
+        domain = self.nexus_domain(game)
+        if not domain:
+            return None, i18n.t('upd.noDomain', game=game or '?')
         url = '%s/v1/games/%s/mods/%d/files.json' % (
             (upd.get('apiHost') or 'https://api.nexusmods.com').rstrip('/'), domain, int(mod_id))
         headers = {'apikey': key, 'Accept': 'application/json',
@@ -317,13 +361,27 @@ class Updates(Domain):
         try:
             status, hdrs, body = self._http_get(url, headers, timeout)
         except urllib.error.HTTPError as e:
+            self._absorb_quota(getattr(e, 'headers', None))
+            # Отказ СТРАНИЦЫ и отказ КАНАЛА - разные вещи, и раньше они были одним. Ключ
+            # негоден или лимит исчерпан не для одного мода, а для всех: продолжать обход
+            # значило слать полторы тысячи заведомо провальных запросов, а на 429 - ещё и
+            # продлевать наказание каждым из них.
+            if e.code in (401, 403):
+                raise SweepStop('upd.badKey', code=e.code)
+            if e.code == 429:
+                raise SweepStop('upd.rateLimited',
+                                retry=self._quota.get('retry-after') or '?')
+            self._net_fails = 0
             return None, 'HTTP %d %s' % (e.code, (e.reason or '')[:80])
         except Exception as exc:
+            self._net_fails += 1
+            stop_at = int(upd.get('netFailsBeforeStop') or 5)
+            if self._net_fails >= stop_at:
+                raise SweepStop('upd.networkDown', fails=self._net_fails,
+                                error=str(exc)[:120])
             return None, str(exc)[:200]
-        low = {k.lower(): v for k, v in hdrs.items()}
-        for h in ('x-rl-daily-remaining', 'x-rl-hourly-remaining', 'x-rl-daily-limit'):
-            if h in low:
-                self._quota[h[5:]] = low[h]
+        self._net_fails = 0
+        self._absorb_quota(hdrs)
         try:
             data = json.loads(body)
         except Exception as exc:
@@ -500,12 +558,33 @@ class Updates(Domain):
         targets, total, pages = self.run_main(
             lambda: self._targets(names, want_all, offset, limit))
         got_all, dl_root = self._downloads_meta()
-        rows = []
+        rows, stopped = [], ''
         for t in targets:
-            rows.append(self._check_one(t, got_all, dl_root, timeout, pages))
+            # Запас по суточному лимиту проверяется ПЕРЕД запросом, а не после: ключ здесь
+            # общий с самой MO2, и доесть его до нуля значит оставить человека и без
+            # обновлений, и без загрузок в менеджере.
+            if self.quota_exhausted():
+                stopped = i18n.t('upd.quotaLow', left=self._quota.get('daily-remaining'))
+                break
+            try:
+                rows.append(self._check_one(t, got_all, dl_root, timeout, pages))
+            except SweepStop as exc:
+                stopped = str(exc)
+                # Мод, на котором обход споткнулся, всё равно попадает в ответ. Иначе по
+                # ответу не видно, где именно остановились, а при запросе одного мода не
+                # осталось бы вообще ничего - только общая причина без привязки к моду.
+                row = dict(t)
+                row.update(checked=False, verdict='ERROR', why=stopped, error=stopped)
+                rows.append(row)
+                self.note('nexus: обход прекращён - %s' % stopped)
+                break
         res = {'count': len(rows), 'mods': rows, 'elapsedSec': round(time.time() - started, 1),
                'checked': sum(1 for r in rows if r.get('checked')),
                'rule': 'files-and-dates, versions never compared',
+               # Обход мог прекратиться раньше списка: тогда сказано, почему и сколько
+               # модов осталось неспрошенными. Молча укороченный ответ выглядел бы как
+               # «проверено всё», а это была бы неправда.
+               'stopped': stopped, 'unchecked': max(0, len(targets) - len(rows)),
                # Каким путём спрошен Nexus и сколько запросов осталось по лимиту API
                'via': self._mode or 'none', 'quota': dict(self._quota)}
         if want_all:

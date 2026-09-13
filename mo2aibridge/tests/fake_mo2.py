@@ -512,8 +512,15 @@ class _Profile(object):
 
 
 class _Game(object):
-    def __init__(self, short_name, binary):
+    def __init__(self, short_name, binary, nexus_name=None):
         self._short, self._binary = short_name, binary
+        # Раздел Nexus, под которым игра там живёт. У настоящей MO2 это gameNexusName(),
+        # и для Skyrim VR он отдаёт раздел SSE - своего у VR нет. Метод обязан быть и
+        # здесь: подделка, более мягкая, чем настоящий API, даёт ложную уверенность.
+        self.nexus_name = short_name.lower() if nexus_name is None else nexus_name
+
+    def gameNexusName(self):
+        return self.nexus_name
 
     def gameShortName(self):
         return self._short

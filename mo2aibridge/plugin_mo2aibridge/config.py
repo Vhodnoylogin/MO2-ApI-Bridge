@@ -58,7 +58,12 @@ DEFAULTS = {
         'Fallout4': 'fallout4',
         'Fallout4VR': 'fallout4',
     },
-    'nexusDomainDefault': 'skyrimspecialedition',
+    # Пусто намеренно: раздел Nexus спрашивается у самой MO2 (gameNexusName), а таблица
+    # выше - только перекрытие для случаев вроде Skyrim VR, у которого своего раздела нет.
+    # Прежнее умолчание 'skyrimspecialedition' отправляло мод незнакомой игры в чужой
+    # раздел, и мост выносил уверенный вердикт по файлам другого мода с тем же номером.
+    # Значение здесь - последняя соломинка для того, у кого MO2 имени не отдаёт.
+    'nexusDomainDefault': '',
     # Корневые папки Data для запасного обхода VFS вширь.
     'walkRoots': ['meshes', 'textures', 'scripts', 'sound', 'music', 'interface', 'seq',
                   'strings', 'video', 'grass', 'lodsettings', 'shadersfx', 'skse', 'source'],
@@ -75,6 +80,13 @@ DEFAULTS = {
         'credentialTarget': 'ModOrganizer2_APIKEY',
         'apiHost': 'https://api.nexusmods.com',
         'appVersion': '2.1.0',
+        # Сколько подряд идущих сетевых отказов считать обрывом канала и прекращать обход.
+        # Одна неудача бывает у кого угодно; пять подряд означают, что и остальная тысяча
+        # запросов провалится так же, только дольше - каждый по своему таймауту.
+        'netFailsBeforeStop': 5,
+        # Запас по суточному лимиту, ниже которого обход прекращается. Ключ общий с самой
+        # MO2: доев его до нуля, мост оставит человека и без обновлений, и без загрузок.
+        'quotaReserve': 50,
     },
 }
 
