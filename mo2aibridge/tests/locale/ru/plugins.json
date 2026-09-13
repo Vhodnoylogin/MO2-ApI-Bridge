@@ -1,0 +1,18 @@
+{
+ "#": "Слова проверок из test_plugins_txt.py. Ключи - короткие латинские метки, они не меняются: переводить надо только правые части. Подстановки вида %(mod)s проверка заполняет сама - писать их надо буква в букву. Ключ, начинающийся с #, - записка переводчику и в работе не участвует.",
+ "plugins.applied": "применено",
+ "plugins.appliedBack": "применено",
+ "plugins.asteriskBack": "звёздочка вернулась",
+ "plugins.asteriskChanged": "звёздочка в файле изменилась",
+ "plugins.fileByteIdentical": "файл побайтно как в начале",
+ "plugins.fileRewritten": "файл переписан",
+ "plugins.fileStillNew": "в файле по-прежнему новое",
+ "plugins.inFile": "плагин есть в plugins.txt",
+ "plugins.lineEndingsKept": "концы строк не подменены",
+ "plugins.memoryAgrees": "память согласна с файлом",
+ "plugins.refreshKeeps": "/refresh не отменяет правку",
+ "plugins.restoring": "возвращаем как было",
+ "plugins.subject": "подопытный",
+ "plugins.title": "состояние плагинов доезжает до plugins.txt",
+ "plugins.toggleViaBridge": "переключаем через мост"
+}

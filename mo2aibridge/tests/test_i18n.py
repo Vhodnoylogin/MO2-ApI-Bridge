@@ -37,7 +37,7 @@ T = common.T
 
 pkg = common.import_package()
 i18n = pkg.i18n
-r = common.Report('слой строк')
+r = common.Report(T('strings.title'))
 
 # Ключи, которые сегодня не используются, и это известно. Ведёт тот, кто правит код.
 # Неиспользуемый ключ ВНЕ этого множества - сбой; внутри - только заметка в выводе на каждом
@@ -208,18 +208,18 @@ for path in package_files():
     usage.scan(path)
 
 # ---------------------------------------------------------------------------------------
-r.head('1. наборы ключей всех языков совпадают с основным')
-r.note('файлов переводов', '%d: %s' % (len(LANGS), ', '.join(sorted(LANGS))))
-r.note('ключей в %s' % i18n.DEFAULT, len(EN))
-r.case('основной язык вообще прочитан', bool(EN), True)
+r.head(T('strings.h1KeySets'))
+r.note(T('strings.localeFiles'), '%d: %s' % (len(LANGS), ', '.join(sorted(LANGS))))
+r.note(T('strings.keysIn', lang=i18n.DEFAULT), len(EN))
+r.case(T('strings.defaultRead'), bool(EN), True)
 for code in sorted(OTHERS):
-    r.case('в %s нет ключей из %s' % (code, i18n.DEFAULT),
+    r.case(T('strings.missingFrom', lang=code, other=i18n.DEFAULT),
            sorted(set(EN) - set(OTHERS[code])), [])
-    r.case('в %s нет ключей из %s' % (i18n.DEFAULT, code),
+    r.case(T('strings.missingFromDefault', lang=i18n.DEFAULT, other=code),
            sorted(set(OTHERS[code]) - set(EN)), [])
 
 # ---------------------------------------------------------------------------------------
-r.head('2. подстановки одинаковы во всех языках')
+r.head(T('strings.h2Placeholders'))
 mismatch, stray = [], []
 for code in sorted(OTHERS):
     table = OTHERS[code]
@@ -228,27 +228,27 @@ for code in sorted(OTHERS):
         if a != b:
             mismatch.append('%s/%s: %s, %s %s' % (code, key, sorted(a), i18n.DEFAULT, sorted(b)))
     stray += ['%s/%s' % (code, k) for k in sorted(table) if stray_percent(table[k])]
-r.case('имена и спецификаторы совпадают', mismatch, [])
-r.case('лишних % в переводах нет', stray, [])
-r.case('лишних %% в %s нет' % i18n.DEFAULT,
+r.case(T('strings.namesAndSpecsMatch'), mismatch, [])
+r.case(T('strings.noStrayPercentInTranslations'), stray, [])
+r.case(T('strings.noStrayPercentIn', lang=i18n.DEFAULT),
        sorted(k for k in EN if stray_percent(EN[k])), [])
 
 # ---------------------------------------------------------------------------------------
-r.head('3. всё, что зовёт код, есть в EN')
-r.note('файлов просмотрено', usage.files)
-r.case('все файлы пакета разбираются', usage.broken, [])
-r.case('прямые вызовы t(...) в коде найдены', len(usage.direct) > 0, True)
-r.note('ключей в прямых вызовах', len(usage.direct))
+r.head(T('strings.h3CodeKeysExist'))
+r.note(T('strings.filesScanned'), usage.files)
+r.case(T('strings.allFilesParse'), usage.broken, [])
+r.case(T('strings.directCallsFound'), len(usage.direct) > 0, True)
+r.note(T('strings.keysInDirectCalls'), len(usage.direct))
 unknown = ['%s <- %s' % (k, ', '.join(v)) for k, v in usage.direct.items() if k not in EN]
 unknown += ["%s* <- %s" % (p, ', '.join(v)) for p, v in usage.by_prefix.items()
             if not any(k.startswith(p) for k in EN)]
-r.case('неизвестных ключей в вызовах нет', sorted(unknown), [])
+r.case(T('strings.noUnknownKeys'), sorted(unknown), [])
 
 # ---------------------------------------------------------------------------------------
-r.head('4. всё, что есть в EN, кто-то зовёт')
+r.head(T('strings.h4EveryKeyUsed'))
 indirect = sorted(k for k in usage.literal if k not in usage.direct)
 for key in indirect:
-    r.note('только через переменную: ' + key, ', '.join(usage.literal[key]))
+    r.note(T('strings.viaVariableOnly', key=key), ', '.join(usage.literal[key]))
 used = set(usage.literal)
 # Ключи, которые решение отдаёт словом, а t() получает переменной: why='upd.newer' в updates.py.
 # Такие литералы видны в исходнике, и именно по ним ключ считается используемым.
@@ -258,19 +258,20 @@ for path in package_files():
 for prefix, places in sorted(usage.by_prefix.items()):
     group = sorted(k for k in EN if k.startswith(prefix))
     used.update(group)
-    r.note("по префиксу '%s': %d ключей" % (prefix, len(group)), ', '.join(places))
+    r.note(T('strings.byPrefix', prefix=prefix, count=len(group)), ', '.join(places))
 unused = sorted(k for k in EN if k not in used)
 for key in unused:
-    r.note('НЕ используется: ' + key, 'в KNOWN_UNUSED' if key in KNOWN_UNUSED else 'вне списка')
-r.case('неиспользуемых ключей вне KNOWN_UNUSED нет',
+    r.note(T('strings.unusedKey', key=key),
+           T('strings.inKnownUnused') if key in KNOWN_UNUSED else T('strings.outsideList'))
+r.case(T('strings.noUnusedOutsideKnown'),
        sorted(k for k in unused if k not in KNOWN_UNUSED), [])
-r.case('в KNOWN_UNUSED нет ключей, которые уже используются',
+r.case(T('strings.knownUnusedNotUsed'),
        sorted(k for k in KNOWN_UNUSED if k in used), [])
-r.case('в KNOWN_UNUSED нет несуществующих ключей',
+r.case(T('strings.knownUnusedExists'),
        sorted(k for k in KNOWN_UNUSED if k not in EN), [])
 
 # ---------------------------------------------------------------------------------------
-r.head('5. вызовы передают те подстановки, что стоят в шаблоне')
+r.head(T('strings.h5CallsMatchTemplate'))
 wrong, dynamic, unchecked = [], [], []
 
 
@@ -305,40 +306,40 @@ for at, keys, prefix, names, splat, extra_positional in usage.calls:
         if names != wanted(key):
             wrong.append('%s %s: передано %s, в шаблоне %s' % (at, key, names, wanted(key)))
 for at in dynamic:
-    r.note('ключ вычисляется, не проверить', at)
+    r.note(T('strings.keyComputed'), at)
 for at in unchecked:
-    r.note('подстановки через **, не проверить', at)
+    r.note(T('strings.kwargsSplat'), at)
 for at in usage.discarded:
-    r.note('ОТФОРМАТИРОВАНО И ВЫБРОШЕНО', at)
+    r.note(T('strings.formattedAndDiscarded'), at)
 for line in usage.bypass:
-    r.note('кириллица мимо i18n', line)
-r.case('вызовы с константным ключом согласованы с шаблоном', wrong, [])
+    r.note(T('strings.cyrillicPastI18n'), line)
+r.case(T('strings.constKeyCallsAgree'), wrong, [])
 
 # ---------------------------------------------------------------------------------------
-r.head('6. сигнатура t(key, /, **kw)')
+r.head(T('strings.h6Signature'))
 sig = inspect.signature(i18n.t)
 kinds = {p.name: p.kind for p in sig.parameters.values()}
-r.case('key - только позиционный', kinds.get('key'), inspect.Parameter.POSITIONAL_ONLY)
-r.case('подстановки - через **', inspect.Parameter.VAR_KEYWORD in kinds.values(), True)
-r.case('danger.why принимает подстановку с именем key',
+r.case(T('strings.keyPositionalOnly'), kinds.get('key'), inspect.Parameter.POSITIONAL_ONLY)
+r.case(T('strings.substitutionsByKeyword'), inspect.Parameter.VAR_KEYWORD in kinds.values(), True)
+r.case(T('strings.dangerWhyTakesKey'),
        'ПРОБА' in i18n.t('danger.why', key='ПРОБА'), True)
 
 # ---------------------------------------------------------------------------------------
-r.head('7. выбор языка и поведение на ошибках')
-r.case("set_language('ru') возвращает ru", i18n.set_language('ru'), 'ru')
-r.case('op.toggle по-русски', i18n.t('op.toggle'), 'включение или выключение мода')
-r.case("' RU ' нормализуется", i18n.set_language(' RU '), 'ru')
-r.case("неизвестный язык даёт en", i18n.set_language('xx'), 'en')
-r.case('op.toggle по-английски', i18n.t('op.toggle'), 'enabling or disabling a mod')
-r.case("'auto' даёт один из известных языков", i18n.set_language('auto') in LANGS, True)
+r.head(T('strings.h7LanguageChoice'))
+r.case(T('strings.setRuReturnsRu'), i18n.set_language('ru'), 'ru')
+r.case(T('strings.toggleInRussian'), i18n.t('op.toggle'), 'включение или выключение мода')
+r.case(T('strings.paddedCodeNormalised'), i18n.set_language(' RU '), 'ru')
+r.case(T('strings.unknownLanguageGivesEn'), i18n.set_language('xx'), 'en')
+r.case(T('strings.toggleInEnglish'), i18n.t('op.toggle'), 'enabling or disabling a mod')
+r.case(T('strings.autoGivesKnown'), i18n.set_language('auto') in LANGS, True)
 i18n.set_language('en')
-r.case('неизвестный ключ возвращается как есть', i18n.t('нет.такого'), 'нет.такого')
-r.case('неизвестный ключ с подстановками - тоже', i18n.t('нет.такого', a=1), 'нет.такого')
-r.case('верные подстановки форматируются',
+r.case(T('strings.unknownKeyAsIs'), i18n.t('нет.такого'), 'нет.такого')
+r.case(T('strings.unknownKeyWithKwargs'), i18n.t('нет.такого', a=1), 'нет.такого')
+r.case(T('strings.goodSubstitutionsFormat'),
        i18n.t('err.orderIncomplete', missing=2, extra=0), EN['err.orderIncomplete'] % {'missing': 2, 'extra': 0})
-r.case('чужое имя подстановки - сырой шаблон, не исключение',
+r.case(T('strings.foreignNameRawTemplate'),
        i18n.t('err.noSuchMod', wrong=1), EN['err.noSuchMod'])
-r.case('нечисловое в %d - сырой шаблон, не исключение',
+r.case(T('strings.nonNumericRawTemplate'),
        i18n.t('err.orderIncomplete', missing='x', extra=1), EN['err.orderIncomplete'])
 # Ключ, которого нет в выбранном языке, берётся из EN. Проверяется на временном ключе, чтобы не
 # зависеть от того, есть ли сегодня в словарях непереведённое; сканирование выше уже прошло,
@@ -346,7 +347,7 @@ r.case('нечисловое в %d - сырой шаблон, не исключ�
 EN['zz.probe'] = 'only english %(n)d'
 try:
     i18n.set_language('ru')
-    r.case('нет перевода - берётся английский', i18n.t('zz.probe', n=7), 'only english 7')
+    r.case(T('strings.fallsBackToEnglish'), i18n.t('zz.probe', n=7), 'only english 7')
 finally:
     del EN['zz.probe']
     i18n.set_language(i18n.DEFAULT)

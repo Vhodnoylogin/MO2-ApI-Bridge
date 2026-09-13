@@ -6,7 +6,9 @@
  "sources.controlChars": "управляющие символы",
  "sources.docsShip": "документация уезжает",
  "sources.inReadme": "каждый модуль описан в раскладке README",
+ "sources.languageInArchive": "язык %(code)s в архиве",
  "sources.localOnlyStays": "токен, лог и настройки НЕ уезжают",
  "sources.noMachinePaths": "путей к конкретной машине в пакете нет",
- "sources.stringsShip": "строки уезжают"
+ "sources.stringsShip": "строки уезжают",
+ "sources.title": "гигиена исходников"
 }

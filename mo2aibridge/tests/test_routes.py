@@ -16,7 +16,7 @@ import common  # noqa: E402
 T = common.T
 
 common.need_live()
-r = common.Report('маршруты по живой MO2')
+r = common.Report(T('routes.title'))
 
 
 def _alive_pids():
@@ -32,84 +32,84 @@ def get(route, params=None):
     return common.call('GET', route + q)
 
 
-r.head('чтение')
+r.head(T('routes.reads'))
 code, ping = get('/ping')
-r.case('/ping отвечает', ping.get('ok'), True)
-r.note('профиль и версия', '%s, MO2 %s' % (ping.get('profile'), ping.get('mo2Version')))
+r.case(T('routes.pingAnswers'), ping.get('ok'), True)
+r.note(T('routes.profileAndVersion'), '%s, MO2 %s' % (ping.get('profile'), ping.get('mo2Version')))
 
 code, api = get('/api')
-r.case('/api называет четыре класса', len(api), 4)
+r.case(T('routes.apiNamesFour'), len(api), 4)
 
 code, mods = get('/mods')
-r.case('/mods отдал список', (mods.get('count') or 0) > 0, True)
-r.note('модов', mods.get('count'))
+r.case(T('routes.modsList'), (mods.get('count') or 0) > 0, True)
+r.note(T('routes.modsCount'), mods.get('count'))
 names = [m['mod'] for m in mods['mods'] if not m['mod'].endswith('_separator')]
 sample = names[0]
 
 code, card = get('/mod', {'name': sample})
-r.case('/mod вернул карточку', card.get('mod'), sample)
+r.case(T('routes.modCard'), card.get('mod'), sample)
 
 code, an = get('/analyze', {'name': sample, 'conflicts': '0'})
-r.case('/analyze без споров', isinstance(an.get('files'), int), True)
+r.case(T('routes.analyzeNoConflicts'), isinstance(an.get('files'), int), True)
 code, an = get('/analyze', {'name': sample, 'conflicts': '1', 'limit': '40'})
-r.case('/analyze со спорами', 'conflicts' in an, True)
+r.case(T('routes.analyzeWithConflicts'), 'conflicts' in an, True)
 
 code, prof = get('/profiles')
-r.case('/profiles знает активный', prof.get('current'), ping.get('profile'))
+r.case(T('routes.profilesKnowsActive'), prof.get('current'), ping.get('profile'))
 
 code, pl = get('/plugins')
-r.case('/plugins отдал порядок', (pl.get('count') or 0) > 0, True)
-r.note('плагинов', pl.get('count'))
+r.case(T('routes.pluginsOrder'), (pl.get('count') or 0) > 0, True)
+r.note(T('routes.pluginsCount'), pl.get('count'))
 
 code, vfs = get('/vfs', {'path': '.', 'filter': '*.esp'})
-r.case('/vfs нашёл esp в корне Data', len(vfs.get('files') or []) > 0, True)
+r.case(T('routes.vfsFoundEsp'), len(vfs.get('files') or []) > 0, True)
 one = os.path.basename((vfs.get('files') or ['Skyrim.esm'])[0])
 
 code, org = get('/origins', {'path': one})
-r.case('/origins назвал поставщика', len(org.get('origins') or []) > 0, True)
+r.case(T('routes.originsNamedProvider'), len(org.get('origins') or []) > 0, True)
 code, res = get('/resolve', {'path': one})
-r.case('/resolve дал файл на диске', bool(res.get('real')), True)
+r.case(T('routes.resolveGaveFile'), bool(res.get('real')), True)
 
 code, d = get('/dirs', {'path': 'meshes'})
-r.case('/dirs нашёл подкаталоги meshes', len(d.get('dirs') or []) > 0, True)
+r.case(T('routes.dirsFoundMeshes'), len(d.get('dirs') or []) > 0, True)
 
 code, pr = get('/procs')
-r.case('/procs отвечает', 'procs' in pr, True)
+r.case(T('routes.procsAnswers'), 'procs' in pr, True)
 # Регрессия: список запусков копится всю сессию и сам не чистится. Пока в нём не было
 # признака живости, давно закрытые программы выглядели как работающие.
-r.case('у каждой записи сказано, жива ли она',
+r.case(T('routes.eachEntryAlive'),
        all('alive' in x for x in pr.get('procs') or []), True)
 ghosts = [x for x in pr.get('procs') or []
           if x['alive'] and x['pid'] not in _alive_pids()]
-r.case('живых мертвецов нет', ghosts, [])
+r.case(T('routes.noWalkingDead'), ghosts, [])
 
 code, w = get('/windows')
-r.case('/windows без pid отказывает', code, 500)
+r.case(T('routes.windowsNeedsPid'), code, 500)
 
-r.head('действия без последствий')
+r.head(T('routes.actionsNoEffect'))
 code, ref = common.call('POST', '/refresh', {})
-r.case('/refresh перечитал списки', ref.get('refreshed'), True)
+r.case(T('routes.refreshReread'), ref.get('refreshed'), True)
 
 first = pl['plugins'][0]['plugin']
 code, st = common.call('POST', '/plugins/state', {'set': {first: True}})
-r.case('/plugins/state без apply ничего не делает', st.get('applied'), False)
+r.case(T('routes.stateNoApply'), st.get('applied'), False)
 
 order = [x['plugin'] for x in pl['plugins']]
 code, od = common.call('POST', '/plugins/order', {'order': order})
-r.case('/plugins/order без apply ничего не делает', od.get('applied'), False)
+r.case(T('routes.orderNoApply'), od.get('applied'), False)
 code, od = common.call('POST', '/plugins/order', {'order': order[:5]})
-r.case('/plugins/order отвергает неполный список',
+r.case(T('routes.orderRejectsPartial'),
        od.get('applied') is False and bool(od.get('error')), True)
 
-r.head('замок на необратимом: ключ намеренно не передан')
+r.head(T('routes.dangerKeyWithheld'))
 for route, body in (('/mods/priority', {'mod': sample, 'priority': 5}),
                     ('/mods/rename', {'mod': sample, 'newName': sample + ' ПРОБА'}),
                     ('/mods/remove', {'mod': sample})):
     code, res = common.call('POST', route, body)
-    r.case('%s заблокирован' % route, res.get('applied'), False)
-    r.note('', 'причина: %s' % res.get('blocked'))
+    r.case(T('routes.blocked', route=route), res.get('applied'), False)
+    r.note(T('routes.blank'), 'причина: %s' % res.get('blocked'))
 
-r.head('не трогалось намеренно')
+r.head(T('routes.untouchedOnPurpose'))
 for route, why in (('/install', 'создал бы мод'),
                    ('/toggle', 'изменил бы состав профиля'),
                    ('/run', 'запустил бы программу'),

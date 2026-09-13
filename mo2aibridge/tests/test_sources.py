@@ -21,7 +21,7 @@ import common  # noqa: E402
 
 T = common.T
 
-r = common.Report('гигиена исходников')
+r = common.Report(T('sources.title'))
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONTROL = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
 # Абсолютный путь Windows с буквой диска. Разрешён только в примерах документации.
@@ -74,7 +74,7 @@ pack = __import__('pack')
 taken, _left = pack.collect(common.PKG)
 r.case(T('sources.stringsShip'), sorted(x for x in taken if x.startswith('locale')) != [], True)
 for code in sorted(common.import_package().i18n.languages()):
-    r.case('язык %s в архиве' % code,
+    r.case(T('sources.languageInArchive', code=code),
            any(x.startswith(os.path.join('locale', code)) for x in taken), True)
 r.case(T('sources.codeShips'), '__init__.py' in taken, True)
 r.case(T('sources.docsShip'), [x for x in ('README.md', 'README.ru.md', 'LICENSE')

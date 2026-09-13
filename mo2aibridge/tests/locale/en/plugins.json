@@ -1,0 +1,18 @@
+{
+ "#": "Wording of the checks in test_plugins_txt.py. Keys are short Latin labels and never change - translate the right-hand sides only. Placeholders like %(mod)s are filled in by the check: keep them spelled exactly. A key starting with # is a note for translators and is ignored.",
+ "plugins.applied": "applied",
+ "plugins.appliedBack": "applied",
+ "plugins.asteriskBack": "the asterisk came back",
+ "plugins.asteriskChanged": "the asterisk in the file changed",
+ "plugins.fileByteIdentical": "the file is byte for byte as it started",
+ "plugins.fileRewritten": "the file was rewritten",
+ "plugins.fileStillNew": "the file still holds the new state",
+ "plugins.inFile": "the plugin is in plugins.txt",
+ "plugins.lineEndingsKept": "the line endings were not substituted",
+ "plugins.memoryAgrees": "memory agrees with the file",
+ "plugins.refreshKeeps": "/refresh does not undo the edit",
+ "plugins.restoring": "putting it back as it was",
+ "plugins.subject": "the plugin under test",
+ "plugins.title": "plugin states reach plugins.txt",
+ "plugins.toggleViaBridge": "toggling it through the bridge"
+}

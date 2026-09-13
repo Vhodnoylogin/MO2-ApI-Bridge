@@ -6,7 +6,9 @@
  "sources.controlChars": "no control characters",
  "sources.docsShip": "the documentation ships",
  "sources.inReadme": "every module is listed in the README layout",
+ "sources.languageInArchive": "language %(code)s is in the archive",
  "sources.localOnlyStays": "the token, the log and the settings do NOT ship",
  "sources.noMachinePaths": "no machine-specific paths in the package",
- "sources.stringsShip": "the strings ship"
+ "sources.stringsShip": "the strings ship",
+ "sources.title": "source hygiene"
 }

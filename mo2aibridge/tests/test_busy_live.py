@@ -19,14 +19,14 @@ T = common.T
 
 common.need_live()
 APP = os.environ.get('MO2AIBRIDGE_TEST_APP') or 'TexGen'
-r = common.Report('замок занятости на запущенной программе (%s)' % APP)
+r = common.Report(T('live.title', app=APP))
 
 _, ping = common.call('GET', '/ping')
 if ping.get('busy'):
-    r.note('пропуск', 'что-то уже запущено, проверка недостоверна: %s' % ping['busy'])
+    r.note(T('live.skipNoApp'), 'что-то уже запущено, проверка недостоверна: %s' % ping['busy'])
     r.done()
 
-r.head('запускаю программу через MO2')
+r.head(T('live.startingViaMo2'))
 box = {}
 
 
@@ -50,23 +50,23 @@ for _ in range(60):
         pid = (ping['busy'].get('pids') or [0])[0]
         break
     if box.get('res') and box['res'][0] != 200:
-        r.note('пропуск', 'запустить "%s" не вышло: %s' % (APP, box['res'][1].get('error')))
-        r.note('', 'задайте MO2AIBRIDGE_TEST_APP именем утилиты из списка MO2')
+        r.note(T('live.skipNotStarted'), 'запустить "%s" не вышло: %s' % (APP, box['res'][1].get('error')))
+        r.note(T('live.blank1'), 'задайте MO2AIBRIDGE_TEST_APP именем утилиты из списка MO2')
         r.done()
 if not pid:
-    r.case('программа поднялась', False, True)
+    r.case(T('live.programUp'), False, True)
     r.done()
 
 busy = ping['busy']
-r.note('занято', '%s, pid %s, игра: %s' % (busy['app'], busy['pids'], busy['isGame']))
+r.note(T('live.busy'), '%s, pid %s, игра: %s' % (busy['app'], busy['pids'], busy['isGame']))
 
-r.head('чтение обязано работать')
+r.head(T('live.readsMustWork'))
 for route, key in (('/mods', 'count'), ('/plugins', 'count'), ('/profiles', 'current')):
     code, res = common.call('GET', route, timeout=60)
-    r.case('%s отвечает при занятой MO2' % route, code, 200)
-    r.note('', '%s = %s' % (key, res.get(key)))
+    r.case(T('live.readAnswersWhileBusy', route=route), code, 200)
+    r.note(T('live.blank2'), '%s = %s' % (key, res.get(key)))
 
-r.head('изменяющие маршруты обязаны отказать')
+r.head(T('live.writesMustRefuse'))
 _, mods = common.call('GET', '/mods')
 _, pl = common.call('GET', '/plugins')
 some = mods['mods'][5]['mod']
@@ -81,13 +81,13 @@ for route, body in (
         ('/mods/rename', {'mod': some, 'newName': some + ' X'}),
         ('/mods/remove', {'mod': some})):
     _, res = common.call('POST', route, body, timeout=60)
-    r.case('%s отказал' % route, res.get('busy') is True and res.get('applied') is False, True)
+    r.case(T('live.writeRefused', route=route), res.get('busy') is True and res.get('applied') is False, True)
 
-r.head('предпросмотр остаётся доступным')
+r.head(T('live.previewStaysAvailable'))
 _, res = common.call('POST', '/plugins/state', {'set': {pl['plugins'][0]['plugin']: True}})
-r.case('без apply не считается изменением', res.get('busy'), None)
+r.case(T('live.noApplyIsNotAChange'), res.get('busy'), None)
 
-r.head('закрываю программу тем же мостом')
+r.head(T('live.closingViaBridge'))
 # Окно ищется с ожиданием, а не одним взглядом: процесс появляется раньше своего диалога,
 # и на занятой машине разрыв доходит до десятков секунд. Раньше проверка успевала посмотреть
 # до появления кнопок, не находила выхода и оставляла утилиту работать.
@@ -105,16 +105,16 @@ for _ in range(60):
     if target:
         break
     time.sleep(1)
-r.case('кнопка выхода дождалась', target is not None, True)
+r.case(T('live.exitButtonAppeared'), target is not None, True)
 if target:
     _, res = common.call('POST', '/window',
                          {'hwnd': target[0], 'action': 'click', 'button': target[1]}, timeout=60)
-    r.case('кнопка нажата', res.get('did'), 'click')
-    r.note('', 'нажато: %s' % res.get('button'))
+    r.case(T('live.buttonPressed'), res.get('did'), 'click')
+    r.note(T('live.blank3'), 'нажато: %s' % res.get('button'))
 else:
     for w in wins.get('windows') or []:
         common.call('POST', '/window', {'hwnd': w['hwnd'], 'action': 'close'}, timeout=60)
-    r.note('', 'кнопки выхода не нашлось, закрыл окна')
+    r.note(T('live.blank4'), 'кнопки выхода не нашлось, закрыл окна')
 
 th.join(timeout=180)
 for _ in range(60):
@@ -122,13 +122,13 @@ for _ in range(60):
     _, ping = common.call('GET', '/ping', timeout=20)
     if not ping.get('busy'):
         break
-r.head('после закрытия')
+r.head(T('live.afterClosing'))
 if ping.get('busy'):
     # Утилиту закрыть не удалось - это сбой проверки, а не замка: гасим, чтобы не оставить
     # сборку занятой для следующего набора и для человека.
     for w in (common.call('GET', '/windows?pid=%d' % pid, timeout=60)[1].get('windows') or []):
         common.call('POST', '/window', {'hwnd': w['hwnd'], 'action': 'close'}, timeout=60)
-    r.note('уборка', 'программа не закрылась сама, послал закрытие окнам')
-r.case('снова свободно', ping.get('busy'), None)
+    r.note(T('live.cleanup'), 'программа не закрылась сама, послал закрытие окнам')
+r.case(T('live.freeAgain'), ping.get('busy'), None)
 
 r.done()

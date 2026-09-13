@@ -21,7 +21,7 @@ T = common.T
 pkg = common.import_package()
 services, i18n = pkg.services, pkg.i18n
 i18n.set_language('ru')
-r = common.Report('логика занятости')
+r = common.Report(T('busy.title'))
 
 ЧУЖОЙ = {'n': 1, 'mine': False}   # запуск не наш: MO2 сама сообщит о завершении
 СВОЙ = {'n': 1, 'mine': True}     # наш запуск: снимаем с учёта, когда процесс умрёт
@@ -36,54 +36,54 @@ def make(launched=None, game='НетТакогоПроцесса.exe'):
     return svc
 
 
-r.head('ничего не запущено')
-r.case('свободно', make()._busy(), None)
+r.head(T('busy.nothingRunning'))
+r.case(T('busy.free'), make()._busy(), None)
 
-r.head('MO2 не сообщила о завершении - замок держит кто-то безымянный')
+r.head(T('busy.heldByNameless'))
 busy = make({ЗАГРУЗЧИК: ЧУЖОЙ})._busy()
-r.case('занято, а не свободно', busy is not None, True)
+r.case(T('busy.busyNotFree'), busy is not None, True)
 if busy:
-    r.case('MO2 считает запуск активным', busy['viaMO2'], True)
-    r.case('живого процесса не нашли', busy['app'], None)
-    r.case('держит неизвестный', busy['heldByUnknown'], True)
-    r.case('видно, что запускала MO2', busy['mo2Run'], [ЗАГРУЗЧИК])
-    r.case('это не игра', busy['isGame'], False)
+    r.case(T('busy.mo2ThinksActive'), busy['viaMO2'], True)
+    r.case(T('busy.noLiveProcess'), busy['app'], None)
+    r.case(T('busy.heldByUnknown'), busy['heldByUnknown'], True)
+    r.case(T('busy.mo2LaunchVisible'), busy['mo2Run'], [ЗАГРУЗЧИК])
+    r.case(T('busy.notTheGame'), busy['isGame'], False)
 
-r.head('учёт чужого запуска не стирается сам')
+r.head(T('busy.foreignRecordKept'))
 svc = make({ЗАГРУЗЧИК: ЧУЖОЙ})
 svc._busy()
 svc._busy()
-r.case('после двух проверок цел', sorted(svc.launched), [ЗАГРУЗЧИК])
+r.case(T('busy.intactAfterTwo'), sorted(svc.launched), [ЗАГРУЗЧИК])
 
-r.head('изменяющая операция отказывает')
+r.head(T('busy.writeRefuses'))
 stop = make({ЗАГРУЗЧИК: ЧУЖОЙ})._blocked_while_busy('op.toggle')
-r.case('отказ выдан', stop is not None, True)
+r.case(T('busy.refusalIssued'), stop is not None, True)
 if stop:
-    r.case('ничего не применено', stop['applied'], False)
-    r.case('помечено занятостью', stop['busy'], True)
-    r.case('названа операция', stop['blocked'], 'включение или выключение мода')
-    r.case('объяснено про безымянного', 'не сообщила о завершении' in stop['why'], True)
+    r.case(T('busy.nothingApplied'), stop['applied'], False)
+    r.case(T('busy.markedBusy'), stop['busy'], True)
+    r.case(T('busy.operationNamed'), stop['blocked'], 'включение или выключение мода')
+    r.case(T('busy.namelessExplained'), 'не сообщила о завершении' in stop['why'], True)
 
-r.head('onFinishedRun снимает учёт')
+r.head(T('busy.finishedClears'))
 svc = make({ЗАГРУЗЧИК: ЧУЖОЙ})
 svc.on_finished_run(ЗАГРУЗЧИК, 0)
-r.case('учёт пуст', svc.launched, {})
-r.case('снова свободно', svc._busy(), None)
+r.case(T('busy.recordEmpty'), svc.launched, {})
+r.case(T('busy.freeAgain'), svc._busy(), None)
 
-r.head('живая игра ловится перечислением процессов')
+r.head(T('busy.gameCaughtByEnum'))
 # вместо игры подставлен заведомо живой процесс - сам интерпретатор
 svc = make(game=os.path.basename(sys.executable))
 busy = svc._busy()
-r.case('занято', busy is not None, True)
+r.case(T('busy.busy'), busy is not None, True)
 if busy:
-    r.case('назван процесс', (busy['app'] or '').lower(),
+    r.case(T('busy.processNamed'), (busy['app'] or '').lower(),
            os.path.basename(sys.executable).lower())
-    r.case('опознан как игра', busy['isGame'], True)
-    r.case('MO2 о нём не сообщала', busy['viaMO2'], False)
+    r.case(T('busy.recognisedAsGame'), busy['isGame'], True)
+    r.case(T('busy.mo2SilentAboutIt'), busy['viaMO2'], False)
 
-r.head('свой запуск снимается с учёта, когда процесс умер')
-r.case('учёт очистился', make({r'C:\нет\такого.exe': СВОЙ})._busy(), None)
-r.case('чужой при том же условии остаётся',
+r.head(T('busy.ownRunRetired'))
+r.case(T('busy.recordCleared'), make({r'C:\нет\такого.exe': СВОЙ})._busy(), None)
+r.case(T('busy.foreignStays'),
        make({r'C:\нет\такого.exe': ЧУЖОЙ})._busy() is not None, True)
 
 r.done()

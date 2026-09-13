@@ -18,7 +18,7 @@ import common  # noqa: E402
 T = common.T
 
 common.need_live()
-r = common.Report('состояние плагинов доезжает до plugins.txt')
+r = common.Report(T('plugins.title'))
 
 _, prof = common.call('GET', '/profiles')
 TXT = os.path.join(prof['path'], prof['current'], 'plugins.txt')
@@ -49,30 +49,30 @@ victim = next((p['plugin'] for p in pl['plugins']
                if not p['active'] and p['plugin'].lower().endswith('.esp')),
               pl['plugins'][0]['plugin'])
 was = starred(victim)
-r.note('подопытный', '%s, звёздочка сейчас: %s' % (victim, was))
+r.note(T('plugins.subject'), '%s, звёздочка сейчас: %s' % (victim, was))
 if was is None:
-    r.case('плагин есть в plugins.txt', False, True)
+    r.case(T('plugins.inFile'), False, True)
     r.done()
 
-r.head('переключаем через мост')
+r.head(T('plugins.toggleViaBridge'))
 _, res = common.call('POST', '/plugins/state', {'set': {victim: not was}, 'apply': True})
-r.case('применено', res.get('applied'), True)
-r.case('файл переписан', (res.get('file') or {}).get('written'), True)
-r.case('звёздочка в файле изменилась', starred(victim), not was)
+r.case(T('plugins.applied'), res.get('applied'), True)
+r.case(T('plugins.fileRewritten'), (res.get('file') or {}).get('written'), True)
+r.case(T('plugins.asteriskChanged'), starred(victim), not was)
 
-r.head('/refresh не отменяет правку')
+r.head(T('plugins.refreshKeeps'))
 common.call('POST', '/refresh', {})
-r.case('в файле по-прежнему новое', starred(victim), not was)
+r.case(T('plugins.fileStillNew'), starred(victim), not was)
 _, pl2 = common.call('GET', '/plugins')
-r.case('память согласна с файлом',
+r.case(T('plugins.memoryAgrees'),
        next(p['active'] for p in pl2['plugins'] if p['plugin'] == victim), not was)
 
-r.head('возвращаем как было')
+r.head(T('plugins.restoring'))
 _, res = common.call('POST', '/plugins/state', {'set': {victim: was}, 'apply': True})
-r.case('применено', res.get('applied'), True)
+r.case(T('plugins.appliedBack'), res.get('applied'), True)
 common.call('POST', '/refresh', {})
-r.case('звёздочка вернулась', starred(victim), was)
-r.case('файл побайтно как в начале', digest(), start)
-r.case('концы строк не подменены', line_ends(), crlf_before)
+r.case(T('plugins.asteriskBack'), starred(victim), was)
+r.case(T('plugins.fileByteIdentical'), digest(), start)
+r.case(T('plugins.lineEndingsKept'), line_ends(), crlf_before)
 
 r.done()

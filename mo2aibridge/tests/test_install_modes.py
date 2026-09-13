@@ -20,7 +20,7 @@ import common  # noqa: E402
 T = common.T
 
 common.need_live()
-r = common.Report('установка: свежая, слияние, замена')
+r = common.Report(T('install.title'))
 
 PROBE = 'MO2 ApI Bridge - проба установки'
 KEY = {'iUnderstandTheRisk': 'yes-I-read-the-docs-and-accept-irreversible-changes'}
@@ -35,7 +35,7 @@ def seven_zip():
 
 SEVEN = seven_zip()
 if not SEVEN:
-    r.note('пропуск', '7-Zip не найден, собрать архив нечем')
+    r.note(T('install.skip'), '7-Zip не найден, собрать архив нечем')
     raise SystemExit(77)
 
 
@@ -74,58 +74,58 @@ def files_of(path):
 _, ping = common.call('GET', '/ping')
 target = os.path.join(ping['modsPath'].replace('/', os.sep), PROBE)
 if os.path.isdir(target):
-    r.note('уборка', 'пробник остался от прошлого прогона, сношу')
+    r.note(T('install.cleanup'), 'пробник остался от прошлого прогона, сношу')
     common.call('POST', '/mods/remove', dict(KEY, mod=PROBE))
 
 try:
-    r.head('свежая установка')
+    r.head(T('install.freshInstall'))
     _, res = common.call('POST', '/install', {'archive': A, 'name': PROBE})
-    r.case('создан', res.get('created'), True)
-    r.case('режим', res.get('mode'), 'new')
-    r.case('файлов положено', res.get('files'), 2)
-    r.case('на диске те же два', files_of(target),
+    r.case(T('install.created'), res.get('created'), True)
+    r.case(T('install.mode'), res.get('mode'), 'new')
+    r.case(T('install.filesPlaced'), res.get('files'), 2)
+    r.case(T('install.sameTwoOnDisk'), files_of(target),
            {os.path.join('SKSE', 'Plugins', 'probe.ini').lower(),
             os.path.join('SKSE', 'Plugins', 'only-in-a.txt').lower()})
-    r.case('откат подсказан', (res.get('undo') or {}).get('route'), '/mods/remove')
+    r.case(T('install.undoOffered'), (res.get('undo') or {}).get('route'), '/mods/remove')
 
-    r.head('повторная установка без режима отказывает')
+    r.head(T('install.repeatWithoutModeRefuses'))
     code, res = common.call('POST', '/install', {'archive': B, 'name': PROBE})
-    r.case('отказ, а не молчаливая перезапись', code, 500)
-    r.case('в отказе названы режимы',
+    r.case(T('install.refusalNotSilentOverwrite'), code, 500)
+    r.case(T('install.refusalNamesModes'),
            'merge' in str(res.get('error')) and 'replace' in str(res.get('error')), True)
 
-    r.head('слияние: кладём поверх')
+    r.head(T('install.mergeOverlay'))
     _, res = common.call('POST', '/install',
                          {'archive': B, 'name': PROBE, 'mode': 'merge'})
-    r.case('режим', res.get('mode'), 'merge')
-    r.case('старый файл уцелел',
+    r.case(T('install.mergeMode'), res.get('mode'), 'merge')
+    r.case(T('install.oldFileSurvived'),
            os.path.join('SKSE', 'Plugins', 'only-in-a.txt').lower() in files_of(target), True)
-    r.case('новый добавился',
+    r.case(T('install.newFileAdded'),
            os.path.join('SKSE', 'Plugins', 'only-in-b.txt').lower() in files_of(target), True)
-    r.case('перекрытое названо', [x for x in res.get('overwritten') or []
+    r.case(T('install.overwrittenNamed'), [x for x in res.get('overwritten') or []
                                   if x.endswith('probe.ini')] != [], True)
-    r.case('содержимое обновлено',
+    r.case(T('install.contentsUpdated'),
            io.open(os.path.join(target, 'SKSE', 'Plugins', 'probe.ini'),
                    encoding='utf-8').read(), 'version=B')
 
-    r.head('замена: прежнее уходит в Корзину')
+    r.head(T('install.replaceToRecycleBin'))
     _, res = common.call('POST', '/install',
                          {'archive': A, 'name': PROBE, 'mode': 'replace'})
-    r.case('режим', res.get('mode'), 'replace')
-    r.case('что-то убрано в Корзину', (res.get('removedToRecycleBin') or 0) > 0, True)
-    r.case('файла из B не осталось',
+    r.case(T('install.replaceMode'), res.get('mode'), 'replace')
+    r.case(T('install.somethingRecycled'), (res.get('removedToRecycleBin') or 0) > 0, True)
+    r.case(T('install.noFileFromB'),
            os.path.join('SKSE', 'Plugins', 'only-in-b.txt').lower() in files_of(target), False)
-    r.case('осталось ровно содержимое A', files_of(target),
+    r.case(T('install.exactlyContentsOfA'), files_of(target),
            {os.path.join('SKSE', 'Plugins', 'probe.ini').lower(),
             os.path.join('SKSE', 'Plugins', 'only-in-a.txt').lower()})
-    r.case('meta.ini не тронут', os.path.isfile(os.path.join(target, 'meta.ini')), True)
+    r.case(T('install.metaIniUntouched'), os.path.isfile(os.path.join(target, 'meta.ini')), True)
 
 finally:
-    r.head('уборка за собой')
+    r.head(T('install.cleaningUpAfter'))
     _, res = common.call('POST', '/mods/remove', dict(KEY, mod=PROBE))
-    r.case('пробник удалён', res.get('applied'), True)
-    r.case('карточка отдана до сноса', (res.get('card') or {}).get('mod'), PROBE)
-    r.case('папки нет', os.path.isdir(target), False)
+    r.case(T('install.probeRemoved'), res.get('applied'), True)
+    r.case(T('install.cardBeforeRemoval'), (res.get('card') or {}).get('mod'), PROBE)
+    r.case(T('install.folderGone'), os.path.isdir(target), False)
     for a in (A, B):
         shutil.rmtree(os.path.dirname(a), ignore_errors=True)
 

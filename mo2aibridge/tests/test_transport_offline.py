@@ -65,7 +65,7 @@ pkg = common.import_package()
 runtime = __import__(pkg.__name__ + '.runtime', fromlist=['runtime'])
 i18n = pkg.i18n
 i18n.set_language('ru')
-r = common.Report('транспорт без MO2')
+r = common.Report(T('transport.title'))
 
 
 def ask(port, route, token=None, body=None):
@@ -107,84 +107,84 @@ BASE_PORT = int(os.environ.get('MO2AIBRIDGE_TEST_PORT') or 18930)
 srv = second = None
 try:
     srv, port = runtime.serve(BASE_PORT, runtime.make_handler(TOKEN, GET, POST), tries=20)
-    r.head('привязка')
-    r.case('встал на свободный порт', port >= BASE_PORT, True)
-    r.case('serve вернул пару, а не один сервер', isinstance(port, int), True)
+    r.head(T('transport.binding'))
+    r.case(T('transport.boundFreePort'), port >= BASE_PORT, True)
+    r.case(T('transport.serveReturnsPair'), isinstance(port, int), True)
 
     # Занятый порт обязан дать отказ. Это и есть то, что чинилось: с наследуемым
     # allow_reuse_address вторая привязка молча удавалась, и запросы шли первому.
     try:
         runtime.Server(('127.0.0.1', port), runtime.make_handler(TOKEN, GET, POST))
-        r.case('занятый порт отвергнут', 'привязка удалась', 'OSError')
+        r.case(T('transport.takenPortRefusedFail'), 'привязка удалась', 'OSError')
     except OSError:
-        r.case('занятый порт отвергнут', True, True)
+        r.case(T('transport.takenPortRefused'), True, True)
 
     # А serve при занятом порте не падает, а отходит на следующий - и говорит, на какой.
     second, port2 = runtime.serve(port, runtime.make_handler(TOKEN, GET, POST), tries=5)
-    r.case('второй мост встал на другой порт', port2 != port, True)
-    r.case('второй порт - следующий свободный', port2 > port, True)
+    r.case(T('transport.secondOnOtherPort'), port2 != port, True)
+    r.case(T('transport.secondIsNextFree'), port2 > port, True)
 
-    r.head('токен')
-    r.case('без заголовка - 403', ask(port, '/ping')[0], 403)
+    r.head(T('transport.token'))
+    r.case(T('transport.noHeader403'), ask(port, '/ping')[0], 403)
     # Токен в заголовке, а заголовки HTTP - latin-1: нарочно чужой, но ASCII.
-    r.case('чужой токен - 403', ask(port, '/ping', 'not-the-token')[0], 403)
-    r.case('пустой токен - 403', ask(port, '/ping', '')[0], 403)
+    r.case(T('transport.wrongToken403'), ask(port, '/ping', 'not-the-token')[0], 403)
+    r.case(T('transport.emptyToken403'), ask(port, '/ping', '')[0], 403)
     code, res = ask(port, '/ping', TOKEN)
-    r.case('свой токен - 200', (code, res), (200, {'ok': True}))
-    r.case('до маршрута без токена дело не доходит',
+    r.case(T('transport.ownToken200'), (code, res), (200, {'ok': True}))
+    r.case(T('transport.routeNotReachedWithoutToken'),
            ask(port, '/broken')[0], 403)
 
-    r.head('коды ответа')
+    r.head(T('transport.replyCodes'))
     code, res = ask(port, '/bad', TOKEN)
-    r.case('ошибка в запросе - 400', code, 400)
-    r.case('400 помечен машиночитаемо', res.get('code'), 'badRequest')
-    r.case('400 несёт текст i18n, а не трассировку', res.get('error'), i18n.t('err.needMod'))
-    r.case('в 400 трассировки нет', 'trace' in res, False)
+    r.case(T('transport.badRequest400'), code, 400)
+    r.case(T('transport.badRequestMarked'), res.get('code'), 'badRequest')
+    r.case(T('transport.badRequestCarriesI18n'), res.get('error'), i18n.t('err.needMod'))
+    r.case(T('transport.badRequestNoTrace'), 'trace' in res, False)
 
     code, res = ask(port, '/broken', TOKEN)
-    r.case('поломка моста - 500', code, 500)
-    r.case('500 помечен машиночитаемо', res.get('code'), 'bridgeFailure')
-    r.case('в 500 трассировка есть', 'trace' in res, True)
+    r.case(T('transport.bridgeFailure500'), code, 500)
+    r.case(T('transport.bridgeFailureMarked'), res.get('code'), 'bridgeFailure')
+    r.case(T('transport.bridgeFailureHasTrace'), 'trace' in res, True)
 
     code, res = ask(port, '/badpost', TOKEN, body={})
-    r.case('на POST ошибка запроса тоже 400', (code, res.get('code')), (400, 'badRequest'))
+    r.case(T('transport.postBadRequestToo'), (code, res.get('code')), (400, 'badRequest'))
 
-    r.head('маршрутов нет')
+    r.head(T('transport.noSuchRoute'))
     code, res = ask(port, '/no-such-route', TOKEN)
-    r.case('неизвестный путь - 404', code, 404)
-    r.case('404 перечисляет чтение и изменения отдельно',
+    r.case(T('transport.unknownPath404'), code, 404)
+    r.case(T('transport.404ListsBothTables'),
            (sorted(res.get('get') or []), sorted(res.get('post') or [])),
            (sorted(GET), sorted(POST)))
-    r.case('чтение, посланное как POST, - 404 со списком',
+    r.case(T('transport.readSentAsPost404'),
            ask(port, '/ping', TOKEN, body={})[0], 404)
 
-    r.head('тело запроса')
+    r.head(T('transport.requestBody'))
     req = urllib.request.Request('http://127.0.0.1:%d/do' % port, method='POST',
                                  data='{это не json'.encode('utf-8'),
                                  headers={'X-Token': TOKEN,
                                           'Content-Type': 'application/json'})
     try:
         urllib.request.urlopen(req, timeout=10)
-        r.case('нечитаемый JSON - 400', 'ответил 200', 400)
+        r.case(T('transport.badJson400Fail'), 'ответил 200', 400)
     except urllib.error.HTTPError as exc:
-        r.case('нечитаемый JSON - 400', exc.code, 400)
+        r.case(T('transport.badJson400'), exc.code, 400)
     # Пустое тело - не ошибка: маршрут без параметров зовут именно так.
     code, res = ask(port, '/do', TOKEN, body={})
-    r.case('пустое тело - обычный вызов', (code, res), (200, {'ok': True}))
+    r.case(T('transport.emptyBodyOk'), (code, res), (200, {'ok': True}))
 
-    r.head('остановка')
+    r.head(T('transport.shutdown'))
     srv.shutdown()
     srv.server_close()
     srv = None
     try:
         ask(port, '/ping', TOKEN)
-        r.case('после остановки порт не отвечает', 'ответил', 'отказ соединения')
+        r.case(T('transport.portSilentAfterStopFail'), 'ответил', 'отказ соединения')
     except Exception:
-        r.case('после остановки порт не отвечает', True, True)
+        r.case(T('transport.portSilentAfterStop'), True, True)
     # Освободившийся порт снова занимается - значит сокет действительно закрыт, а не
     # оставлен висеть демоном до конца процесса.
     again, port3 = runtime.serve(port, runtime.make_handler(TOKEN, GET, POST), tries=1)
-    r.case('освободившийся порт занимается снова', port3, port)
+    r.case(T('transport.freedPortBindableAgain'), port3, port)
     again.shutdown()
     again.server_close()
 finally:
