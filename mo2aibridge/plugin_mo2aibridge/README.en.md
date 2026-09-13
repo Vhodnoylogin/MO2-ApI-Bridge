@@ -40,12 +40,26 @@ Copy the `mo2aibridge` folder into `<MO2>\plugins\` and restart MO2. It appears 
 | `language` | `auto` | message language: `auto`, `ru`, `en` |
 
 The menu entry shows the address and state, and if autostart failed it starts the bridge by hand
-and shows the real reason. Diagnostics go to `mo2aibridge.log` next to the plugin: load, start, and
+and shows the real reason. It also holds a **"Stop the bridge"** button: the `enabled` setting is
+read only at MO2 startup, so clearing the checkbox mid-session is not enough — and closing the
+bridge without leaving the manager is sometimes needed. On MO2 exit the bridge closes itself and
+removes its token file. Diagnostics go to `mo2aibridge.log` next to the plugin: load, start, and
 a full traceback on any failure.
+
+**Two MO2 instances at once** is an ordinary day: Skyrim and Fallout both open. The second
+bridge cannot take the same port, so it takes the next free one (up to ten in a row) and writes
+its token to a file naming that port — `mo2aibridge-token-8931.txt`. With a single instance the
+name stays as it was, `mo2aibridge-token.txt`. So a client only has to look at which token files
+sit next to the plugin: the name names the port.
 
 **External requirements.** MO2 2.5 with Python plugin support — nothing else, with one exception:
 the `/install` route needs **7-Zip** installed (`7z.exe` is looked up in `Program Files\7-Zip` and
-in `PATH`). Every other route works without it.
+in `PATH`). Installed elsewhere — put the path in the `sevenZip` key of `mo2aibridge-config.json`,
+created next to the plugin on first start. Every other route works without 7-Zip.
+
+**Windows only.** The bridge calls `user32` and `kernel32` directly: process enumeration, window
+state, the Recycle Bin. On other systems MO2 will load Python plugins, but these calls will not
+work.
 
 ---
 
@@ -93,7 +107,7 @@ The token is supplied by the wrapper and omitted below for brevity.
 | Route | Body | Effect |
 |---|---|---|
 | `/refresh` | — | re-read `mods\` and the profile |
-| `/install` | `archive`, `name`, `paths`, `mode` | install without dialogs; `mode` is `merge` or `replace` when the folder is taken |
+| `/install` | `archive`, `name`, `paths`, `mode` | install without dialogs; `mode` is `merge` or `replace` when the folder is taken. `replace` is **irreversible** and needs the key, see below |
 | `/toggle` | `mod`, `active` | enable or disable a mod |
 | `/plugins/state` | `set`, `apply` | enable or disable plugins in bulk |
 | `/plugins/order` | `order`, `apply` | set the whole load order |
@@ -106,6 +120,23 @@ The token is supplied by the wrapper and omitted below for brevity.
 
 An unknown path returns 404 together with both tables listed separately — half of all mistakes are
 a read sent as a POST, or the other way round.
+
+### Reply codes
+
+| Code | `code` field | What it means |
+|---|---|---|
+| 200 | — | done; a lock's refusal also arrives as 200, with `applied: false` and `reason` |
+| 400 | `badRequest` | **a mistake in the request**: a missing field, an unknown mode, an unknown mod, a bad boolean. The text is in `error`, no traceback |
+| 403 | — | the `X-Token` header is missing or wrong |
+| 404 | — | no such path; the reply carries both route tables |
+| 500 | `bridgeFailure` | **the bridge broke**: an unexpected exception. `trace` holds the last 800 characters |
+
+The difference between 400 and 500 matters: the first means "ask differently", the second
+"the bridge broke, retrying is pointless". Both used to come back as a 500, indistinguishable.
+
+A lock's refusal — busy or irreversible — is **not an error**: it arrives as 200 with
+`applied: false` and a `reason` of `busy` or `danger`. That is deliberate: the lock did its job,
+and the caller should read the body rather than catch an exception.
 
 ---
 
@@ -226,6 +257,30 @@ The pause between requests and the timeout live in the settings (`updates.delayS
 hundred mods has to fit in it. The route is a read and works while MO2 is busy. The reply's `via`
 says which way Nexus was asked and `quota` how many requests remain.
 
+**The Nexus section comes from MO2 itself** — `gameNexusName()` knows it for every game the
+manager can run. The `nexusDomains` table in the settings is only an override for cases like
+Skyrim VR, which has no section of its own on Nexus and takes its mods from the SSE one. There
+is deliberately no blind default: substituting a foreign section would fetch the page of a
+**different** mod with the same id and pass confident judgement on it. If the section cannot be
+determined the verdict is `ERROR` with an explanation, not a guess.
+
+**A channel failure stops the sweep.** One page failing (404, a malformed reply) is just a row
+in the answer. But a bad key (401, 403), an exhausted quota (429) and a broken connection all
+mean every further request will fail the same way: on a setup of fifteen hundred mods that is
+fifteen hundred pointless calls, and on a 429 each of them extends the block. So the sweep stops
+and the reply gains:
+
+| Field | What it means |
+|---|---|
+| `stopped` | why the sweep stopped; empty if it ran to the end |
+| `unchecked` | how many mods were left unasked |
+
+The sweep also stops **while the daily quota still has room** (`updates.quotaReserve`, 50 by
+default). The key is shared with MO2 itself: eating it down to zero would leave the user without
+updates and without downloads in the manager, and they would look for the cause anywhere but
+here. A broken connection is counted in consecutive failures (`updates.netFailsBeforeStop`, 5 by
+default): one failure happens to anyone, five in a row mean the channel is down.
+
 **Two ways to Nexus, one chosen per session.** The first is MO2's own bridge,
 `createNexusBridge()`. In MO2 2.5.2 it does not work from Python: the `filesAvailable` reply
 carries `QList<ModRepositoryFileInfo*>`, and PyQt refuses the subscription. The plugin then takes
@@ -267,11 +322,24 @@ modified file goes into a **separate** mod that overrides the original.
 MO2's installer asks with a dialog here; the bridge asks with the `mode` field, and without it
 it **refuses** — nothing is written over someone's work silently.
 
-| `mode` | What it does | What is lost |
-|---|---|---|
-| absent | refusal with an explanation | nothing |
-| `merge` | overlays the selection on the previous contents | the overwritten files; the reply lists them |
-| `replace` | sends the previous contents **to the Recycle Bin** first, then copies | nothing irrecoverably |
+| `mode` | What it does | Key needed | What is lost |
+|---|---|---|---|
+| absent | refusal with an explanation | no | nothing |
+| `merge` | overlays the selection on the previous contents | no | the overwritten files; the reply lists them |
+| `replace` | sends the previous contents **to the Recycle Bin** first, then copies | **yes** | nothing irrecoverably |
+
+`replace` is the only mode that loses someone's work, so it sits behind the same
+`iUnderstandTheRisk` key as removal (see "Irreversible operations"). A plain install and a
+merge need no key.
+
+**The mod name must be a folder name** — no path separators, no colon, not `.` and not `..`.
+Anything else is a 400. This is not pedantry: the name is joined into a path inside `mods\`,
+and on Windows joining drops the first part when the second is absolute — so `replace` with a
+name like `C:\Users\<someone>\Documents` would have sent a stranger's folder to the Recycle Bin.
+
+Order of work: unpack first, wipe second. That is deliberate — unpacking is also what checks
+whether 7-Zip is present and the archive is intact. The other way round, a machine without
+7-Zip got the mod folder in the Recycle Bin and no install in exchange.
 
 `meta.ini` is left alone on replace: it belongs to MO2 and holds `nexusId`, the category and the
 archive name — that is, the mod's identity beyond its folder name.
@@ -301,6 +369,10 @@ few seconds. Ask `/mods` for live state, not the file.
 `/mods/priority`, `/mods/rename` and `/mods/remove` change the setup irreversibly: reordering
 changes which files win across the whole build, renaming breaks profile lines that reference a mod
 by folder name, and removal deletes the folder **from disk**, not a line from a profile.
+
+`/install` with `"mode": "replace"` belongs there too: it sends the mod's previous contents to
+the Recycle Bin, losing someone's work. A plain install and `"mode": "merge"` need no key —
+they lose nothing.
 
 `/run` belongs to the same group, and tops it: a foreign process is started under MO2 with the
 virtual `Data` mounted, and whatever it does to the setup — rewrites a generator's output, builds
