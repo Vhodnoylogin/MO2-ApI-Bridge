@@ -12,25 +12,21 @@ Layers, bottom to top; each knows only the one below it:
     routes.py    which path maps to what         - knows nothing of mobase or sockets
     plugin.py    the plugin lifecycle            - this file
 
-Strings live in i18n.py, configurable values in config.py.
+Strings live in i18n.py, configurable values in config.py, and where a line goes once it has
+been written is journal.py's business.
 """
 import os
 import traceback
 
 import mobase
 
-from . import i18n, runtime, routes as routes_mod
+from . import i18n, journal, runtime, routes as routes_mod
 from .config import Config
 from .services import Services
 
 from . import PLUGIN_ID, __version__
 
 PLUGIN_NAME = 'MO2 ApI Bridge'
-DEFAULT_PORT = 8930
-# How many consecutive ports to try when the requested one is taken. The usual culprit is a
-# second MO2 instance - and that is not trouble but an ordinary day: Skyrim and Fallout are
-# often both open.
-PORT_TRIES = 10
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOKEN_FILE = os.path.join(HERE, PLUGIN_ID + '-token.txt')
 ERROR_LOG = os.path.join(HERE, PLUGIN_ID + '.log')
@@ -53,24 +49,38 @@ def token_file(port, wanted):
     return os.path.join(HERE, '%s-token-%d.txt' % (PLUGIN_ID, int(port)))
 
 
-def log(msg):
-    """Write both to MO2's log and to a file next to the plugin.
+# Both places a line goes: MO2's log, and a file next to the plugin. The file is there
+# because MO2's default log level drops plugin warnings, and then the reason for a refusal
+# is lost entirely - that once cost hours of searching, with the bridge quiet and an
+# exception being swallowed. Which line reaches which sink is a matter of levels, and a sink
+# that dies is announced through the other one rather than swallowed: journal.py.
+JOURNAL = journal.Journal([journal.QtSink(journal.INFO),
+                           journal.FileSink(ERROR_LOG, journal.DEBUG)], prefix=PLUGIN_NAME)
 
-    To a file because MO2's default log level drops plugin warnings, and then the reason for
-    a refusal is lost entirely. That once cost hours of searching: the bridge went quiet
-    while an exception was being swallowed.
+
+def log(msg, level=journal.INFO):
+    """Write one line. The level is optional so that every call site written before levels
+    existed goes on meaning what it meant."""
+    JOURNAL.log(level, msg)
+
+
+_config = None
+
+
+def config(reload=False):
+    """The settings, read from the file beside the plugin; with no file, one is written from
+    the defaults.
+
+    Read once and kept, because two moments need the same values and they are far apart: MO2
+    asks for the settings list while it is still registering the plugin, long before anything
+    has started, and `start()` needs the port and the retry count later. `reload` is how a
+    start says "read the file again" - stopping and starting the bridge from its own window
+    is the one way a person has to pick up an edited settings file without leaving MO2.
     """
-    line = '[%s] %s' % (PLUGIN_NAME, msg)
-    try:
-        from PyQt6.QtCore import qCritical
-        qCritical(line)
-    except Exception:
-        pass
-    try:
-        with open(ERROR_LOG, 'a', encoding='utf-8') as fh:
-            fh.write(line + chr(10))
-    except Exception:
-        pass
+    global _config
+    if _config is None or reload:
+        _config = Config.load(CONFIG_FILE, note=log)
+    return _config
 
 
 def _version_info():
@@ -105,7 +115,8 @@ class MO2ApIBridge(mobase.IPluginTool):
         try:
             organizer.onUserInterfaceInitialized(self._on_ui_ready)
         except Exception:
-            log('onUserInterfaceInitialized: ' + traceback.format_exc())
+            log(i18n.t('log.hookFailed', hook='onUserInterfaceInitialized',
+                       error=traceback.format_exc()), journal.ERROR)
         return True
 
     def name(self):
@@ -123,8 +134,12 @@ class MO2ApIBridge(mobase.IPluginTool):
         return _version_info()
 
     def settings(self):
+        # The port is named in two places, and that is deliberate rather than untidy: the
+        # settings file holds the value, MO2's own panel shows it to a person who has never
+        # opened that file. The panel wins when it has an answer - it is the one a user can
+        # see - and the file supplies what the panel starts from.
         return [mobase.PluginSetting('enabled', i18n.t('setting.enabled'), True),
-                mobase.PluginSetting('port', i18n.t('setting.port'), DEFAULT_PORT),
+                mobase.PluginSetting('port', i18n.t('setting.port'), int(config().get('port'))),
                 mobase.PluginSetting('language', i18n.t('setting.language'), 'auto')]
 
     def isActive(self):
@@ -180,7 +195,7 @@ class MO2ApIBridge(mobase.IPluginTool):
         state = i18n.t('dialog.running' if self._server else 'dialog.stopped')
         box = QMessageBox(self._parent)
         box.setWindowTitle(i18n.t('plugin.displayName'))
-        box.setText(i18n.t('dialog.listening', port=self._port or DEFAULT_PORT,
+        box.setText(i18n.t('dialog.listening', port=self._port or config().get('port'),
                            token=self._token_file or TOKEN_FILE, state=state))
         # The stop button is the only way to bring the bridge down without leaving MO2: the
         # "Enabled" checkbox is read at startup only, and clearing it mid-session is not
@@ -215,13 +230,14 @@ class MO2ApIBridge(mobase.IPluginTool):
             self._organizer.onAboutToRun(svc.on_about_to_run)
             self._organizer.onFinishedRun(svc.on_finished_run)
         except Exception:
-            log('onAboutToRun/onFinishedRun: ' + traceback.format_exc())
+            log(i18n.t('log.hookFailed', hook='onAboutToRun/onFinishedRun',
+                       error=traceback.format_exc()), journal.WARN)
 
     def _on_ui_ready(self, _window=None):
         log(i18n.t('ui.ready'))
         err = self.start()
         if err:
-            log('%s: %s' % (i18n.t('start.failed'), err))
+            log('%s: %s' % (i18n.t('start.failed'), err), journal.ERROR)
 
     def start(self):
         """Raise the server. None on success, the error text otherwise.
@@ -235,10 +251,10 @@ class MO2ApIBridge(mobase.IPluginTool):
         if not self.isActive():
             return i18n.t('start.disabled')
         try:
-            wanted = int(self._setting('port', DEFAULT_PORT) or DEFAULT_PORT)
-            token = runtime.new_token()
             # Settings are read once per start; with no file, one is created from defaults.
-            cfg = Config.load(CONFIG_FILE, note=log)
+            cfg = config(reload=True)
+            wanted = int(self._setting('port', cfg.get('port')) or cfg.get('port'))
+            token = runtime.new_token()
             self._runner = runtime.MainThreadRunner()
             svc = self._svc = Services(self._organizer, self._runner.call, DOCS,
                                        note=log, cfg=cfg)
@@ -248,7 +264,8 @@ class MO2ApIBridge(mobase.IPluginTool):
             # The server comes up BEFORE the token is written: if the bind fails, no file is
             # left behind, and no client gets a key to a bridge that does not exist.
             self._server, self._port = runtime.serve(
-                wanted, runtime.make_handler(token, get, post), tries=PORT_TRIES)
+                wanted, runtime.make_handler(token, get, post),
+                tries=int(cfg.get('portTries')))
             self._token_file = token_file(self._port, wanted)
             with open(self._token_file, 'w', encoding='utf-8') as fh:
                 fh.write(token)
@@ -256,11 +273,11 @@ class MO2ApIBridge(mobase.IPluginTool):
             log(i18n.t('start.ok', port=self._port))
             if self._port != wanted:
                 log(i18n.t('start.otherPort', wanted=wanted, port=self._port,
-                           token=self._token_file))
+                           token=self._token_file), journal.WARN)
             return None
         except Exception as exc:
             self.stop()
-            log(i18n.t('start.failed') + ':' + chr(10) + traceback.format_exc())
+            log(i18n.t('start.failed') + ':' + chr(10) + traceback.format_exc(), journal.ERROR)
             return '%s: %s' % (type(exc).__name__, exc)
 
     def _hook_quit(self):
@@ -280,7 +297,8 @@ class MO2ApIBridge(mobase.IPluginTool):
                 app.aboutToQuit.connect(self.stop)
                 self._quit_hooked = True
         except Exception:
-            log('aboutToQuit: ' + traceback.format_exc())
+            log(i18n.t('log.hookFailed', hook='aboutToQuit',
+                       error=traceback.format_exc()), journal.ERROR)
 
     def stop(self):
         """Bring the bridge down: close the socket, let the thread finish, remove the token.

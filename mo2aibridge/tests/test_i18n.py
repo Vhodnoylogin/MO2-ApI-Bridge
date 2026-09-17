@@ -1,27 +1,29 @@
 # -*- coding: utf-8 -*-
-"""Слой строк: переводы согласованы между собой и с кодом, без запущенной MO2.
+"""The strings layer: the translations agree with one another and with the code, no MO2.
 
-Зачем. Строки вынесены из кода в i18n ради переводчика, и с этого момента у них два
-независимых источника расхождений, и ни одно из них не ломает запуск и не видно в логе.
+Why. The strings were taken out of the code and into i18n for the translator's sake, and from
+that moment they have two independent sources of drift - and neither of them breaks a run or
+shows up in the log.
 
-Первый - между языками. Ключ добавили в EN и забыли в RU: русский пользователь молча получает
-английскую фразу. В переводе потеряли или переименовали подстановку %(mod)s: форматирование
-падает, а t() намеренно не роняет плагин и отдаёт сырой шаблон с процентами - пользователь
-видит "%(mod)s" вместо имени мода, и никто не узнаёт.
+The first is between languages. A key added to EN and forgotten in RU: the Russian user silently
+gets an English phrase. A substitution %(mod)s lost or renamed in a translation: formatting
+fails, and t() deliberately does not bring the plugin down but hands back the raw template with
+its percent signs - the user sees "%(mod)s" where a mod name should be, and nobody finds out.
 
-Второй - между словарём и кодом. Код зовёт ключ, которого нет: вместо фразы показывается сама
-метка. Словарь держит ключ, который никто не зовёт: мёртвый текст, который переводчик честно
-переведёт. Код передаёт в t() не те имена подстановок, что стоят в шаблоне: снова сырой
-шаблон.
+The second is between the catalogue and the code. The code asks for a key that does not exist:
+the label itself is shown instead of a phrase. The catalogue holds a key nobody asks for: dead
+text, which a translator will honestly translate. The code passes t() substitution names the
+template does not carry: the raw template again.
 
-Плюс регрессия на сигнатуру t(key, /, **kw). Без косой черты подстановка с именем `key`
-(она есть в danger.why) сталкивается с самим параметром, и маршрут вместо внятного отказа
-отдавал трассировку "multiple values for argument 'key'".
+Plus a regression on the signature t(key, /, **kw). Without the slash a substitution named `key`
+(danger.why has one) collides with the parameter itself, and instead of a plain refusal the route
+handed back a traceback reading "multiple values for argument 'key'".
 
-Пакет сканируется целиком и рекурсивно по common.PKG, а не по списку файлов, поэтому набор
-переживёт разбиение на новые модули: важно лишь, чтобы вызовы остались вида t('ключ', ...).
-Ключ, доходящий до t() через переменную (op_key в замках), прямым вызовом не считается,
-но употреблением считается: строка 'op.toggle' в коде есть, и найти её можно.
+The package is scanned whole and recursively from common.PKG rather than by a list of files, so
+the set survives a split into new modules: all that matters is that the calls still look like
+t('key', ...). A key that reaches t() through a variable (op_key in the locks) does not count as
+a direct call, but it does count as a use: the string 'op.toggle' is in the code and can be
+found.
 """
 import ast
 import inspect
@@ -39,47 +41,49 @@ pkg = common.import_package()
 i18n = pkg.i18n
 r = common.Report(T('strings.title'))
 
-# Ключи, которые сегодня не используются, и это известно. Ведёт тот, кто правит код.
-# Неиспользуемый ключ ВНЕ этого множества - сбой; внутри - только заметка в выводе на каждом
-# прогоне, чтобы список не пропадал из виду. Ключ, который попал сюда, но снова зазвучал
-# в коде, тоже сбой: множество должно таять, а не копиться. Пустое множество означает, что
-# всё определённое обязано звучать хоть где-то.
+# Keys that go unused today, and that is known. Kept by whoever edits the code. An unused key
+# OUTSIDE this set is a failure; inside it, only a note in the output on every run, so the list
+# does not drop out of sight. A key that landed here and then sounded in the code again is a
+# failure too: the set is meant to melt away, not to accumulate. An empty set means everything
+# defined has to be said somewhere.
 KNOWN_UNUSED = set()
 
-# Языки берутся из папки lang\, а не из зашитых словарей: их в коде больше нет. Поэтому
-# набор проверяет ВСЕ переводы, какие лежат рядом с плагином, а не заранее известную пару -
-# положили de.json, и он проверяется наравне с остальными, без правки этого файла.
+# The languages come from the locale\ folder rather than from tables inside the code - there are
+# none there any more. So the set checks EVERY translation lying beside the plugin rather than a
+# pair known in advance: drop in a de\ folder and it is checked along with the others, with no
+# edit to this file.
 LANGS = i18n.languages()
 EN = LANGS.get(i18n.DEFAULT) or {}
 OTHERS = {code: table for code, table in LANGS.items() if code != i18n.DEFAULT}
 
-# %(имя)спецификатор - имя и спецификатор порознь: перевод обязан сохранить и то и другое.
-# %(sec).0f против %(sec)s даст разный текст, а %(missing)d против %(missing)s - разное
-# поведение на нечисловом значении.
+# %(name)specifier - the name and the specifier apart: a translation has to keep both.
+# %(sec).0f against %(sec)s gives different text, and %(missing)d against %(missing)s gives
+# different behaviour on a non-numeric value.
 PLACEHOLDER = re.compile(
     r'%\((\w+)\)([-#0 +]*(?:\d+|\*)?(?:\.(?:\d+|\*))?[hlL]?[diouxXeEfFgGcrsa])')
-# Прямой вызов t('ключ', ...): литерал целиком первым аргументом. \b отсекает split(, get(,
-# format( - у них перед t стоит буква. Хвост [,)] отсекает t('op.' + op): там литерал лишь
-# префикс, и такой вызов разбирается ниже по AST как ключ по префиксу.
+# A direct call t('key', ...): a whole literal as the first argument. \b cuts off split(, get(,
+# format( - they have a letter in front of the t. The tail [,)] cuts off t('op.' + op): there the
+# literal is only a prefix, and a call like that is taken apart by AST below as a key by prefix.
 DIRECT_CALL = re.compile(r'''\bt\(\s*['"]([^'"]+)['"]\s*[,)]''')
-# Как выглядит метка: латинская группа, точка, имя. По этой форме опознаётся таблица переводов.
+# What a label looks like: a Latin group, a dot, a name. A translation table is recognised by
+# that shape.
 KEY_SHAPE = re.compile(r'^[a-z]+\.[A-Za-z0-9_]+$')
 CYRILLIC = re.compile('[А-Яа-яЁё]')
 
 
 def placeholders(text):
-    """{(имя, спецификатор), ...} шаблона."""
+    """{(name, specifier), ...} of a template."""
     return set(PLACEHOLDER.findall(text))
 
 
 def stray_percent(text):
-    """Процент, который не подстановка и не %%. С любыми kw такой шаблон падает при
-    форматировании, и t() тихо вернёт его сырым."""
+    """A percent that is neither a substitution nor %%. With any kw at all such a template fails
+    at formatting, and t() quietly hands it back raw."""
     return '%' in PLACEHOLDER.sub('', text).replace('%%', '')
 
 
 def package_files():
-    """Все .py пакета, рекурсивно и в устойчивом порядке; __pycache__ не читаем."""
+    """Every .py of the package, recursively and in a stable order; __pycache__ is not read."""
     out = []
     for folder, dirs, files in os.walk(common.PKG):
         dirs[:] = sorted(d for d in dirs if d != '__pycache__')
@@ -92,14 +96,14 @@ def rel(path):
 
 
 def is_t(func):
-    """Вызов t: и i18n.t(...), и голое t(...) после from .i18n import t."""
+    """A call to t: both i18n.t(...) and a bare t(...) after from .i18n import t."""
     return ((isinstance(func, ast.Attribute) and func.attr == 't')
             or (isinstance(func, ast.Name) and func.id == 't'))
 
 
 def call_keys(arg):
-    """Ключи, которые может принять первый аргумент: константа либо условное выражение
-    из констант ('a' if x else 'b'). None - ключ вычисляется, статически не узнать."""
+    """The keys the first argument may carry: a constant, or a conditional expression of
+    constants ('a' if x else 'b'). None - the key is computed and cannot be known statically."""
     if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
         return [arg.value]
     if isinstance(arg, ast.IfExp):
@@ -110,11 +114,11 @@ def call_keys(arg):
 
 
 def call_prefix(arg):
-    """Префикс ключа, если первый аргумент склеивается из литерала и чего-то ещё:
-    'op.' + op, 'op.%s' % op, 'op.{}'.format(op), f'op.{op}'. Иначе None.
+    """The prefix of a key, if the first argument is glued out of a literal and something else:
+    'op.' + op, 'op.%s' % op, 'op.{}'.format(op), f'op.{op}'. None otherwise.
 
-    Так замки зовут имена операций после разбиения пакета, и тогда литерала 'op.toggle'
-    в коде может не быть вовсе; но все ключи с этим префиксом - живые."""
+    That is how the locks ask for operation names now the package is split, and then the literal
+    'op.toggle' may not be in the code at all; but every key with that prefix is live."""
     head = None
     if (isinstance(arg, ast.BinOp) and isinstance(arg.op, (ast.Add, ast.Mod))
             and isinstance(arg.left, ast.Constant) and isinstance(arg.left.value, str)):
@@ -129,17 +133,18 @@ def call_prefix(arg):
 
 
 class Usage(object):
-    """Что найдено в исходниках пакета. Заполняется один раз, дальше только читается."""
+    """What was found in the sources of the package. Filled once, read from then on."""
 
     def __init__(self):
         self.files = 0
-        self.broken = []       # файлы, которые не разобрались: где и почему
-        self.direct = {}       # ключ из t('...') -> [файл:строка]
-        self.literal = {}      # ключ, встреченный любой строковой константой -> [файл:строка]
-        self.by_prefix = {}    # префикс из t('op.' + x) -> [файл:строка]
-        self.calls = []        # (где, ключи или None, префикс или None, имена kw, **splat, лишних позиционных)
-        self.discarded = []    # t(...) как отдельное выражение: отформатировано и выброшено
-        self.bypass = []       # log('кириллица') или raise Error('кириллица') мимо i18n
+        self.files = 0
+        self.broken = []       # files that would not parse: where, and why
+        self.direct = {}       # key from t('...') -> [file:line]
+        self.literal = {}      # key met as any string constant -> [file:line]
+        self.by_prefix = {}    # prefix from t('op.' + x) -> [file:line]
+        self.calls = []        # (where, keys or None, prefix or None, kw names, **splat, extra positional)
+        self.discarded = []    # t(...) as a statement of its own: formatted and thrown away
+        self.bypass = []       # log('Cyrillic') or raise Error('Cyrillic') straight past i18n
 
     def scan(self, path):
         src = io.open(path, encoding='utf-8').read()
@@ -153,9 +158,9 @@ class Usage(object):
         except SyntaxError as exc:
             self.broken.append('%s: %s' % (where, exc))
             return
-        # Что НЕ считается употреблением ключа: докстроки и ключи самой таблицы переводов.
-        # Таблица опознаётся по форме, а не по имени файла или переменной, чтобы разбиение
-        # словарей по отдельным модулям ничего здесь не сломало.
+        # What does NOT count as a use of a key: docstrings, and the keys of the translation
+        # table itself. The table is recognised by its shape rather than by the name of a file or
+        # a variable, so splitting the catalogues across modules breaks nothing here.
         skip = set()
         for node in ast.walk(tree):
             body = getattr(node, 'body', None)
@@ -192,9 +197,9 @@ class Usage(object):
             splat = any(k.arg is None for k in node.keywords)
             self.calls.append((at, keys, prefix, names, splat, len(node.args) - 1))
             return
-        # Строка с кириллицей, ушедшая в лог или в исключение напрямую, минуя словарь:
-        # английский пользователь получит её как есть. Ловятся простые случаи - константа
-        # первым аргументом; склейки и форматирование сюда не попадают.
+        # A string with Cyrillic in it that went to the log or into an exception directly, past
+        # the catalogue: an English-speaking user gets it as it stands. The simple cases are
+        # caught - a constant as the first argument; glued and formatted strings are not.
         f = node.func
         name = f.id if isinstance(f, ast.Name) else (f.attr if isinstance(f, ast.Attribute) else '')
         if (name == 'log' or name.endswith('Error')) and node.args:
@@ -250,8 +255,8 @@ indirect = sorted(k for k in usage.literal if k not in usage.direct)
 for key in indirect:
     r.note(T('strings.viaVariableOnly', key=key), ', '.join(usage.literal[key]))
 used = set(usage.literal)
-# Ключи, которые решение отдаёт словом, а t() получает переменной: why='upd.newer' в updates.py.
-# Такие литералы видны в исходнике, и именно по ним ключ считается используемым.
+# Keys the decision names in a word while t() receives them in a variable: why='upd.newer' in
+# updatepolicy.py. Such literals are visible in the source, and that is what makes the key used.
 WHY_LITERAL = re.compile(r'''why=['"]([a-z]+\.[A-Za-z0-9_]+)['"]''')
 for path in package_files():
     used.update(WHY_LITERAL.findall(open(path, encoding='utf-8').read()))
@@ -276,24 +281,24 @@ wrong, dynamic, unchecked = [], [], []
 
 
 def wanted(key):
-    """Имена подстановок, которых ждёт шаблон EN."""
+    """The substitution names the EN template expects."""
     return sorted(n for n, _ in placeholders(EN[key]))
 
 
 for at, keys, prefix, names, splat, extra_positional in usage.calls:
     if extra_positional > 0:
-        wrong.append('%s: лишних позиционных аргументов %d' % (at, extra_positional))
+        wrong.append(T('strings.extraPositional', at=at, n=extra_positional))
     if splat:
         unchecked.append(at)
         continue
     if keys is None and prefix:
-        # Ключ по префиксу: проверить можно, только если все ключи группы ждут одного и того же.
+        # A key by prefix: checkable only if every key of the group expects the same thing.
         wants = {tuple(wanted(k)) for k in EN if k.startswith(prefix)}
         if len(wants) == 1:
             want = list(next(iter(wants)))
             if names != want:
-                wrong.append("%s по префиксу '%s': передано %s, в шаблонах %s"
-                             % (at, prefix, names, want))
+                wrong.append(T('strings.prefixCallMismatch', at=at, prefix=prefix,
+                                               got=names, want=want))
         else:
             dynamic.append(at)
         continue
@@ -302,9 +307,10 @@ for at, keys, prefix, names, splat, extra_positional in usage.calls:
         continue
     for key in keys:
         if key not in EN:
-            continue    # уже доложено в разделе 3
+            continue    # already reported in section 3
         if names != wanted(key):
-            wrong.append('%s %s: передано %s, в шаблоне %s' % (at, key, names, wanted(key)))
+            wrong.append(T('strings.callMismatch', at=at, key=key, got=names,
+                                           want=wanted(key)))
 for at in dynamic:
     r.note(T('strings.keyComputed'), at)
 for at in unchecked:
@@ -341,9 +347,9 @@ r.case(T('strings.foreignNameRawTemplate'),
        i18n.t('err.noSuchMod', wrong=1), EN['err.noSuchMod'])
 r.case(T('strings.nonNumericRawTemplate'),
        i18n.t('err.orderIncomplete', missing='x', extra=1), EN['err.orderIncomplete'])
-# Ключ, которого нет в выбранном языке, берётся из EN. Проверяется на временном ключе, чтобы не
-# зависеть от того, есть ли сегодня в словарях непереведённое; сканирование выше уже прошло,
-# и подставной ключ в отчёт о неиспользуемых не попадёт.
+# A key the chosen language does not have is taken from EN. Checked on a temporary key so as not
+# to depend on whether anything is untranslated today; the scan above has already run, and a
+# stand-in key will not turn up in the report of unused ones.
 EN['zz.probe'] = 'only english %(n)d'
 try:
     i18n.set_language('ru')

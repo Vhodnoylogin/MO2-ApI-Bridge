@@ -1,24 +1,25 @@
 # -*- coding: utf-8 -*-
-"""Договор маршрутов, без запущенной MO2.
+"""The contract of the routes, with no MO2 running.
 
-Зачем. Мост ничего не помнит между вызовами, и потому весь его договор - это ключи ответа:
-что было до правки, чем её обратить, почему отказано. Живой набор test_routes.py проверяет
-это на настоящей MO2, но менеджер поднимают редко, и переделка services.py между двумя такими
-прогонами может тихо переименовать поле - узнается это в чужом чате, когда откат не соберётся.
+Why. The bridge remembers nothing between calls, so its whole contract is the keys of a reply:
+what was there before a change, what reverses it, why it was refused. The live suite
+test_routes.py checks that against a real MO2, but the manager is raised rarely, and a rework of
+services.py between two such runs can quietly rename a field - which comes to light in somebody
+else's chat, when an undo will not assemble.
 
-Здесь MO2 подменена fake_mo2 на временной папке с настоящими файлами, поэтому набор идёт за
-секунды и на любой машине, а маршруты, которые пишут на диск, проверяются чтением файлов:
-plugins.txt после /plugins/state, папка мода после /install и /mods/remove, CSV после
-/vfsexport. Ожидаемые ключи взяты из операторов return в services.py и из разделов README
-«Мост выполняет, помнит вызывающий» и «Когда запущена игра».
+MO2 is replaced here by fake_mo2 over a temporary folder of real files, so the suite runs in
+seconds and on any machine, and the routes that write to disk are checked by reading the files
+back: plugins.txt after /plugins/state, the mod folder after /install and /mods/remove, the CSV
+after /vfsexport. The expected keys are taken from the return statements in services.py and from
+the README sections "The bridge executes, the caller remembers" and "While the game is running".
 
-Что не проверяется по-настоящему: /run и /window - подставная startApplication ничего не
-запускает, а окон у подставной MO2 нет. От них проверяются только отказы и ключи ответа.
+What is not really checked: /run and /window - the stand-in startApplication starts nothing, and
+the stand-in MO2 has no windows. Of those, only the refusals and the reply keys are checked.
 
-Код выхода 0 - всё сошлось, 1 - есть сбои. Установка через /install требует 7-Zip; без него
-её случаи помечаются пропущенными, а не сбойными.
+Exit code 0 - everything agreed, 1 - there are failures. Installing through /install needs 7-Zip;
+without it those cases are marked skipped rather than failed.
 """
-import ctypes  # noqa: F401  - до подмены путей к dll, иначе _ctypes не грузится
+import ctypes  # noqa: F401  - before the dll paths are swapped, or _ctypes will not load
 import atexit
 import importlib
 import io
@@ -29,35 +30,36 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fake_mo2  # noqa: E402
 
-# Подставной mobase встаёт ДО импорта пакета: services связывает имя на импорте, и
-# common.import_package() импортирует пакет уже при собственном импорте.
+# The stand-in mobase goes in BEFORE the package is imported: services binds the name on
+# import, and common.import_package() imports the package while importing itself.
 fake_mo2.install()
 import common  # noqa: E402
 
 T = common.T
 
 pkg = common.import_package(with_mobase=True)
-# routes не входит в список import_package - подгружается отдельно, под именем самого пакета
+# routes is not in the import_package list - it is loaded separately, under the package's own name
 routes = importlib.import_module(pkg.__name__ + '.routes')
 services, i18n, winapi = pkg.services, pkg.i18n, pkg.winapi
 i18n.set_language('ru')
 r = common.Report(T('contract.title'))
 
-# Ключ необратимых операций - тот, что напечатан в README, разделе «Необратимые операции».
-# Литерал, а не константа из пакета: договор - это документированное значение.
+# The key to the irreversible operations - the one printed in the README, section "Irreversible
+# operations". A literal rather than a constant out of the package: the contract IS the
+# documented value.
 KEY = {'iUnderstandTheRisk': 'yes-I-read-the-docs-and-accept-irreversible-changes'}
-ЧУЖОЙ_ЗАПУСК = {'C:' + chr(92) + 'x' + chr(92) + 'foo.exe': {'n': 1, 'mine': False}}
+FOREIGN_RUN = {'C:' + chr(92) + 'x' + chr(92) + 'foo.exe': {'n': 1, 'mine': False}}
 
 GET_ROUTES = ['/ping', '/api', '/mods', '/mod', '/analyze', '/profiles', '/plugins', '/vfs',
               '/origins', '/resolve', '/dirs', '/procs', '/windows', '/updates']
 POST_ROUTES = ['/refresh', '/install', '/toggle', '/plugins/state', '/plugins/order',
                '/vfsexport', '/run', '/window', '/mods/priority', '/mods/rename',
                '/mods/remove']
-# Девять маршрутов, которые обязаны отказывать, пока MO2 занята (README, «Когда запущена игра»)
+# Nine routes that must refuse while MO2 is busy (README, "While the game is running")
 MUTATING = ['/refresh', '/install', '/toggle', '/run', '/plugins/state', '/plugins/order',
             '/mods/priority', '/mods/rename', '/mods/remove']
 
-# Наборы ключей ответов - из операторов return в services.py. Сравниваются отсортированными.
+# The key sets of the replies - from the return statements in services.py. Compared sorted.
 PING_KEYS = sorted(['busy', 'ok', 'profile', 'game', 'mo2Version', 'modsPath', 'overwrite',
                     'downloads', 'mainThread'])
 CARD_KEYS = sorted(['mod', 'displayName', 'path', 'active', 'essential', 'priority',
@@ -81,16 +83,16 @@ REMOVAL_CARD_KEYS = sorted(['mod', 'path', 'version', 'nexusId', 'url', 'categor
 FULL_ORDER = ['Alpha.esp', 'Beta.esp', 'Gamma.esl']
 
 fixtures = []
-# Временные сборки убираются и при аварийном выходе: иначе после первого же падения в
-# %TEMP% остаётся папка mo2aibridge-fake-*
+# The temporary setups are cleared away on a crash too: otherwise the first failure leaves a
+# mo2aibridge-fake-* folder behind in %TEMP%
 atexit.register(lambda: [f.cleanup() for f in fixtures])
 
 
 def make():
-    """Свежая сборка на диске и службы над ней в свободном состоянии.
+    """A fresh setup on disk, and the services over it in a free state.
 
-    game_exe - заведомо несуществующий процесс, окно MO2 не ищется: занятость должна
-    отвечать None, пока её не изобразят подстановкой в launched.
+    game_exe is a process that is certain not to exist, and the MO2 window is not looked for:
+    busy must answer None until it is acted out by a substitution into launched.
     """
     fx = fake_mo2.Fixture()
     fixtures.append(fx)
@@ -108,21 +110,21 @@ def keys(d):
 
 
 def has(d, expected):
-    """Ожидаемые ключи среди полученных. Возвращает expected, если все на месте, иначе -
-    список недостающих: так в отчёте видно, чего именно нет.
+    """The expected keys among the ones received. Returns expected when all of them are there,
+    otherwise the list of the missing ones: the report then shows exactly what is absent.
 
-    Сверка именно на вхождение, а не на равенство: форма ответа по договору меняется только
-    добавлением ключей, и новый ключ не должен ломать проверку прежнего контракта.
+    Checked for containment rather than equality on purpose: by the contract the shape of a reply
+    changes only by gaining keys, and a new key must not break the check of the old contract.
     """
     if not isinstance(d, dict):
         return d
     missing = sorted(set(expected) - set(d))
-    return expected if not missing else ['НЕТ: ' + k for k in missing]
+    return expected if not missing else ['MISSING: ' + k for k in missing]
 
 
 def raised(fn, *args):
-    """Исключение вызова или None. Тип и текст сверяются отдельно: договор - это
-    ValueError с текстом из i18n, а не трассировка."""
+    """The exception of a call, or None. The kind and the text are checked apart: the contract
+    is a ValueError carrying text out of i18n, not a traceback."""
     try:
         fn(*args)
         return None
@@ -131,7 +133,7 @@ def raised(fn, *args):
 
 
 def is_clean_error(exc, key, **kw):
-    """ValueError с ровно тем текстом, что даёт i18n, - без «multiple values» и прочего."""
+    """A ValueError with exactly the text i18n gives - no "multiple values" and nothing else."""
     return isinstance(exc, ValueError) and str(exc) == i18n.t(key, **kw) \
         and 'multiple values' not in str(exc) and 'Traceback' not in str(exc)
 
@@ -142,7 +144,7 @@ def read_text(path):
 
 
 def fake_recycle(path):
-    """Вместо Корзины: временная папка Корзины не имеет, и SHFileOperation там отказывает."""
+    """In place of the Recycle Bin: a temporary folder has none, and SHFileOperation refuses there."""
     if os.path.isdir(path):
         shutil.rmtree(path)
     else:
@@ -150,7 +152,7 @@ def fake_recycle(path):
     return True
 
 
-# ================================================================ таблицы маршрутов
+# ================================================================ the route tables
 r.head(T('contract.routeTables'))
 fx, svc, get, post, log = make()
 r.case(T('contract.readsDocumented'), sorted(get), sorted(GET_ROUTES))
@@ -159,7 +161,7 @@ r.case(T('contract.pathsDisjoint'), sorted(set(get) & set(post)), [])
 r.case(T('contract.everyRouteCallable'),
        all(callable(f) for f in list(get.values()) + list(post.values())), True)
 
-# ================================================================ чтение
+# ================================================================ reads
 r.head(T('contract.hPing'))
 res = get['/ping']({})
 r.case(T('contract.pingKeys'), has(res, PING_KEYS), PING_KEYS)
@@ -308,7 +310,7 @@ r.case(T('contract.windowsKeys'), has(res, ['pid', 'windows']), ['pid', 'windows
 r.case(T('contract.windowsPidIsNumber'), res['pid'], os.getpid())
 r.case(T('contract.windowsIsList'), isinstance(res['windows'], list), True)
 
-# ================================================================ изменения
+# ================================================================ changes
 r.head(T('contract.hRefresh'))
 before = fx.organizer.refreshed
 res = post['/refresh']({})
@@ -340,25 +342,25 @@ r.case(T('contract.toggleNoSuchMod'),
        is_clean_error(raised(post['/toggle'], {'mod': 'Nope', 'active': True}),
                       'err.noSuchMod', mod='Nope'), True)
 
-# Булевы поля разбираются строго. bool("false") в Python - True, и раньше запрос
-# {"active": "false"} ВКЛЮЧАЛ мод, возвращая changed: true, то есть делал обратное
-# заказанному и объявлял это успехом. Клиенты на shell и curl шлют строки постоянно.
+# Boolean fields are parsed strictly. bool("false") in Python is True, and a request
+# {"active": "false"} used to ENABLE a mod and answer changed: true - doing the opposite of what
+# was asked and calling it a success. Callers in shell and curl send strings all the time.
 for word, want in (('false', False), ('true', True), ('0', False), ('1', True),
                    ('no', False), ('yes', True), ('OFF', False)):
     post['/toggle']({'mod': 'Alpha Mod', 'active': not want})
     res = post['/toggle']({'mod': 'Alpha Mod', 'active': word})
     r.case(T('contract.activeUnderstoodAs', word=word, want=want), res['active'], want)
-for junk in ('maybe', '', 'дa', 2, [], {}):
+for junk in ('maybe', '', 'sort-of', 2, [], {}):
     r.case(T('contract.activeRejected', junk=junk),
            isinstance(raised(post['/toggle'], {'mod': 'Alpha Mod', 'active': junk}),
                       ValueError), True)
 r.case(T('contract.withArchiveStrict'),
        isinstance(raised(post['/mods/remove'],
-                         dict(KEY, mod='Alpha Mod', withArchive='наверное')),
+                         dict(KEY, mod='Alpha Mod', withArchive='probably')),
                   ValueError), True)
 r.case(T('contract.applyStrict'),
        isinstance(raised(post['/plugins/state'],
-                         {'set': {'alpha.esp': True}, 'apply': 'наверное'}), ValueError), True)
+                         {'set': {'alpha.esp': True}, 'apply': 'probably'}), ValueError), True)
 post['/toggle']({'mod': 'Alpha Mod', 'active': True})
 
 r.head(T('contract.hStatePreview'))
@@ -480,16 +482,16 @@ r.case(T('contract.installRefusalCreatedNothing'), os.path.isdir(fx.mod_path('X'
 r.head(T('contract.hInstallModes'))
 archive = fake_mo2.build_archive(fx.path('downloads', 'Zeta Mod-999-1-0.7z'))
 if archive is None:
-    r.note(T('contract.installSkipNo7z'), '7-Zip не найден - установка из архива не проверяется')
+    r.note(T('contract.installSkipNo7z'), '7-Zip not found - installing from an archive is not checked')
 elif not shutil.which('7z'):
-    # Пакет ищет 7z.exe по-своему; PATH - единственное место, за которое отвечаем мы.
-    # Добавляется только в окружение этого процесса, на диске ничего не меняется.
+    # The package looks for 7z.exe in its own way; PATH is the only place we answer for.
+    # It is added to this process's environment only, and nothing on disk is changed.
     os.environ['PATH'] = os.path.dirname(fake_mo2.seven_zip()) + os.pathsep + \
         os.environ.get('PATH', '')
     r.note(T('contract.install7zOnPath'), os.path.dirname(fake_mo2.seven_zip()))
 if archive is not None:
-    # Распаковка идёт через %TEMP%; на время проверки он ведёт во временную сборку, чтобы
-    # не задеть чужую распаковку, если настоящий мост работает в этот же момент.
+    # Unpacking goes through %TEMP%; for the length of the check it leads into the temporary
+    # setup, so as not to disturb somebody else's unpacking if a real bridge is working right now.
     temp_was = os.environ.get('TEMP')
     os.environ['TEMP'] = fx.path('temp')
     os.makedirs(fx.path('temp'))
@@ -497,15 +499,16 @@ if archive is not None:
     winapi.recycle = fake_recycle
     res = None
     try:
-        # Установка одного варианта - как ставится FOMOD по разобранным опциям.
-        # Если пакет не нашёл 7z.exe, это пропуск, а не сбой: проверить было нечем.
+        # Installing one variant - the way a FOMOD is installed once its options are taken apart.
+        # If the package did not find 7z.exe, that is a skip and not a failure: there was nothing
+        # to check with.
         try:
             res = post['/install']({'archive': archive, 'name': 'Zeta Mod',
                                     'paths': ['00 Core']})
         except RuntimeError as exc:
             if str(exc) != i18n.t('err.no7z'):
                 raise
-            r.note(T('contract.installSkipNoTemp'), 'пакет не нашёл 7z.exe - установка не проверяется')
+            r.note(T('contract.installSkipNoTemp'), 'the package did not find 7z.exe - installing is not checked')
             res = None
     finally:
         if res is None:
@@ -526,7 +529,8 @@ if archive is not None and res is not None:
         r.case(T('contract.installUndoRemoves'), res['undo'],
                {'route': '/mods/remove', 'body': {'mod': 'Zeta Mod'}})
         r.case(T('contract.installFilesBeforeZero'), res['filesBefore'], 0)
-        # meta.ini в added - его пишет createMod до копирования, и «было» для новой папки пусто
+        # meta.ini is in added - createMod writes it before the copying, and "before" is empty
+        # for a new folder
         r.case(T('contract.installAddedAtRootLower'), res['added'],
                sorted(['zeta.esp', os.path.join('textures', 'zeta.dds'), 'meta.ini']))
         r.case(T('contract.installAddedCount'), res['addedCount'], 3)
@@ -539,8 +543,8 @@ if archive is not None and res is not None:
         r.case(T('contract.installModDisabledAfter'),
                get['/mod']({'name': ['Zeta Mod']})['active'], False)
 
-        # Весь архив целиком: подпапки вариантов ложатся как есть, fomod и корневой
-        # meta.ini пропускаются
+        # The whole archive: the variant subfolders land as they are, fomod and the meta.ini at
+        # the root are skipped
         res = post['/install']({'archive': archive, 'name': 'Zeta Whole', 'paths': ['']})
         r.case(T('contract.installWholeFomodSkipped'), res['fomodSkipped'], True)
         r.case(T('contract.installWholeFileCount'), res['files'], 3)
@@ -553,15 +557,15 @@ if archive is not None and res is not None:
         r.case(T('contract.installWholeMetaKept'),
                'modid=0' in read_text(fx.path('mods', 'Zeta Whole', 'meta.ini')), True)
 
-        # слияние: только 00 Core поверх Zeta Mod - два файла перекрыты
+        # merging: only 00 Core over Zeta Mod - two files overlaid
         res = post['/install']({'archive': archive, 'name': 'Zeta Mod', 'paths': ['00 Core'],
                                 'mode': 'merge'})
         r.case(T('contract.mergeSameKeys'), has(res, INSTALL_KEYS), INSTALL_KEYS)
         r.case(T('contract.mergeExistedMode'), (res['created'], res['existed'], res['mode']),
                (False, True, 'merge'))
-        # overwritten считается как пересечение «было» и «стало», то есть в него попадает
-        # и то, что лежало в папке и не перезаписывалось (meta.ini). Договор здесь - что
-        # реально перекрытые файлы в списке есть и счётчик равен длине списка.
+        # overwritten is counted as the intersection of "before" and "after", so it also holds
+        # what lay in the folder and was not overwritten (meta.ini). The contract here is that
+        # the files really overlaid are in the list, and that the counter equals its length.
         r.case(T('contract.mergeOverwrittenListed'),
                {'zeta.esp', os.path.join('textures', 'zeta.dds')} <= set(res['overwritten']),
                True)
@@ -574,9 +578,9 @@ if archive is not None and res is not None:
         r.case(T('contract.mergeFilesInPlace'), sorted(fake_mo2.tree_files(fx.mod_path('Zeta Mod'))),
                sorted(['meta.ini', 'zeta.esp', os.path.join('textures', 'zeta.dds')]))
 
-        # замена без ключа: она уносит прежнее содержимое в Корзину, то есть теряет чужую
-        # работу, и потому закрыта замком необратимого наравне с удалением. Слияние и
-        # обычная установка ключа не требуют - они ничего не теряют.
+        # replace without the key: it carries the previous contents off to the Recycle Bin, that
+        # is, it loses somebody's work, and is therefore behind the irreversible lock alongside
+        # removal. Merging and an ordinary install need no key - they lose nothing.
         res = post['/install']({'archive': archive, 'name': 'Zeta Mod', 'paths': ['10 Extra'],
                                 'mode': 'replace'})
         r.case(T('contract.replaceNoKeyRefused'), (res['applied'], res['reason']),
@@ -585,7 +589,7 @@ if archive is not None and res is not None:
                sorted(fake_mo2.tree_files(fx.mod_path('Zeta Mod'))),
                sorted(['meta.ini', 'zeta.esp', os.path.join('textures', 'zeta.dds')]))
 
-        # замена: прежнее в Корзину, meta.ini остаётся, кладётся другой вариант
+        # replace: the previous contents to the Recycle Bin, meta.ini stays, another variant is laid down
         res = post['/install'](dict(KEY, archive=archive, name='Zeta Mod',
                                     paths=['10 Extra'], mode='replace'))
         r.case(T('contract.replaceSameKeys'), has(res, INSTALL_KEYS), INSTALL_KEYS)
@@ -614,14 +618,15 @@ if archive is not None and res is not None:
                sorted(['meta.ini', os.path.join('meshes', 'zeta.nif')]))
         r.note(T('contract.installTempAfterRefusal'), os.listdir(fx.path('temp')))
 
-        # --- имя мода не выпускается из mods\ ---------------------------------------
-        # Имя подставляется в путь, и на Windows os.path.join отбрасывает первый кусок,
-        # если второй абсолютный: 'C:\\Users\\...' указал бы на чужую папку, а '..' - на
-        # уровень выше, где лежат профили, загрузки и overwrite. С mode=replace это
-        # означало бы чужие файлы в Корзине, поэтому имя проверяется до всякой работы.
+        # --- the mod name never leaves mods\ ----------------------------------------
+        # The name is substituted into a path, and on Windows os.path.join throws the first part
+        # away if the second is absolute: 'C:\\Users\\...' would point at somebody else's folder,
+        # and '..' at the level above, where the profiles, the downloads and overwrite live. With
+        # mode=replace that would mean somebody else's files in the Recycle Bin, so the name is
+        # checked before any work at all.
         outside = fx.path('outside')
         os.makedirs(outside, exist_ok=True)
-        io.open(os.path.join(outside, 'важное.txt'), 'w', encoding='utf-8').write('не трогать')
+        io.open(os.path.join(outside, 'precious.txt'), 'w', encoding='utf-8').write('do not touch')
         for bad in (outside, '..', os.path.join('..', 'profiles'), 'a/b', 'a' + os.sep + 'b',
                     'C:', '.'):
             r.case(T('contract.nameOutsideModsRejected', name=bad),
@@ -630,7 +635,7 @@ if archive is not None and res is not None:
                                               mode='replace')), 'err.badName', name=bad),
                    True)
         r.case(T('contract.installOutsideFolderIntact'),
-               sorted(os.listdir(outside)), ['важное.txt'])
+               sorted(os.listdir(outside)), ['precious.txt'])
     finally:
         winapi.recycle = recycle_was
         if temp_was is None:
@@ -638,7 +643,7 @@ if archive is not None and res is not None:
         else:
             os.environ['TEMP'] = temp_was
 
-# ================================================================ необратимое
+# ================================================================ the irreversible
 r.head(T('contract.hPriority'))
 res = post['/mods/priority']({'mod': 'Alpha Mod', 'priority': 2})
 r.case(T('contract.priorityNoKeyKeys'), has(res, ['applied', 'blocked', 'docs', 'from', 'mod', 'to', 'why']), ['applied', 'blocked', 'docs', 'from', 'mod', 'to', 'why'])
@@ -760,20 +765,20 @@ r.case(T('contract.removeNoSuchModNoKey'),
        is_clean_error(raised(post['/mods/remove'], {'mod': 'Nope'}), 'err.noSuchMod',
                       mod='Nope'), True)
 
-# ================================================================ занятость
+# ================================================================ busy
 r.head(T('contract.hBusyRefuses'))
 fx, svc, get, post, log = make()
-svc.launched = {k: dict(v) for k, v in ЧУЖОЙ_ЗАПУСК.items()}
+svc.launched = {k: dict(v) for k, v in FOREIGN_RUN.items()}
 plugins_before = fx.read_bytes('profiles', 'Claude', 'plugins.txt')
 modlist_before = fx.read_bytes('profiles', 'Claude', 'modlist.txt')
 res = get['/ping']({})
 r.case(T('contract.busyPingShows'), has(res['busy'], BUSY_KEYS), BUSY_KEYS)
 r.case(T('contract.busyPingNameless'), (res['busy']['app'], res['busy']['viaMO2'],
                                      res['busy']['heldByUnknown']), (None, True, True))
-r.case(T('contract.busyPingMo2Run'), res['busy']['mo2Run'], sorted(ЧУЖОЙ_ЗАПУСК))
+r.case(T('contract.busyPingMo2Run'), res['busy']['mo2Run'], sorted(FOREIGN_RUN))
 r.case(T('contract.busyProcsSame'),
        (has(get['/procs']({})['busy'], BUSY_KEYS), get['/procs']({})['launchedByMO2']),
-       (BUSY_KEYS, sorted(ЧУЖОЙ_ЗАПУСК)))
+       (BUSY_KEYS, sorted(FOREIGN_RUN)))
 BODIES = {
     '/refresh': {},
     '/install': {'archive': fx.path('downloads', 'Alpha Mod-101-1-0.7z'), 'name': 'New'},
@@ -790,7 +795,7 @@ OPS = {'/refresh': 'op.refresh', '/install': 'op.install', '/toggle': 'op.toggle
        '/mods/priority': 'op.priority', '/mods/rename': 'op.rename',
        '/mods/remove': 'op.remove'}
 r.case(T('contract.busyAllNineListed'), sorted(set(MUTATING) - set(post)), [])
-why_expected = i18n.t('busy.whyUnknown', run=', '.join(sorted(ЧУЖОЙ_ЗАПУСК)))
+why_expected = i18n.t('busy.whyUnknown', run=', '.join(sorted(FOREIGN_RUN)))
 for route in MUTATING:
     res = post[route](BODIES[route])
     r.case(T('contract.busyRefusalKeys', route=route), has(res, REFUSAL_KEYS), REFUSAL_KEYS)
@@ -803,7 +808,7 @@ for route in MUTATING:
            ('busy', OPS[route][3:]))
 r.case(T('contract.busyWhyNotTrace'), 'Traceback' in why_expected or 'multiple values' in why_expected,
        False)
-r.case(T('contract.busyForeignRecordIntact'), sorted(svc.launched), sorted(ЧУЖОЙ_ЗАПУСК))
+r.case(T('contract.busyForeignRecordIntact'), sorted(svc.launched), sorted(FOREIGN_RUN))
 r.case(T('contract.busyPluginsTxtUntouched'), fx.read_bytes('profiles', 'Claude', 'plugins.txt'),
        plugins_before)
 r.case(T('contract.busyModlistUntouched'), fx.read_bytes('profiles', 'Claude', 'modlist.txt'),
@@ -833,11 +838,11 @@ r.case(T('contract.busyOrderValidatesFirst'),
        is_clean_error(raised(post['/plugins/order'], {'apply': True}), 'err.needOrder'), True)
 
 r.head(T('contract.hBusyReleased'))
-svc.on_finished_run(sorted(ЧУЖОЙ_ЗАПУСК)[0], 0)
+svc.on_finished_run(sorted(FOREIGN_RUN)[0], 0)
 r.case(T('contract.releasedBusyNone'), get['/ping']({})['busy'], None)
 r.case(T('contract.releasedRefreshWorks'), post['/refresh']({}).get('refreshed'), True)
 
-# ================================================================ /run и /window
+# ================================================================ /run and /window
 r.head(T('contract.hRun'))
 fx, svc, get, post, log = make()
 r.case(T('contract.runNeedsBinary'),
@@ -872,7 +877,7 @@ r.case(T('contract.windowDeadHwnd'),
        is_clean_error(raised(post['/window'], {'hwnd': 1, 'action': 'close'}),
                       'err.noSuchWindow'), True)
 
-# ================================================================ тексты ошибок
+# ================================================================ the texts of the errors
 r.head(T('contract.hI18nTexts'))
 for key in ('op.toggle', 'op.remove', 'busy.whyUnknown', 'danger.why', 'err.noSuchMod',
             'err.orderIncomplete', 'err.modExists'):
@@ -882,9 +887,8 @@ r.case(T('contract.tAcceptsKeyKwarg'), i18n.t('danger.why', key='X').count('X') 
 
 for fx in fixtures:
     fx.cleanup()
-# ================================================================ обновления
+# ================================================================ updates
 r.head(T('contract.hUpdates'))
-updates_mod = importlib.import_module(pkg.__name__ + '.updates')
 fx, svc, get, post, log = make()
 svc.cfg.values['updates']['delaySec'] = 0
 r.case(T('contract.updNeedsModOrAll'),
@@ -921,7 +925,7 @@ res = get['/updates']({'all': ['1'], 'limit': ['2']})
 r.case(T('contract.updAllPageOfTwo'), (res['count'], res['total'], res['more']), (2, 4, True))
 res = get['/updates']({'all': ['1'], 'offset': ['2']})
 r.case(T('contract.updAllOffsetToEnd'), (res['count'], res['more']), (2, False))
-svc.launched = {k: dict(v) for k, v in ЧУЖОЙ_ЗАПУСК.items()}
+svc.launched = {k: dict(v) for k, v in FOREIGN_RUN.items()}
 r.case(T('contract.updWorksWhileBusy'), get['/updates']({'mod': ['Beta Mod']})['mods'][0]['verdict'],
        'UP-TO-DATE')
 
@@ -985,14 +989,14 @@ r.head(T('contract.hSweepStop'))
 
 
 def sweep(http, names=('Alpha Mod', 'Beta Mod', 'Delta Mod'), key='fake-key'):
-    """Один обход с подставным ответом сети. Возвращает (ответ, сколько раз спросили)."""
+    """One sweep against a stand-in network reply. Returns (reply, how many times it asked)."""
     f = make()[0]
     s = services.Services(f.organizer, run_main=lambda fn, timeout=None: fn(),
                           docs_path='README.md')
     s.game_exe = 'NoSuchProcess.exe'.lower()
     s._self_hwnd = 0
     s.cfg.values['updates']['delaySec'] = 0
-    f.organizer.createNexusBridge = lambda: (_ for _ in ()).throw(TypeError('нет сигнала'))
+    f.organizer.createNexusBridge = lambda: (_ for _ in ()).throw(TypeError('no such signal'))
     calls = []
 
     def wrapped(url, headers, timeout):
@@ -1010,29 +1014,29 @@ def sweep(http, names=('Alpha Mod', 'Beta Mod', 'Delta Mod'), key='fake-key'):
 
 def raise_http(code, headers=None):
     def http(url, _h, _t):
-        raise urllib_error.HTTPError(url, code, 'нет', headers or {}, None)
+        raise urllib_error.HTTPError(url, code, 'no', headers or {}, None)
     return http
 
 
-# Негодный ключ: раньше каждый из полутора тысяч модов честно шёл в сеть и честно
-# получал 401. Теперь первый же отказ прекращает обход.
+# A bad key: every one of fifteen hundred mods used to go honestly to the network and honestly
+# get a 401 back. Now the first refusal ends the sweep.
 res, calls = sweep(raise_http(401))
 r.case(T('contract.stop401AfterFirst'), calls, 1)
 r.case(T('contract.stop401Explained'), 'HTTP 401' in res['stopped'] or
-       'ключ' in res['stopped'], True)
+       'key' in res['stopped'], True)
 r.case(T('contract.stop401UncheckedCounted'), res['unchecked'], 2)
 r.case(T('contract.stop401ModInReply'), res['mods'][0]['verdict'], 'ERROR')
 
-# Исчерпанный лимит: продолжать значило бы продлевать запрет каждым запросом.
+# A spent allowance: carrying on would extend the block with every request.
 res, calls = sweep(raise_http(429, {'Retry-After': '600'}))
 r.case(T('contract.stop429AfterFirst'), calls, 1)
 r.case(T('contract.stop429RetryAfterFromError'),
        res['quota'].get('retry-after'), '600')
 r.case(T('contract.stop429PauseNamed'), '600' in res['stopped'], True)
 
-# Обрыв связи: одна неудача - не беда, пять подряд означают, что канал лёг.
+# A dead link: one failure is nothing, five in a row mean the channel is down.
 def broken(_url, _h, _t):
-    raise OSError('соединение оборвано')
+    raise OSError('the connection dropped')
 
 
 res, calls = sweep(broken, names=('Alpha Mod', 'Beta Mod', 'Delta Mod'))
@@ -1041,7 +1045,7 @@ r.case(T('contract.netSweepContinues'), len(res['mods']), 3)
 r.case(T('contract.netEveryModError'),
        sorted(set(m['verdict'] for m in res['mods'])), ['ERROR'])
 
-# Кончающийся запас суточного лимита: ключ общий с самой MO2, и доедать его нельзя.
+# The daily allowance running out: the key is shared with MO2 itself, and eating it up is not on.
 def near_limit(url, _h, _t):
     mod_id = int(url.rstrip('/').split('/mods/')[1].split('/')[0])
     page = API_PAGES.get(mod_id) or {'files': []}
@@ -1057,28 +1061,29 @@ r.head(T('contract.hDomain'))
 fx_d = make()[0]
 svc_d = services.Services(fx_d.organizer, run_main=lambda fn, timeout=None: fn(),
                           docs_path='README.md')
-# Таблица перекрытий пуста, зато MO2 знает имя своего раздела: спрашивать надо её.
+# The override table is empty, but MO2 knows the name of its own section: it is the one to ask.
 svc_d.cfg.values['nexusDomains'] = {}
 svc_d.cfg.values['nexusDomainDefault'] = ''
 fx_d.organizer.managedGame().nexus_name = 'fallout4'
-r.case(T('contract.domainAskedOfMo2'), svc_d.updater.nexus_domain('ЧужаяИгра'), 'fallout4')
+r.case(T('contract.domainAskedOfMo2'), svc_d.updater.nexus_domain('ForeignGame'), 'fallout4')
 r.case(T('contract.domainUrlBuiltFromIt'),
-       svc_d.updater.nexus_url('ЧужаяИгра', 7).endswith('fallout4/mods/7'), True)
-# MO2 молчит, перекрытия нет - честный отказ, а не чужой раздел с тем же номером мода.
+       svc_d.updater.nexus_url('ForeignGame', 7).endswith('fallout4/mods/7'), True)
+# MO2 is silent and there is no override - an honest refusal, rather than a foreign section with
+# the same mod number.
 svc_e = services.Services(make()[0].organizer, run_main=lambda fn, timeout=None: fn(),
                           docs_path='README.md')
 svc_e.cfg.values['nexusDomains'] = {}
 svc_e.cfg.values['nexusDomainDefault'] = ''
 svc_e.o.managedGame().nexus_name = ''
-r.case(T('contract.domainNoNameNoDomain'), svc_e.updater.nexus_domain('ЧужаяИгра'), '')
-r.case(T('contract.domainNoUrlWithoutDomain'), svc_e.updater.nexus_url('ЧужаяИгра', 7), '')
+r.case(T('contract.domainNoNameNoDomain'), svc_e.updater.nexus_domain('ForeignGame'), '')
+r.case(T('contract.domainNoUrlWithoutDomain'), svc_e.updater.nexus_url('ForeignGame', 7), '')
 
 r.head(T('contract.hPageWide'))
 fx, svc, get, post, log = make()
 svc.cfg.values['updates']['delaySec'] = 0
-# На диске появился новейший архив страницы Alpha (fileID 1002), но ни один мод из него
-# не собран - DOWNLOADED-NOT-INSTALLED. Как только сосед по странице собран из него,
-# патч, собранный из старого архива, перестаёт быть «не установленным».
+# The newest archive of the Alpha page (fileID 1002) has appeared on disk, but no mod is built
+# from it - DOWNLOADED-NOT-INSTALLED. As soon as a neighbour on the page is built from it, the
+# patch built from the old archive stops being "not installed".
 newest_arc = fx.path('downloads', 'Alpha Mod-101-1-1.7z')
 io.open(newest_arc, 'w').write('archive')
 os.utime(newest_arc, (fake_mo2.T0 + 30 * fake_mo2.DAY, fake_mo2.T0 + 30 * fake_mo2.DAY))
@@ -1096,45 +1101,7 @@ r.case(T('contract.pageInstalledDateInReply'), mates['installed']['pageTime'],
        fake_mo2.T0 + 30 * fake_mo2.DAY)
 os.unlink(newest_arc)
 
-r.head(T('contract.hPureRules'))
-decide, D = updates_mod.decide, updates_mod.DAY
-def F(name, fid, cat, t, ver='', fn=None):
-    return {'name': name, 'fileName': fn or name + '.7z', 'fileId': fid, 'version': ver,
-            'category': cat, 'time': t}
-r.case(T('contract.ruleNoVersionCompare'),
-       decide([F('Tool SE', 1, 'main', 100, '2.0'), F('Tool SE', 2, 'main', 100 + 2 * D, '1.9')],
-              {1}, set(), 100)['verdict'], 'UPDATE-AVAILABLE')
-r.case(T('contract.ruleGogIsSibling'),
-       decide([F('Tool SE Steam', 1, 'main', 100), F('Tool SE GOG', 2, 'main', 100 + 2 * D)],
-              {1}, set(), 100)['verdict'], 'UP-TO-DATE')
-r.case(T('contract.ruleSameVersionMinutesApart'),
-       decide([F('Tool', 1, 'main', 100, '1.0'), F('Tool', 2, 'main', 100 + 60, '1.0')],
-              {1}, set(), 100)['verdict'], 'UP-TO-DATE')
-r.case(T('contract.ruleOursInOldNoReplacement'),
-       decide([F('Tool', 1, 'old', 100), F('Other Thing', 2, 'main', 100 - D)],
-              {1}, set(), 100)['verdict'], 'CANNOT-MATCH')
-r.case(T('contract.ruleAllOldMainRenamed'),
-       decide([F('Tool', 1, 'old', 100), F('Tool Redux', 2, 'main', 100 + 3 * D)],
-              {1}, set(), 100)['verdict'], 'UPDATE-AVAILABLE')
-r.case(T('contract.ruleNothingMarkedMainNewer'),
-       decide([F('Tool', 5, 'main', 100 + 3 * D)], set(), set(), 100)['verdict'], 'REUPLOADED')
-r.case(T('contract.ruleNothingMarkedNoDates'),
-       decide([F('Tool', 5, 'main', 100 + 3 * D)], set(), set(), None)['verdict'], 'CANNOT-MATCH')
-r.case(T('contract.ruleFreshArchiveOldBuild'),
-       decide([F('Tool', 1, 'old', 100), F('Tool', 2, 'main', 100 + 3 * D)],
-              {1, 2}, set(), 100)['verdict'], 'DOWNLOADED-NOT-INSTALLED')
-r.case(T('contract.ruleHotfixInUpdate'),
-       decide([F('Tool', 1, 'main', 100), F('Tool Hotfix', 2, 'update', 100 + D)],
-              {1}, set(), 100)['verdict'], 'UPDATE-AVAILABLE')
-r.case(T('contract.ruleOtherRoleInMain'),
-       decide([F('Tool', 1, 'main', 100), F('Tool Extras Pack', 2, 'main', 100 + 2 * D)],
-              {1}, set(), 100)['verdict'], 'CANNOT-MATCH')
-r.case(T('contract.timeFromNameEpoch'), updates_mod.arc_time('x-1234-1-0-1700000000.7z'),
-       1700000000)
-r.case(T('contract.timeFromNameIso'), updates_mod.arc_time('x 1 2026-09-07T09-14Z y.7z') > 0, True)
-r.case(T('contract.resolutionIsNotVersion'), updates_mod.role('Tool 4K v2.1') != updates_mod.role('Tool 2K v2.1'), True)
-
-# ================================================================ подпись карточки
+# ================================================================ the card signature
 r.head(T('contract.hStamp'))
 fx, svc, get, post, log = make()
 SIGNED = {

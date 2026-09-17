@@ -47,11 +47,13 @@ mo2aibridge\                the module folder
 │   ├── mods.py           the mod list and the irreversible operations
 │   ├── loadorder.py      plugin order and plugins.txt
 │   ├── launch.py         starting programs and driving windows
-│   ├── updates.py        updates against the live Nexus
+│   ├── updates.py        updates against the live Nexus: request and allowance
+│   ├── updatepolicy.py   the update rules alone: no network, no MO2, no disk
 │   ├── runtime.py        the Qt main thread, sockets, JSON, the token
 │   ├── winapi.py         Windows windows and processes
 │   ├── config.py         the configurable values
 │   ├── i18n.py           the catalogue loader
+│   ├── journal.py        levels and sinks for everything written
 │   ├── locale\en\*.json  every string the plugin can say, English
 │   ├── locale\ru\*.json  the same, Russian
 │   ├── README.md         the plugin documentation, en
@@ -66,6 +68,7 @@ mo2aibridge\                the module folder
     ├── test_sources.py            no MO2: source hygiene
     ├── test_busy_logic.py         no MO2: the busy logic
     ├── test_i18n.py               no MO2: the catalogues agree and every key is used
+    ├── test_policy.py             no MO2: the update rules against a table of pages
     ├── test_transport_offline.py  no MO2: the socket, the token, the reply codes
     ├── test_contract_offline.py   no MO2: all 25 routes against a stand-in mobase
     ├── test_routes.py             acceptance: all 25 routes
@@ -128,8 +131,9 @@ that file, so the file has to arrive together with the plugin.
 python tests/run.py
 ```
 
-Five standalone suites run without MO2 — source hygiene, the busy logic, the string catalogues,
-the transport, and the contract of every route against a stand-in `mobase`. Four acceptance
+Six standalone suites run without MO2 — source hygiene, the busy logic, the string catalogues,
+the update rules, the transport, and the contract of every route against a stand-in `mobase`.
+Four acceptance
 suites need a running manager and are skipped with a plain word when there is none; a skip does
 not count as a failure. The details are in [tests/README.md](tests/README.md).
 

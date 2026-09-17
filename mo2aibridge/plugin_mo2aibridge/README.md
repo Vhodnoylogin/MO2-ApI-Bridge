@@ -69,9 +69,9 @@ work.
 python ../tests/run.py
 ```
 
-Eight suites. Four run without MO2 — source hygiene, the busy-state logic, the strings, and the
-contract of all 25 routes over a fake `mobase`; four acceptance suites need a running manager and
-are skipped with a clear message when it is absent. They live **outside** this package, in
+Ten suites. Six run without MO2 — source hygiene, the busy-state logic, the strings, the update
+rules, the contract of all 25 routes over a fake `mobase`, and the transport; four acceptance
+suites need a running manager and are skipped with a clear message when it is absent. They live **outside** this package, in
 `tests\` next to it, and are never shipped to MO2. Details in `..\tests\README.md`.
 
 The offline suites see the code on disk; the acceptance suites see the code MO2 loaded at start.
@@ -581,11 +581,13 @@ The defaults contain no machine-specific paths: the `7z.exe` candidates are asse
 | `mods.py` | domain | enable, disable, refresh; priority, rename, remove |
 | `loadorder.py` | domain | plugin states and load order, writing `plugins.txt` |
 | `launch.py` | domain | launching programs and their windows |
-| `updates.py` | domain | updates from live Nexus: the request through MO2 and the decision rules |
+| `updates.py` | domain | updates from live Nexus: the request through MO2, the daily allowance, the mod cards |
+| `updatepolicy.py` | domain, pure | the decision rules alone: no network, no MO2, no disk - the only part that can be checked with a table |
 | `routes.py` | routing | which path maps to which operation, and nothing else |
 | `plugin.py` | lifecycle | MO2's plugin interface |
-| `config.py` | settings | timeouts, list limits, where to look for 7-Zip; across all layers |
+| `config.py` | settings | the port, timeouts, list limits, where to look for 7-Zip; across all layers |
 | `i18n.py` | strings | across all layers |
+| `journal.py` | journal | levels and sinks: what is written and where, and one sink failing loses neither the line nor the plugin |
 
 The domain layer is split by area, and none of the areas knows about HTTP. Every area receives
 one `Context` — the `IOrganizer`, the way onto the main thread, where to leave a trace, the

@@ -6,7 +6,7 @@
 python run.py
 ```
 
-All nine suites in a row. The suites that need MO2 are skipped with a plain word when it is not
+All ten suites in a row. The suites that need MO2 are skipped with a plain word when it is not
 running — a skip does not count as a failure.
 
 The wording of the checks is localised the same way the plugin's is: the catalogue lives in
@@ -19,6 +19,7 @@ to be loud, not papered over.
 | `test_sources.py` | no | source hygiene: no control characters and no paths to one machine, everything compiles, every module is described in both READMEs, and the release archive really carries the translations |
 | `test_busy_logic.py` | no | the busy logic against a stand-in `IOrganizer` |
 | `test_i18n.py` | no | that the languages agree on keys and substitutions, that every key is used, and that `t()` keeps `key` positional |
+| `test_policy.py` | no | the update rules against a table of made-up Nexus pages: the verdict and the reason for each, and that the rules import nothing of the network, MO2 or the disk |
 | `test_transport_offline.py` | no | the transport on a real loopback socket: a taken port refuses, a bad request is 400 and a broken bridge is 500, no token means 403, and the port falls silent after a stop |
 | `test_contract_offline.py` | no | the contract of all 25 routes against a stand-in `mobase` (`fake_mo2.py`): reply keys, both locks, writing `plugins.txt`, installing into a real temporary folder |
 | `test_routes.py` | yes | all 25 routes and both locks |

@@ -1,0 +1,24 @@
+# Binary files of the module go through Git LFS: git keeps a pointer of a few lines,
+# the file itself lies beside it in the LFS store. Without this the history swells -
+# git holds a whole copy of a binary on every change and shows no diff.
+#
+# The cost, stated because it decides what belongs here: LFS does NOT compress one
+# version against another. Every edit is stored whole. So this list holds what a
+# recipe cannot express and what changes rarely - not the output of every build.
+#
+# The plugin itself is Python and travels as text; what is listed below is what a
+# Python plugin still acquires. The icon is the reason the list exists: `icon()` in
+# plugin.py returns an empty QIcon today, and the day it stops doing so the bytes
+# have to be versioned somewhere. Pictures for the mod page are the same kind of
+# file. Archives are here for the fixtures a check may need, never for `dist\` -
+# the release archive is built by pack.py and is not versioned at all.
+*.ico   filter=lfs diff=lfs merge=lfs -text
+*.png   filter=lfs diff=lfs merge=lfs -text
+*.jpg   filter=lfs diff=lfs merge=lfs -text
+*.7z    filter=lfs diff=lfs merge=lfs -text
+*.zip   filter=lfs diff=lfs merge=lfs -text
+
+# cmd.exe loses its place in a batch file that has LF endings and non-ASCII bytes:
+# the lines are then run in fragments. Batch files get CRLF, on every machine.
+*.cmd text eol=crlf
+*.bat text eol=crlf

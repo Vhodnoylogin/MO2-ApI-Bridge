@@ -28,14 +28,11 @@ PROBE = 'MO2 ApI Bridge - install probe'
 KEY = {'iUnderstandTheRisk': 'yes-I-read-the-docs-and-accept-irreversible-changes'}
 
 
-def seven_zip():
-    for p in (r'C:\Program Files\7-Zip\7z.exe', r'C:\Program Files (x86)\7-Zip\7z.exe'):
-        if os.path.isfile(p):
-            return p
-    return shutil.which('7z')
-
-
-SEVEN = seven_zip()
+# Where 7-Zip is, asked of the plugin's own settings rather than written out again here. The
+# two paths that used to stand in this file were a copy of the same list, and a copy goes
+# stale silently: on a machine whose Program Files lives elsewhere the suite found nothing,
+# skipped itself and reported success - which is the one answer a check must never give.
+SEVEN = common.import_package().config.Config().seven_zip()
 if not SEVEN:
     r.note(T('install.skip'), T('install.no7z'))
     raise SystemExit(77)

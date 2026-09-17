@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""The plugin's configurable values: timeouts, list limits, where to look for 7-Zip.
+"""The plugin's configurable values: the port, timeouts, list limits, where to look for 7-Zip.
 
 Everything that used to be a constant in the code lives here in one defaults dictionary.
 The file `<PLUGIN_ID>-config.json` next to the plugin is created from those defaults on
@@ -31,6 +31,15 @@ def _seven_zip_candidates():
 
 
 DEFAULTS = {
+    # The port on 127.0.0.1. The likeliest value in this file to need changing - a firewall
+    # rule, or another program already holding the number - and it is here so that changing
+    # it never means editing Python. MO2's own plugin panel shows the same setting and wins
+    # when it has an answer; this is the value it starts from.
+    'port': 8930,
+    # How many consecutive ports to try when the requested one is taken. The usual culprit is
+    # a second MO2 instance - and that is not trouble but an ordinary day: Skyrim and Fallout
+    # are often both open.
+    'portTries': 10,
     # Seconds to wait for MO2's main thread, by kind of work. Ping is short on purpose:
     # it is the one needed when MO2 is unresponsive, and it has to answer quickly.
     'timeouts': {

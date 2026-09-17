@@ -1,2 +1,3 @@
-# Токен, лог и настройки создаются при запуске рядом с плагином - у каждой машины свои.
+# The token, the log and the settings are written beside the plugin when MO2 starts -
+# every machine has its own, and none of them belongs in the repository.
 *-config.json

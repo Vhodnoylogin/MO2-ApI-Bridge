@@ -13,11 +13,13 @@ Layers, bottom to top; each knows only the one below it:
       mods.py       the mod list and the irreversible operations
       loadorder.py  plugin order and plugins.txt
       launch.py     launching programs, and their windows
-      updates.py    update checks against a live Nexus
+      updates.py    update checks against a live Nexus: the request and the allowance
+      updatepolicy.py  the update rules alone - no network, no MO2, no disk
     routes.py    which path maps to what          - knows nothing of mobase or sockets
     plugin.py    the MO2 plugin lifecycle
     config.py    configurable values, across all layers
     i18n.py      strings and translations, across all layers
+    journal.py   levels and sinks: what is written and where, across all layers
 
 This file is deliberately empty apart from the factory. `mobase` exists only inside the MO2
 process, and importing it at package level would break `from mo2aibridge import i18n`

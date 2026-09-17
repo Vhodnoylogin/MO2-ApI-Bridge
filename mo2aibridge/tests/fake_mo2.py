@@ -1,34 +1,35 @@
 # -*- coding: utf-8 -*-
-"""Подставная MO2: модуль mobase и IOrganizer, которых хватает всем маршрутам без менеджера.
+"""A stand-in MO2: a mobase module and an IOrganizer enough for every route to run without
+the manager.
 
-Зачем. Три живых набора проверок требуют запущенной MO2, и потому их прогоняют редко и
-поздно: договор маршрутов - какие ключи в ответе, что отдаётся при отказе, чем обращается
-изменение - проверялся только тогда, когда кто-то поднимал менеджер. Переделка services.py
-между такими прогонами могла тихо переименовать поле, и узналось бы это в чужом чате.
+Why. Three live suites need a running MO2, so they are run rarely and late: the contract of the
+routes - which keys are in a reply, what a refusal hands back, how a change is reversed - was
+checked only when somebody happened to raise the manager. A rework of services.py between two
+such runs could quietly rename a field, and that would come to light in somebody else's chat.
 
-Здесь MO2 подменяется целиком, но не пустышкой, а копией её поведения на настоящих файлах:
-mods\\ с папками модов, профиль с plugins.txt и modlist.txt, downloads\\ с архивами, overwrite\\.
-Всё лежит во временной папке (tempfile.mkdtemp), поэтому маршруты, которые пишут на диск -
-/install, /plugins/state с apply, /mods/remove, /vfsexport, - делают настоящий ввод-вывод, и
-его можно сверить чтением файлов. Виртуальная Data собирается из активных модов по приоритету
-ровно так, как это делает USVFS: побеждает мод с большим приоритетом, поставщики отдаются
-победителем вперёд.
+MO2 is replaced here whole, and not by an empty shell but by a copy of its behaviour over real
+files: mods\\ with mod folders, a profile with plugins.txt and modlist.txt, downloads\\ with
+archives, overwrite\\. All of it lives in a temporary folder (tempfile.mkdtemp), so the routes
+that write to disk - /install, /plugins/state with apply, /mods/remove, /vfsexport - do real
+input and output, and it can be verified by reading the files back. The virtual Data is built
+out of the active mods by priority exactly the way USVFS does it: the mod with the higher
+priority wins, and the providers are handed back winner first.
 
-Что здесь есть из mobase: ModState и PluginState (целые флаги), GuessedString, IFileTree с
-WalkReturn, а также VersionInfo, PluginSetting и IPluginTool - последние трое лишь для того,
-чтобы plugin.py можно было импортировать, если понадобится.
+What is here out of mobase: ModState and PluginState (plain integer flags), GuessedString,
+IFileTree with WalkReturn, and also VersionInfo, PluginSetting and IPluginTool - the last three
+only so that plugin.py can be imported if it is ever needed.
 
-Как пользоваться:
+How to use it:
 
     import fake_mo2
-    fake_mo2.install()                  # ДО импорта пакета: services связывает mobase на импорте
-    fx = fake_mo2.Fixture()             # временная сборка на диске
+    fake_mo2.install()                  # BEFORE importing the package: services binds mobase on import
+    fx = fake_mo2.Fixture()             # a temporary setup on disk
     svc = services.Services(fx.organizer, run_main=lambda f, timeout=None: f(), ...)
     ...
     fx.cleanup()
 
-Путей к конкретной машине нет: всё внутри временной папки, 7-Zip ищется по PATH и по
-стандартным местам установки.
+There are no paths to one particular machine: everything sits inside the temporary folder, and
+7-Zip is looked for on PATH and in the usual installation places.
 """
 import configparser
 import fnmatch
@@ -43,7 +44,7 @@ import types
 
 # ================================================================== mobase
 class ModState(object):
-    """Значения те же, что у настоящей MO2: services их складывает и маскирует."""
+    """The same values the real MO2 uses: services adds them up and masks them."""
     EXISTS = 1
     ACTIVE = 2
     ESSENTIAL = 4
@@ -60,7 +61,7 @@ class PluginState(object):
 
 
 class GuessedString(object):
-    """Имя с вариантами. createMod принимает именно его, а не строку."""
+    """A name with variants. createMod takes one of these, not a string."""
 
     def __init__(self, value=''):
         self._value = str(value)
@@ -105,10 +106,11 @@ _EXPORTS = ('ModState', 'PluginState', 'GuessedString', 'IFileTree', 'VersionInf
 
 
 def install():
-    """Подставить mobase в sys.modules.
+    """Put the stand-in mobase into sys.modules.
 
-    Если пустышку уже завёл common.import_package(), она наполняется на месте: services
-    связал имя mobase с тем самым объектом модуля, и заменять его в sys.modules поздно.
+    If common.import_package() has already put an empty shell there, it is filled in place:
+    services bound the name mobase to that very module object, and replacing it in sys.modules
+    would come too late.
     """
     mod = sys.modules.get('mobase')
     if mod is None:
@@ -120,9 +122,9 @@ def install():
     return mod
 
 
-# ================================================================== дерево файлов
+# ================================================================== the file tree
 class Entry(object):
-    """Запись дерева: имя и признак папки - всё, что читают services."""
+    """One entry of the tree: a name and whether it is a folder - all services ever reads."""
 
     def __init__(self, name, is_dir, children=None):
         self._name = name
@@ -146,7 +148,7 @@ class Entry(object):
 
 
 def _tree_from_paths(rel_paths):
-    """Дерево из относительных путей (через любой разделитель). Регистр имён сохраняется."""
+    """A tree out of relative paths (with any separator). The case of the names is kept."""
     root = Entry('', True)
     for rel in rel_paths:
         parts = [p for p in rel.replace('/', chr(92)).split(chr(92)) if p]
@@ -160,7 +162,7 @@ def _tree_from_paths(rel_paths):
 
 
 class FileTree(object):
-    """IFileTree: перебор верхнего уровня и обход в глубину с visitor(путь, запись)."""
+    """IFileTree: walking the top level, and a depth-first walk with visitor(path, entry)."""
 
     def __init__(self, root_entry):
         self._root = root_entry
@@ -169,7 +171,7 @@ class FileTree(object):
         return iter(self._root)
 
     def walk(self, visitor, sep=chr(92)):
-        """Как у MO2: путь - это префикс родителя с завершающим разделителем, '' для корня."""
+        """As in MO2: the path is the parent's prefix with a trailing separator, '' at the root."""
         def go(node, prefix):
             for child in node:
                 rv = visitor(prefix, child)
@@ -182,7 +184,7 @@ class FileTree(object):
         go(self._root, '')
 
 
-# ================================================================== мод
+# ================================================================== a mod
 class _Version(object):
     def __init__(self, text):
         self._text = text or ''
@@ -192,7 +194,7 @@ class _Version(object):
 
 
 class FakeMod(object):
-    """IModInterface поверх папки в mods\\ и её meta.ini."""
+    """IModInterface over a folder in mods\\ and its meta.ini."""
 
     def __init__(self, organizer, name):
         self._o = organizer
@@ -276,8 +278,8 @@ class FakeMod(object):
 
 
 def tree_files(root):
-    """Пути всех файлов папки относительно неё, в нижнем регистре, meta.ini включительно -
-    то же «было и стало», которым /install считает added и overwritten."""
+    """The paths of every file of a folder relative to it, lower-cased, meta.ini included -
+    the same "before and after" by which /install counts added and overwritten."""
     out = set()
     for dp, _dn, fs in os.walk(root):
         rel = os.path.relpath(dp, root)
@@ -287,7 +289,8 @@ def tree_files(root):
 
 
 def _files_under(root):
-    """Относительные пути всех файлов папки, кроме корневого meta.ini - он не часть Data."""
+    """Relative paths of every file of a folder except the meta.ini at its root - that one is
+    not part of Data."""
     out = []
     for dp, _dn, fs in os.walk(root):
         rel = os.path.relpath(dp, root)
@@ -298,17 +301,17 @@ def _files_under(root):
     return out
 
 
-# ================================================================== список модов
+# ================================================================== the mod list
 class FakeModList(object):
-    """IModList: порядок - это приоритет, окно MO2 сверху вниз, 0 - самый слабый."""
+    """IModList: the order is the priority, the MO2 window top to bottom, 0 the weakest."""
 
     def __init__(self, organizer):
         self._o = organizer
-        self._order = []      # имена по возрастанию приоритета
-        self._active = {}     # имя -> включён ли
+        self._order = []      # names in ascending order of priority
+        self._active = {}     # name -> whether it is enabled
         self._essential = set()
 
-    # --- чтение
+    # --- reading
     def allModsByProfilePriority(self, _profile=None):
         return list(self._order)
 
@@ -334,7 +337,7 @@ class FakeModList(object):
     def displayName(self, name):
         return name
 
-    # --- изменения
+    # --- changes
     def setActive(self, name, active):
         if name not in self._active:
             return False
@@ -381,26 +384,27 @@ class FakeModList(object):
         return True
 
 
-# ================================================================== список плагинов
+# ================================================================== the plugin list
 class FakePluginList(object):
-    """IPluginList: плагины из корней активных модов, порядок и звёздочки из plugins.txt.
+    """IPluginList: the plugins from the roots of the active mods, the order and the asterisks
+    from plugins.txt.
 
-    setState и setLoadOrder меняют только память - как в MO2, которая переписывает
-    plugins.txt в свои моменты. Ровно из-за этого у services есть _write_plugins_txt.
+    setState and setLoadOrder change memory only - as in MO2, which rewrites plugins.txt at
+    moments of its own. That is exactly why services has a _write_plugins_txt.
     """
 
     def __init__(self, organizer):
         self._o = organizer
-        self._order = []        # все известные плагины, и скрытые тоже: место и состояние помнятся
-        self._visible = []      # те, чей мод сейчас включён, - их и отдаёт pluginNames
+        self._order = []        # every plugin known, hidden ones too: place and state are remembered
+        self._visible = []      # those whose mod is enabled now - these are what pluginNames hands back
         self._active = {}
         self._origin = {}
         self._masters = {}
 
     def _rebuild(self):
-        """Собрать список заново: новые плагины дописываются в конец выключенными,
-        плагины выключенных модов скрываются, но место и состояние за ними остаются -
-        иначе выключить и включить мод значило бы потерять его плагин в конце списка."""
+        """Build the list again: new plugins are appended at the end, disabled; the plugins of
+        disabled mods are hidden, but their place and state stay with them - otherwise
+        disabling and enabling a mod would mean losing its plugin at the end of the list."""
         ml = self._o.modList()
         found, origin = [], {}
         for name in ml.allModsByProfilePriority():
@@ -416,7 +420,7 @@ class FakePluginList(object):
                         os.path.isfile(os.path.join(root, f)):
                     if f not in found:
                         found.append(f)
-                    origin[f] = name      # больший приоритет перекрывает
+                    origin[f] = name      # the higher priority overrides
         for p in found:
             if p not in self._order:
                 self._order.append(p)
@@ -425,7 +429,7 @@ class FakePluginList(object):
         self._origin = origin
 
     def _load_file(self):
-        """Первое чтение plugins.txt профиля: порядок строк и звёздочки."""
+        """The first read of the profile's plugins.txt: the order of the lines and the asterisks."""
         path = os.path.join(self._o.profile().absolutePath(), 'plugins.txt')
         try:
             raw = io.open(path, encoding='utf-8-sig', newline='').read()
@@ -443,7 +447,7 @@ class FakePluginList(object):
         self._active = active
         self._rebuild()
 
-    # --- чтение
+    # --- reading
     def pluginNames(self):
         return list(self._visible)
 
@@ -479,13 +483,13 @@ class FakePluginList(object):
     def masters(self, name):
         return list(self._masters.get(name, []))
 
-    # --- изменения
+    # --- changes
     def setState(self, name, state):
         if name in self._visible:
             self._active[name] = bool(state & PluginState.ACTIVE)
 
     def setLoadOrder(self, order):
-        """Новый порядок видимых; скрытые остаются позади в прежнем взаимном порядке."""
+        """A new order for the visible ones; the hidden stay behind them in their former order."""
         visible = [p for p in order if p in self._visible] + \
                   [p for p in self._visible if p not in order]
         hidden = [p for p in self._order if p not in self._visible]
@@ -514,9 +518,10 @@ class _Profile(object):
 class _Game(object):
     def __init__(self, short_name, binary, nexus_name=None):
         self._short, self._binary = short_name, binary
-        # Раздел Nexus, под которым игра там живёт. У настоящей MO2 это gameNexusName(),
-        # и для Skyrim VR он отдаёт раздел SSE - своего у VR нет. Метод обязан быть и
-        # здесь: подделка, более мягкая, чем настоящий API, даёт ложную уверенность.
+        # The Nexus section the game lives in over there. In the real MO2 that is
+        # gameNexusName(), and for Skyrim VR it hands back the SSE section - VR has none of its
+        # own. The method has to exist here too: a stand-in gentler than the real API gives
+        # false confidence.
         self.nexus_name = short_name.lower() if nexus_name is None else nexus_name
 
     def gameNexusName(self):
@@ -540,7 +545,7 @@ class _FileInfo(object):
 
 
 class FakeOrganizer(object):
-    """IOrganizer над временной папкой. Виртуальная Data пересобирается на refresh."""
+    """IOrganizer over a temporary folder. The virtual Data is rebuilt on refresh."""
 
     def __init__(self, root, profile='Claude', game='SkyrimVR', binary='SkyrimVR.exe',
                  version='2.5.2-fake'):
@@ -550,15 +555,15 @@ class FakeOrganizer(object):
         self._version = version
         self._mods = FakeModList(self)
         self._plugins = FakePluginList(self)
-        self._vfs = {}          # rel в нижнем регистре -> (список поставщиков, путь победителя)
-        self._display = {}      # rel в нижнем регистре -> rel как в папке победителя
+        self._vfs = {}          # rel lower-cased -> (list of providers, the winner's path)
+        self._display = {}      # rel lower-cased -> rel as spelled in the winner's folder
         self._about_to_run = []
         self._finished_run = []
-        self.started = []       # что просили запустить: (binary, args, cwd)
-        self.start_result = None    # что отдаёт startApplication: None - процесс не создан
+        self.started = []       # what was asked to start: (binary, args, cwd)
+        self.start_result = None    # what startApplication hands back: None - no process made
         self.refreshed = 0
 
-    # --- пути
+    # --- paths
     def basePath(self):
         return self.root
 
@@ -595,9 +600,9 @@ class FakeOrganizer(object):
     def pluginList(self):
         return self._plugins
 
-    # --- загрузка состояния с диска
+    # --- loading the state off disk
     def _load(self):
-        """Прочитать modlist.txt (первая строка - самый сильный) и plugins.txt."""
+        """Read modlist.txt (the first line is the strongest) and plugins.txt."""
         ml = self._mods
         path = os.path.join(self.profilePath(), 'modlist.txt')
         ordered = []
@@ -613,7 +618,7 @@ class FakeOrganizer(object):
             if not os.path.isdir(os.path.join(self.modsPath(), name)):
                 continue
             ordered.append((name, line.startswith('+')))
-        # в файле порядок обратный окну: первая строка - наибольший приоритет
+        # in the file the order is the reverse of the window: the first line is the highest priority
         ordered.reverse()
         ml._order = [n for n, _a in ordered]
         ml._active = {n: a for n, a in ordered}
@@ -622,8 +627,8 @@ class FakeOrganizer(object):
         self._plugins._load_file()
 
     def _adopt_new_folders(self):
-        """Папки в mods\\, которых нет в профиле, появляются выключенными в конце -
-        так MO2 подхватывает мод, разложенный мимо неё, после refresh."""
+        """Folders in mods\\ that the profile does not know appear at the end, disabled - that is
+        how MO2 picks up a mod laid out beside it, after a refresh."""
         ml = self._mods
         try:
             names = sorted(os.listdir(self.modsPath()))
@@ -648,7 +653,7 @@ class FakeOrganizer(object):
             fh.write(chr(13).join('') + (chr(13) + chr(10)).join(lines) + chr(13) + chr(10))
 
     def _rebuild(self):
-        """Собрать виртуальную Data из активных модов: больший приоритет побеждает."""
+        """Build the virtual Data out of the active mods: the higher priority wins."""
         ml = self._mods
         vfs, display = {}, {}
         for name in ml.allModsByProfilePriority():
@@ -658,7 +663,7 @@ class FakeOrganizer(object):
             for rel in _files_under(root):
                 key = rel.replace('/', chr(92)).lower()
                 providers = vfs.get(key, ([], ''))[0]
-                # поставщики хранятся победителем вперёд, как отдаёт getFileOrigins
+                # the providers are kept winner first, the way getFileOrigins hands them out
                 vfs[key] = ([name] + providers, os.path.join(root, rel))
                 display[key] = rel.replace('/', chr(92))
         self._vfs, self._display = vfs, display
@@ -670,14 +675,14 @@ class FakeOrganizer(object):
         self._rebuild()
         return True
 
-    # --- виртуальная Data
+    # --- the virtual Data
     @staticmethod
     def _norm(path):
         p = (path or '').replace('/', chr(92)).strip(chr(92))
         return '' if p in ('', '.') else p.lower()
 
     def findFiles(self, path, pattern='*'):
-        """Настоящие пути файлов-победителей в виртуальной папке, без рекурсии."""
+        """The real paths of the winning files in a virtual folder, without recursion."""
         d = self._norm(path)
         pats = pattern if isinstance(pattern, (list, tuple)) else [pattern or '*']
         out = []
@@ -723,7 +728,7 @@ class FakeOrganizer(object):
                 out.append(fi)
         return out
 
-    # --- изменения
+    # --- changes
     def createMod(self, guessed):
         name = str(guessed.value() if hasattr(guessed, 'value') else guessed).strip()
         if not name:
@@ -741,7 +746,7 @@ class FakeOrganizer(object):
 
     def startApplication(self, binary, args=None, cwd='', profile='', overwrite='',
                          ignore_overwrite=False):
-        """Ничего не запускает. Зовёт onAboutToRun, как MO2, и отдаёт start_result."""
+        """Starts nothing. Calls onAboutToRun the way MO2 does, and hands back start_result."""
         self.started.append((binary, list(args or []), cwd))
         for cb in self._about_to_run:
             try:
@@ -753,7 +758,7 @@ class FakeOrganizer(object):
     def waitForApplication(self, _handle, _refresh=True):
         return (False, -1)
 
-    # --- обратные вызовы и настройки
+    # --- callbacks and settings
     def onAboutToRun(self, callback):
         self._about_to_run.append(callback)
         return True
@@ -766,7 +771,7 @@ class FakeOrganizer(object):
         return True
 
     def finish_run(self, binary, exit_code=0):
-        """Сообщить подписчикам о завершении - то, что MO2 делает сама."""
+        """Tell the subscribers a run has finished - what MO2 does by itself."""
         for cb in self._finished_run:
             cb(binary, exit_code)
 
@@ -774,9 +779,9 @@ class FakeOrganizer(object):
         return None
 
 
-# ================================================================== сборка на диске
-# Четыре мода: окно MO2 сверху вниз, приоритет 0..3. Delta выключен, поэтому его файлов
-# в виртуальной Data нет, а его плагин неизвестен списку плагинов.
+# ================================================================== the setup on disk
+# Four mods: the MO2 window top to bottom, priority 0..3. Delta is disabled, so none of its
+# files are in the virtual Data and its plugin is unknown to the plugin list.
 MODS = [
     ('Alpha Mod', {'modid': 101, 'version': '1.0', 'installationFile': 'Alpha Mod-101-1-0.7z',
                    'category': '3,', 'notes': 'alpha note', 'comments': 'alpha comment',
@@ -797,7 +802,7 @@ MODS = [
 ]
 PLUGINS_TXT = ['# This file was automatically generated by Mod Organizer.',
                '*Alpha.esp', 'Beta.esp', '*Gamma.esl']
-# Архивы в downloads: у Gamma архива на диске нет - для archiveOnDisk: false
+# Archives in downloads: Gamma has no archive on disk - for archiveOnDisk: false
 DOWNLOADS = ['Alpha Mod-101-1-0.7z', 'Beta Mod-202-2-1.7z']
 PROFILES = ['Claude', 'Second']
 CRLF = chr(13) + chr(10)
@@ -812,7 +817,7 @@ def _write(path, text=''):
 
 
 class Fixture(object):
-    """Временная сборка: папки на диске плюс IOrganizer над ними."""
+    """A temporary setup: the folders on disk plus an IOrganizer over them."""
 
     def __init__(self, profile='Claude'):
         self.root = tempfile.mkdtemp(prefix='mo2aibridge-fake-')
@@ -839,7 +844,7 @@ class Fixture(object):
             os.makedirs(os.path.join(self.root, 'profiles', prof))
         prof_dir = os.path.join(self.root, 'profiles', self.profile)
         _write(os.path.join(prof_dir, 'plugins.txt'), CRLF.join(PLUGINS_TXT) + CRLF)
-        # первая строка modlist.txt - самый сильный мод, то есть нижний в окне
+        # the first line of modlist.txt is the strongest mod, that is the lowest in the window
         lines = ['# This file was automatically generated by Mod Organizer.']
         for name, spec in reversed(MODS):
             lines.append(('+' if spec['active'] else '-') + name)
@@ -848,8 +853,8 @@ class Fixture(object):
         for arc in DOWNLOADS:
             full = os.path.join(self.root, 'downloads', arc)
             _write(full, 'not a real archive' + chr(10))
-            # В имени архива нет отметки загрузки, поэтому момент берётся с диска: ставим его
-            # равным времени нашего файла на странице, как у настоящей загрузки
+            # The archive name carries no download stamp, so the moment is taken off the disk:
+            # we set it to the time of our own file on the page, as a real download would have
             os.utime(full, (T0, T0))
             meta = DOWNLOAD_META.get(arc)
             if meta:
@@ -857,7 +862,7 @@ class Fixture(object):
                        'modID=%d' % meta[0] + chr(10) + 'fileID=%d' % meta[1] + chr(10) +
                        'installed=true' + chr(10))
 
-    # --- удобства для проверок
+    # --- conveniences for the checks
     def path(self, *parts):
         return os.path.join(self.root, *parts)
 
@@ -875,9 +880,9 @@ class Fixture(object):
         shutil.rmtree(self.root, ignore_errors=True)
 
 
-# ================================================================== 7-Zip и архив под /install
+# ================================================================== 7-Zip and the /install archive
 def seven_zip():
-    """7z.exe по PATH или по обычным местам установки; None, если нет нигде."""
+    """7z.exe on PATH or in the usual installation places; None when it is nowhere."""
     found = shutil.which('7z')
     if found:
         return found
@@ -890,7 +895,7 @@ def seven_zip():
     return None
 
 
-# Архив с двумя вариантами, fomod и корневым meta.ini - всё, что /install умеет пропускать
+# An archive with two variants, a fomod and a meta.ini at the root - everything /install can skip
 ARCHIVE_FILES = {
     '00 Core/Zeta.esp': 'zeta plugin',
     '00 Core/textures/zeta.dds': 'zeta texture',
@@ -901,7 +906,7 @@ ARCHIVE_FILES = {
 
 
 def build_archive(dest, files=None):
-    """Собрать .7z из словаря {относительный путь: текст}. None, если 7-Zip не найден."""
+    """Build a .7z out of a {relative path: text} dictionary. None when 7-Zip is not found."""
     seven = seven_zip()
     if not seven:
         return None
@@ -920,31 +925,32 @@ def build_archive(dest, files=None):
     return dest
 
 
-# ================================================================== Nexus: подставной мост
-# Момент загрузки нашего файла на страницу; от него отсчитываются остальные.
+# ================================================================== Nexus: the stand-in bridge
+# When our own file was uploaded to the page; every other moment counts from it.
 T0 = 1700000000
 DAY = 86400
-# Что мы скачивали: архив -> (modID, fileID). Отсюда мост узнаёт, какие строки страницы наши.
+# What we downloaded: archive -> (modID, fileID). This is how the bridge knows which rows of the
+# page are ours.
 DOWNLOAD_META = {'Alpha Mod-101-1-0.7z': (101, 1001), 'Beta Mod-202-2-1.7z': (202, 2001)}
-# Страницы Nexus по modID. Строка вместо списка - отказ запроса с таким текстом.
+# The Nexus pages by modID. A string instead of a list is a refused request carrying that text.
 NEXUS_FILES = {
-    # Alpha: наш файл уехал в Old files, в Main лежит файл той же роли новее - обновление
+    # Alpha: our file has moved to Old files, Main holds a newer file of the same role - an update
     101: [dict(name='Alpha Mod', fileName='Alpha Mod-101-1-0.7z', fileID=1001, version='1.0',
                fileCategory=4, fileTime=T0),
           dict(name='Alpha Mod', fileName='Alpha Mod-101-1-1.7z', fileID=1002, version='1.1',
                fileCategory=1, fileTime=T0 + 30 * DAY)],
-    # Beta: наш файл - новейший Main; рядом патч другой роли в Optional - актуально
+    # Beta: our file is the newest Main; beside it a patch of another role in Optional - current
     202: [dict(name='Beta Mod', fileName='Beta Mod-202-2-1.7z', fileID=2001, version='2.1',
                fileCategory=1, fileTime=T0),
           dict(name='Beta Mod - Farming Patch', fileName='Beta Mod Farming Patch-202-1-0.7z',
                fileID=2002, version='1.0', fileCategory=3, fileTime=T0 + 5 * DAY)],
-    # Delta: страница на модерации, запрос отказан
+    # Delta: the page is under moderation, the request is refused
     404: 'mod is under moderation',
 }
 
 
 class _When(object):
-    """QDateTime в одном методе: столько мосту и нужно."""
+    """A QDateTime in one method: that is all the bridge needs of it."""
 
     def __init__(self, secs):
         self.secs = secs
@@ -954,7 +960,7 @@ class _When(object):
 
 
 class FakeFileInfo(object):
-    """ModRepositoryFileInfo: атрибуты, которые читает мост."""
+    """ModRepositoryFileInfo: the attributes the bridge reads."""
 
     def __init__(self, name, fileName, fileID, version, fileCategory, fileTime):
         self.name = name
@@ -969,10 +975,11 @@ class FakeFileInfo(object):
 
 
 class FakeBridge(object):
-    """IModRepositoryBridge: ответ приходит сразу же, из того же вызова.
+    """IModRepositoryBridge: the answer arrives at once, out of the same call.
 
-    Настоящий мост отвечает позже и из главного потока; подставному это не нужно - ждущий
-    Event уже выставлен к моменту, когда мост станет ждать, и ожидание не блокирует."""
+    The real bridge answers later and from the main thread; the stand-in has no need of that -
+    the Event being waited on is already set by the time the bridge comes to wait, and the wait
+    does not block."""
 
     def __init__(self):
         self.requests = []

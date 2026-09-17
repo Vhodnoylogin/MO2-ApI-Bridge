@@ -57,10 +57,12 @@ mo2aibridge/                  the module (this folder)
 │   ├── loadorder.py          plugin states and load order, plugins.txt writes
 │   ├── install.py            install from archive, merge and replace modes
 │   ├── launch.py             launching programs through MO2, window actions
-│   ├── updates.py            update checking against the Nexus API
+│   ├── updates.py            update checking against the Nexus API: request and allowance
+│   ├── updatepolicy.py       the update rules alone: no network, no MO2, no disk
 │   ├── runtime.py            Qt main thread, HTTP server, token
 │   ├── winapi.py             windows, processes, Recycle Bin, credential store
 │   ├── config.py             settings from JSON, defaults built in
+│   ├── journal.py            levels and sinks: what is written and where
 │   ├── i18n.py               user-facing strings, RU and EN
 │   ├── README.md             plugin documentation, English
 │   ├── README.ru.md          plugin documentation, Russian
@@ -97,6 +99,7 @@ Each layer knows only the one below it. Keep it that way.
 | `routes.py` | path names | `mobase`, sockets |
 | `plugin.py` | the MO2 plugin lifecycle | it does nothing by hand, it only wires things |
 | `i18n.py` | strings | across all layers |
+| `journal.py` | levels and sinks | where a written line goes, and what happens when a sink dies |
 
 Adding a route means adding a line to `routes.py`. Method names on the facade are a contract:
 `routes.py` and the tests both refer to them.
@@ -149,7 +152,7 @@ Every line here is a past failure. The reason is given so nobody is tempted to s
 | `runtime.Server` | `allow_reuse_address = False` | `HTTPServer` sets it to 1, and on Windows that allows binding to an already-listening address: a second bridge started silently and received nothing |
 | `tests/` | sits **outside** the package and finds it by `__init__.py` | it must not search by name — the names differ on purpose |
 | stuck-launch reset | menu item only, no route | a route would let one request bypass the busy lock |
-| `log()` | writes to both MO2's log and its own file | MO2's default log level drops plugin warnings, and the reason for a refusal was lost entirely |
+| `log()` | writes to both MO2's log and its own file | MO2's default log level drops plugin warnings, and the reason for a refusal was lost entirely. Both sinks live in `journal.py`; a sink that fails is announced through the other one, never swallowed |
 
 **MO2 crashes are not this plugin's fault.** Heavy test runs crashed MO2 four times. A full dump
 under WinDbg showed a double free inside MO2's own bundled `plugins\diagnose_basic.dll` (the
@@ -187,8 +190,9 @@ run triggers seven or eight in a row. **Do not hunt for the cause in the bridge 
 python tests/run.py
 ```
 
-Five offline suites run without MO2 — source hygiene, busy logic, strings, the full route
-contract on a fake `mobase`, and the transport on a real loopback socket. Four acceptance
+Six offline suites run without MO2 — source hygiene, busy logic, strings, the update rules,
+the full route contract on a fake `mobase`, and the transport on a real loopback socket. Four
+acceptance
 suites need a running manager and are **skipped** with a clear message when there is none; a
 skip is not a failure.
 
