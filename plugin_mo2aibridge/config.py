@@ -49,9 +49,12 @@ DEFAULTS = {
         'unpack': 1800,
         'vfsExport': 1800,
         'runWait': 3600,
+        'profileRename': 30,
     },
     # How many rows to return in the added/overwritten/sample lists, so a reply stays sane.
     'listLimit': 200,
+    # Native profile dialog polling interval, in milliseconds.
+    'profileDialogPollMs': 20,
     'analyzeLimit': 80,
     'orderReportLimit': 20,
     # The tail of 7-Zip's output that goes into the text of an unpack error.
@@ -91,7 +94,7 @@ DEFAULTS = {
         # itself keeps it.
         'credentialTarget': 'ModOrganizer2_APIKEY',
         'apiHost': 'https://api.nexusmods.com',
-        'appVersion': '2.1.0',
+        'appVersion': '2.2.0',
         # How many consecutive network failures count as a dead channel and stop the sweep.
         # One failure happens to anyone; five in a row mean the remaining thousand requests
         # will fail the same way, only slower - each waiting out its own timeout.

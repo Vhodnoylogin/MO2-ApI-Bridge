@@ -104,7 +104,8 @@ r.case(T('routes.orderRejectsPartial'),
 r.head(T('routes.dangerKeyWithheld'))
 for route, body in (('/mods/priority', {'mod': sample, 'priority': 5}),
                     ('/mods/rename', {'mod': sample, 'newName': sample + ' PROBE'}),
-                    ('/mods/remove', {'mod': sample})):
+                    ('/mods/remove', {'mod': sample}),
+                    ('/profiles/rename', {'profile': prof['current'], 'newName': prof['current'] + ' PROBE'})):
     code, res = common.call('POST', route, body)
     r.case(T('routes.blocked', route=route), res.get('applied'), False)
     r.note(T('routes.blank'), T('routes.reason', why=res.get('blocked')))

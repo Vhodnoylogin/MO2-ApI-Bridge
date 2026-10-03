@@ -1,0 +1,15 @@
+{
+ "profileui.skipped": "SKIPPED: standalone PyQt6 is not installed",
+ "profileui.title": "profile manager: native Qt event loops",
+ "profileui.success": "rename completes without error",
+ "profileui.folder": "native dialog renamed the folder",
+ "profileui.contents": "save bytes are preserved",
+ "profileui.failure": "failure is returned: %(mode)s",
+ "profileui.source": "source remains intact: %(mode)s",
+ "profileui.noDestination": "no destination created: %(mode)s",
+ "profileui.bounded": "wait is bounded: %(mode)s",
+ "profileui.current": "selection remains unchanged: %(mode)s",
+ "profileui.closed": "owned dialogs closed: %(mode)s",
+ "profileui.foreignRefused": "pre-existing modal refuses rename",
+ "profileui.foreignKept": "pre-existing modal remains untouched"
+}

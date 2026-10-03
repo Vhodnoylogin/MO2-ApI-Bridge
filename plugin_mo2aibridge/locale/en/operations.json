@@ -12,5 +12,6 @@
  "op.remove": "DELETING a mod from disk",
  "op.rename": "renaming a mod",
  "op.run": "launching another program",
- "op.toggle": "enabling or disabling a mod"
+ "op.toggle": "enabling or disabling a mod",
+ "op.profileRename": "renaming a profile"
 }

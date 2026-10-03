@@ -39,6 +39,7 @@ def build(svc):
         # irreversible: without the key from the documentation these routes do nothing
         '/mods/priority': svc.mods_priority,
         '/mods/rename': svc.mods_rename,
+        '/profiles/rename': svc.profiles_rename,
         '/mods/remove': svc.mods_remove,
     }
     return get, post

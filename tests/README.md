@@ -96,3 +96,5 @@ apart.
 `pack.py` stayed one level deep and took zero translations into the archive — the released
 plugin would have spoken in bare keys. Invisible until release day, so `test_sources.py` now
 asks `pack.py` itself what it is going to take.
+
+An optional native Qt regression suite is `python test_profileui.py`. It requires standalone PyQt6, uses offscreen dialogs and temporary profiles, and never accesses installed MO2. It verifies nested dialog completion, cancellation, timeouts, missing controls, and preservation of unrelated modal windows.

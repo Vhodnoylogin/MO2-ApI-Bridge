@@ -70,7 +70,7 @@ python ../tests/run.py
 ```
 
 Ten suites. Six run without MO2 — source hygiene, the busy-state logic, the strings, the update
-rules, the contract of all 25 routes over a fake `mobase`, and the transport; four acceptance
+rules, the contract of all 26 routes over a fake `mobase`, and the transport; four acceptance
 suites need a running manager and are skipped with a clear message when it is absent. They live **outside** this package, in
 `tests\` next to it, and are never shipped to MO2. Details in `..\tests\README.md`.
 
@@ -115,6 +115,7 @@ The token is supplied by the wrapper and omitted below for brevity.
 | `/run` | `binary`, `args`, `cwd`, `wait` | launch a tool **inside the VFS**; **irreversible**, see below |
 | `/window` | `hwnd`, `action`, `button` | `close`, or `click` by button caption |
 | `/mods/priority` | `mod`, `priority` | **irreversible**, see below |
+| `/profiles/rename` | `profile`, `newName` | rename an inactive profile through MO2; acknowledgement key required |
 | `/mods/rename` | `mod`, `newName` | **irreversible** |
 | `/mods/remove` | `mod`, `withArchive` | **irreversible**; the reply carries the mod card taken before deletion |
 
@@ -156,6 +157,7 @@ needed to reverse it.** Not a hint, not "something changed", but ready data.
 | `/plugins/state` | setting the states back | `changes` with `from`/`to` per plugin |
 | `/plugins/order` | restoring the order | `before` — the **whole** previous order |
 | `/mods/rename` | renaming back | `fromPath`, `toPath` and `nexusId` |
+| `/profiles/rename` | renaming back | `profile`, `newName`, `fromPath`, `toPath` and `undo` |
 | `/install` | deleting the created folder | `path` and `created` |
 | `/mods/remove` | reinstalling from the archive | `card` — the mod card taken **before** deletion |
 
@@ -166,7 +168,7 @@ if you do not.
 
 **The card signature.** Every reply to a mutating route carries `op` — the operation name
 (`toggle`, `install`, `refresh`, `pluginState`, `pluginOrder`, `run`, `priority`, `rename`,
-`remove`) — and `applied`. Every refusal additionally carries `reason`: `busy` when MO2 is held
+`remove`, `profileRename`) — and `applied`. Every refusal additionally carries `reason`: `busy` when MO2 is held
 by a running program, `danger` when the irreversible-operations key is missing. The old keys stay
 where they were: the reply shape only ever grows, otherwise other callers break silently.
 
@@ -396,6 +398,33 @@ list and refuses to work if anything is missing or unknown.
 
 ---
 
+
+## Renaming profiles
+
+`POST /profiles/rename`, available in version 2.2.0 and later:
+
+```json
+{"profile": "Old Profile", "newName": "New Profile",
+ "iUnderstandTheRisk": "yes-I-read-the-docs-and-accept-irreversible-changes"}
+```
+
+Only an inactive profile can be renamed. MO2 2.5 prohibits renaming the active
+profile; the route returns `applied: false`, `reason: "activeProfile"`. Select
+a different profile in MO2 first. The bridge does not switch profiles itself.
+
+MO2's native profile manager performs the rename, preserving profile files,
+saves and notifications to other plugins. Invalid names, paths outside the
+profiles folder and occupied names (including case variants) are refused. An
+identical name returns `applied: false`, `reason: "unchanged"`. A running game
+and an unrelated modal dialog cannot be bypassed.
+
+Success includes `op: "profileRename"`, `profile`, `newName`, `current`, `fromPath`,
+`toPath`, `how: "mo2ProfileDialog"`, and the reverse request in `undo`. The reverse
+request also requires the acknowledgement key. `timeouts.profileRename` and
+`profileDialogPollMs` bound the native dialog wait.
+
+The active-profile restriction is verified in the [MO2 2.5.2 source](https://github.com/ModOrganizer2/modorganizer/blob/v2.5.2/src/profilesdialog.cpp#L282-L314).
+
 ## While the game is running
 
 As long as a program is running through MO2 — the game, DynDOLOD, TexGen, anything — the manager
@@ -416,7 +445,7 @@ disk describe a new one. That surfaces later and elsewhere — saves referencing
 order, and a `refresh` under a live USVFS can take MO2 down with it.
 
 Refused: `/refresh`, `/install`, `/toggle`, `/run`, `/plugins/state` and `/plugins/order` **with**
-`apply`, and the whole irreversible trio `/mods/priority`, `/mods/rename`, `/mods/remove`.
+`apply`, `/profiles/rename`, and the whole irreversible trio `/mods/priority`, `/mods/rename`, `/mods/remove`.
 
 Still working: **every** read route — `/mods`, `/plugins`, `/vfs`, `/origins`, `/resolve`,
 `/analyze` and the rest — plus `/plugins/state` and `/plugins/order` previews without `apply`,
@@ -579,6 +608,8 @@ The defaults contain no machine-specific paths: the `7z.exe` candidates are asse
 | `reading.py` | domain | reading state and the virtual Data |
 | `install.py` | domain | installing a mod: fresh, merge, replace |
 | `mods.py` | domain | enable, disable, refresh; priority, rename, remove |
+| `profiles.py` | domain | profile rename, names, conflict checks and both locks |
+| `profileui.py` | MO2 UI | native Qt profile manager, without manually renaming its folders |
 | `loadorder.py` | domain | plugin states and load order, writing `plugins.txt` |
 | `launch.py` | domain | launching programs and their windows |
 | `updates.py` | domain | updates from live Nexus: the request through MO2, the daily allowance, the mod cards |
@@ -593,7 +624,7 @@ The domain layer is split by area, and none of the areas knows about HTTP. Every
 one `Context` — the `IOrganizer`, the way onto the main thread, where to leave a trace, the
 settings — and the shared busy lock `BusyGuard`. Mutating routes all follow one recipe,
 `Domain.change`: refuse if MO2 is busy → validate the input → run on the main thread → sign the
-card. `Services` is a thin facade: the same 25 methods, the same names, and the bookkeeping
+card. `Services` is a thin facade: the same 26 methods, the same names, and the bookkeeping
 attributes (`launched`, `game_exe`, `procs`) where they always were, because tests rely on them.
 
 `__init__.py` deliberately holds only the factory, and imports `mobase` lazily: otherwise

@@ -11,6 +11,7 @@ The logic itself is split by area, each in its own file:
     reading.py    Reader      reads of state and of the virtual Data
     install.py    Installer   installing a mod: fresh, merge, replace
     mods.py       ModOps      enable, disable, refresh; priority, name, removal
+    profiles.py   ProfileOps  native profile renaming
     loadorder.py  LoadOrder   plugin states and order, writing plugins.txt
     launch.py     Launcher    launching programs and driving their windows
     base.py       Domain      context, the shared change procedure, the reply shape
@@ -21,7 +22,7 @@ attributes (`launched`, `game_exe`, `_self_hwnd`, `procs`) stay here too - the b
 checks set them directly.
 """
 
-from . import base, busy, config, install, launch, loadorder, mods, reading, updates
+from . import base, busy, config, install, launch, loadorder, mods, profiles, reading, updates
 from .base import DANGER_KEY, DANGER_VALUE, one as _one, safe as _safe  # noqa: F401
 from .install import tree_files as _tree_files  # noqa: F401
 from .reading import walk_factory as _walk_factory  # noqa: F401
@@ -48,6 +49,7 @@ class Services(object):
         self.reader = reading.Reader(ctx, self.guard)
         self.installer = install.Installer(ctx, self.guard)
         self.modops = mods.ModOps(ctx, self.guard)
+        self.profileops = profiles.ProfileOps(ctx, self.guard)
         self.loadorder = loadorder.LoadOrder(ctx, self.guard)
         self.launcher = launch.Launcher(ctx, self.guard)
         self.updater = updates.Updates(ctx, self.guard)
@@ -103,6 +105,9 @@ class Services(object):
 
     def mods(self, q=None):
         return self.reader.mods(q)
+
+    def profiles_rename(self, body):
+        return self.profileops.rename(body)
 
     def profiles(self, q=None):
         return self.reader.profiles(q)

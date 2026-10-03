@@ -55,6 +55,8 @@ MO2-ApI-Bridge/              repository root
 │   ├── busy.py               the "MO2 is busy" lock
 │   ├── reading.py            reads of the setup state
 │   ├── mods.py               mod list: toggle, priority, rename, remove
+│   ├── profiles.py          profile name changes through MO2
+│   ├── profileui.py         native Qt profile manager adapter
 │   ├── loadorder.py          plugin states and load order, plugins.txt writes
 │   ├── install.py            install from archive, merge and replace modes
 │   ├── launch.py             launching programs through MO2, window actions
@@ -107,7 +109,7 @@ Adding a route means adding a line to `routes.py`. Method names on the facade ar
 
 **Busy lock.** While a game or tool runs under MO2, the virtual `Data` is mounted into another
 process. Changing mods, order or plugins then means the running program sees one setup while
-the files on disk describe another. So all nine write routes refuse, and every read keeps
+the files on disk describe another. So all ten write routes refuse, and every read keeps
 working. Busy is decided by three independent sources, and that is not redundancy:
 
 1. MO2's own callbacks (`onAboutToRun` / `onFinishedRun`) — they know about launches through
@@ -117,7 +119,7 @@ working. Busy is decided by three independent sources, and that is not redundanc
    `sksevr_loader.exe`, which exits immediately, leaving `SkyrimVR.exe` under a different name.
 3. Whether MO2's main window is enabled — the closest thing to what a person sees.
 
-**Irreversible lock.** Priority, rename, remove, `/run`, and `/install` with `mode=replace`
+**Irreversible lock.** Priority, mod/profile rename, remove, `/run`, and `/install` with `mode=replace`
 require this in the request body:
 
 ```json

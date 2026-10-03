@@ -7,7 +7,7 @@ main thread, somewhere to record what happened, the settings. That is `Context`.
 is the base of an area class: it holds the context and the busy lock, and it knows one
 shared procedure for any change.
 
-The procedure, and it is the same one for all nine write routes:
+The procedure, and it is the same one for all ten write routes:
 
     refuse if MO2 is busy  ->  validate the input  ->  do the work  ->  sign the reply
 

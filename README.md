@@ -30,12 +30,14 @@ MO2-ApI-Bridge/             repository root
 │   ├── __init__.py       the factory; mobase is imported lazily
 │   ├── plugin.py         the MO2 plugin life cycle
 │   ├── routes.py         the "path -> operation" table
-│   ├── services.py       the facade of the domain layer: the same 25 methods
+│   ├── services.py       the facade of the domain layer: the same 26 methods
 │   ├── base.py           the domain context and the shared recipe for a change
 │   ├── busy.py           whether MO2 is busy
 │   ├── reading.py        reading state and the virtual Data
 │   ├── install.py        installing a mod
 │   ├── mods.py           the mod list and the irreversible operations
+│   ├── profiles.py        profile name changes through MO2
+│   ├── profileui.py       native Qt profile manager adapter
 │   ├── loadorder.py      plugin order and plugins.txt
 │   ├── launch.py         starting programs and driving windows
 │   ├── updates.py        updates against the live Nexus: request and allowance
@@ -61,11 +63,12 @@ MO2-ApI-Bridge/             repository root
     ├── test_i18n.py               no MO2: the catalogues agree and every key is used
     ├── test_policy.py             no MO2: the update rules against a table of pages
     ├── test_transport_offline.py  no MO2: the socket, the token, the reply codes
-    ├── test_contract_offline.py   no MO2: all 25 routes against a stand-in mobase
-    ├── test_routes.py             acceptance: all 25 routes
+    ├── test_contract_offline.py   no MO2: all 26 routes against a stand-in mobase
+    ├── test_routes.py             acceptance: all 26 routes
     ├── test_plugins_txt.py        acceptance: plugin state reaches the file
     ├── test_install_modes.py      acceptance: install, merge and replace in a sandbox
     ├── test_busy_live.py          acceptance: the lock against a running program
+    ├── test_profileui.py          optional PyQt6: native dialog event loops
     ├── README.md         what each suite checks and what it has already caught
     └── README.ru.md      the same in Russian
 ```

@@ -27,5 +27,14 @@
  "err.recycle": "не удалось отправить в Корзину: %(path)s; до этого места ушло записей: %(done)d",
  "err.token": "нужен заголовок X-Token",
  "err.unpack": "распаковка не удалась: %(detail)s",
- "err.windowsOnly": "работа с окнами возможна только в Windows"
+ "err.windowsOnly": "работа с окнами возможна только в Windows",
+ "err.needProfileRename": "обязательны profile и newName",
+ "err.profileName": "недопустимое имя папки профиля: %(name)r",
+ "err.noSuchProfile": "нет такого профиля: %(profile)s",
+ "err.profilePath": "путь профиля выходит из папки профилей: %(profile)s",
+ "err.profileExists": "профиль уже существует: %(profile)s",
+ "err.activeProfile": "Активный профиль %(profile)s нельзя переименовать. Сначала выберите другой профиль в MO2.",
+ "err.profileRenameFailed": "MO2 не завершила переименование %(profile)s в %(newName)s; проверьте /profiles перед повтором",
+ "err.profileDialog": "менеджер профилей MO2 недоступен или открыто другое модальное окно",
+ "err.profileDialogTimeout": "окно переименования профиля MO2 не завершило работу за %(sec).0f с"
 }

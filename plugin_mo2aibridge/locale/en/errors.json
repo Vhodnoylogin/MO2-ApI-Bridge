@@ -27,5 +27,14 @@
  "err.recycle": "could not send to the Recycle Bin: %(path)s; entries already sent before this one: %(done)d",
  "err.token": "X-Token header required",
  "err.unpack": "extraction failed: %(detail)s",
- "err.windowsOnly": "window automation is available on Windows only"
+ "err.windowsOnly": "window automation is available on Windows only",
+ "err.needProfileRename": "profile and newName are required",
+ "err.profileName": "invalid profile folder name: %(name)r",
+ "err.noSuchProfile": "no such profile: %(profile)s",
+ "err.profilePath": "profile path leaves the profiles directory: %(profile)s",
+ "err.profileExists": "profile already exists: %(profile)s",
+ "err.activeProfile": "The active profile %(profile)s cannot be renamed. Select a different profile in MO2 first.",
+ "err.profileRenameFailed": "MO2 did not complete renaming %(profile)s to %(newName)s; inspect /profiles before retrying",
+ "err.profileDialog": "MO2 profile manager is unavailable or another modal dialog is open",
+ "err.profileDialogTimeout": "MO2 profile rename dialog did not complete within %(sec).0f s"
 }

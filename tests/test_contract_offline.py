@@ -54,10 +54,10 @@ GET_ROUTES = ['/ping', '/api', '/mods', '/mod', '/analyze', '/profiles', '/plugi
               '/origins', '/resolve', '/dirs', '/procs', '/windows', '/updates']
 POST_ROUTES = ['/refresh', '/install', '/toggle', '/plugins/state', '/plugins/order',
                '/vfsexport', '/run', '/window', '/mods/priority', '/mods/rename',
-               '/mods/remove']
-# Nine routes that must refuse while MO2 is busy (README, "While the game is running")
+               '/mods/remove', '/profiles/rename']
+# Ten routes that must refuse while MO2 is busy (README, "While the game is running")
 MUTATING = ['/refresh', '/install', '/toggle', '/run', '/plugins/state', '/plugins/order',
-            '/mods/priority', '/mods/rename', '/mods/remove']
+            '/mods/priority', '/mods/rename', '/mods/remove', '/profiles/rename']
 
 # The key sets of the replies - from the return statements in services.py. Compared sorted.
 PING_KEYS = sorted(['busy', 'ok', 'profile', 'game', 'mo2Version', 'modsPath', 'overwrite',
@@ -101,6 +101,10 @@ def make():
                             docs_path='README.md', note=log.append)
     svc.game_exe = 'NoSuchProcess.exe'.lower()
     svc._self_hwnd = 0
+    # Replace the native Qt adapter, not IOrganizer: MO2's API has no rename method.
+    def rename_profile(old, new, timeout, poll_ms):
+        os.rename(fx.path('profiles', old), fx.path('profiles', new))
+    svc.profileops.rename_native = rename_profile
     get, post = routes.build(svc)
     return fx, svc, get, post, log
 
@@ -789,12 +793,13 @@ BODIES = {
     '/mods/priority': dict({'mod': 'Alpha Mod', 'priority': 2}, **KEY),
     '/mods/rename': dict({'mod': 'Alpha Mod', 'newName': 'Alpha Renamed'}, **KEY),
     '/mods/remove': dict({'mod': 'Alpha Mod'}, **KEY),
+    '/profiles/rename': dict({'profile': 'Second', 'newName': 'Renamed'}, **KEY),
 }
 OPS = {'/refresh': 'op.refresh', '/install': 'op.install', '/toggle': 'op.toggle',
        '/run': 'op.run', '/plugins/state': 'op.pluginState', '/plugins/order': 'op.pluginOrder',
        '/mods/priority': 'op.priority', '/mods/rename': 'op.rename',
-       '/mods/remove': 'op.remove'}
-r.case(T('contract.busyAllNineListed'), sorted(set(MUTATING) - set(post)), [])
+       '/mods/remove': 'op.remove', '/profiles/rename': 'op.profileRename'}
+r.case(T('contract.busyAllWritesListed'), sorted(set(MUTATING) - set(post)), [])
 why_expected = i18n.t('busy.whyUnknown', run=', '.join(sorted(FOREIGN_RUN)))
 for route in MUTATING:
     res = post[route](BODIES[route])
@@ -1101,6 +1106,80 @@ r.case(T('contract.pageInstalledDateInReply'), mates['installed']['pageTime'],
        fake_mo2.T0 + 30 * fake_mo2.DAY)
 os.unlink(newest_arc)
 
+# ================================================================ profile rename
+r.head(T('contract.hProfileRename'))
+fx, svc, get, post, log = make()
+rename = post['/profiles/rename']
+old_path, new_path = fx.path('profiles', 'Second'), fx.path('profiles', 'Новый профиль')
+os.makedirs(os.path.join(old_path, 'saves'))
+profile_files = {'plugins.txt': b'*Alpha.esp\r\n', 'modlist.txt': b'+Alpha Mod\r\n',
+                 'settings.ini': b'[General]\r\nLocalSaves=true\r\n',
+                 'saves/probe.ess': b'\x00SAVE\xff', 'saves/probe.skse': b'SKSE\x00'}
+for name, data in profile_files.items():
+    with open(os.path.join(old_path, name), 'wb') as f:
+        f.write(data)
+active_files = {n: fx.read_bytes('profiles', 'Claude', n) for n in ('modlist.txt', 'plugins.txt')}
+calls = []
+def native(old, new, timeout, poll_ms):
+    calls.append((old, new))
+    os.rename(fx.path('profiles', old), fx.path('profiles', new))
+svc.profileops.rename_native = native
+request = {'profile': 'Second', 'newName': 'Новый профиль'}
+res = rename(request)
+r.case(T('contract.profileDanger'), (res['applied'], res['reason'], res['op']),
+       (False, 'danger', 'profileRename'))
+r.case(T('contract.profileRefusalPaths'), (res['fromPath'], res['toPath']), (old_path, new_path))
+r.case(T('contract.profileNativeUntouched'), calls, [])
+res = rename(dict(request, **KEY))
+r.case(T('contract.profileApplied'), (res['applied'], res['op'], res['how']),
+       (True, 'profileRename', 'mo2ProfileDialog'))
+r.case(T('contract.profileMove'), (os.path.isdir(old_path), os.path.isdir(new_path)), (False, True))
+r.case(T('contract.profileListUpdated'), get['/profiles']({})['profiles'], ['Claude', 'Новый профиль'])
+r.case(T('contract.profileCurrentKept'), (res['current'], get['/ping']({})['profile']), ('Claude', 'Claude'))
+for name, data in profile_files.items():
+    with open(os.path.join(new_path, name), 'rb') as f:
+        r.case(T('contract.profileFileKept', name=name), f.read(), data)
+for name, data in active_files.items():
+    r.case(T('contract.profileActiveFileKept', name=name), fx.read_bytes('profiles', 'Claude', name), data)
+r.case(T('contract.profileUndo'), res['undo'],
+       {'route': '/profiles/rename', 'body': {'profile': 'Новый профиль', 'newName': 'Second'}})
+res = rename(dict(res['undo']['body'], **KEY))
+r.case(T('contract.profileRestored'), (res['applied'], get['/profiles']({})['profiles']), (True, ['Claude', 'Second']))
+count = len(calls)
+res = rename(dict({'profile': 'Claude', 'newName': 'Active Renamed'}, **KEY))
+r.case(T('contract.profileActiveRefused'), (res['applied'], res['reason'], len(calls)), (False, 'activeProfile', count))
+res = rename(dict({'profile': 'Second', 'newName': 'Second'}, **KEY))
+r.case(T('contract.profileNoop'), (res['applied'], res['reason'], len(calls)), (False, 'unchanged', count))
+for target in ('Claude', 'claude', 'second'):
+    r.case(T('contract.profileCollision', name=target),
+           is_clean_error(raised(rename, dict({'profile': 'Second', 'newName': target}, **KEY)),
+                          'err.profileExists', profile=target), True)
+with open(fx.path('profiles', 'Taken File'), 'wb') as f:
+    f.write(b'leave me')
+r.case(T('contract.profileFileCollision'),
+       is_clean_error(raised(rename, dict({'profile': 'Second', 'newName': 'Taken File'}, **KEY)),
+                      'err.profileExists', profile='Taken File'), True)
+r.case(T('contract.profileMissing'),
+       is_clean_error(raised(rename, dict({'profile': 'Missing', 'newName': 'New'}, **KEY)),
+                      'err.noSuchProfile', profile='Missing'), True)
+for invalid in ('../escape', '..', 'a/b', 'a\\b', 'C:drive', 'a:b', 'a*', 'a?', 'a<', 'a>',
+                'a|', 'a"', 'trailing.', ' leading', 'trailing ', 'CON', 'COM1.txt', 'nul',
+                'LPT9', 'bad\x00name', 'bad\nname', 123, ['name']):
+    r.case(T('contract.profileInvalid', name=repr(invalid)),
+           is_clean_error(raised(rename, dict({'profile': 'Second', 'newName': invalid}, **KEY)),
+                          'err.profileName', name=invalid), True)
+for body in ({}, {'profile': 'Second'}, {'newName': 'New'}):
+    r.case(T('contract.profileRequired'),
+           is_clean_error(raised(rename, body), 'err.needProfileRename'), True)
+r.case(T('contract.profileInvalidUntouched'), len(calls), count)
+def do_nothing(*args):
+    pass
+svc.profileops.rename_native = do_nothing
+r.case(T('contract.profileVerifyNativeFailure'),
+       isinstance(raised(rename, dict({'profile': 'Second', 'newName': 'Not Renamed'}, **KEY)), RuntimeError), True)
+r.case(T('contract.profileFailureSourceKept'), os.path.isdir(old_path), True)
+fx.cleanup()
+
 # ================================================================ the card signature
 r.head(T('contract.hStamp'))
 fx, svc, get, post, log = make()
@@ -1113,6 +1192,7 @@ SIGNED = {
     '/mods/priority': (dict({'mod': 'Alpha Mod', 'priority': 1}, **KEY), 'priority', True),
     '/mods/rename': (dict({'mod': 'Gamma Mod', 'newName': 'Gamma Renamed'}, **KEY), 'rename', True),
     '/mods/remove': (dict({'mod': 'Delta Mod'}, **KEY), 'remove', True),
+    '/profiles/rename': (dict({'profile': 'Second', 'newName': 'Renamed'}, **KEY), 'profileRename', True),
 }
 for route, (body, op, applied) in SIGNED.items():
     res = post[route](body)
@@ -1120,7 +1200,8 @@ for route, (body, op, applied) in SIGNED.items():
 for route, body in (('/mods/priority', {'mod': 'Alpha Mod', 'priority': 1}),
                     ('/mods/rename', {'mod': 'Alpha Mod', 'newName': 'X'}),
                     ('/mods/remove', {'mod': 'Alpha Mod'}),
-                    ('/run', {'binary': 'FakeTool'})):
+                    ('/run', {'binary': 'FakeTool'}),
+                    ('/profiles/rename', {'profile': 'Renamed', 'newName': 'Second'})):
     res = post[route](body)
     r.case(T('contract.dangerRefusalStamp', route=route),
            (res.get('reason'), res.get('applied'), res.get('op')),
