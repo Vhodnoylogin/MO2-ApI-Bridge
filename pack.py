@@ -18,7 +18,7 @@ and `plugin_mo2aibridge` would yield a package MO2 does not look for.
 
     python pack.py [where]
 
-With no argument the archive lands in `dist\` next to the module. There are no machine-specific
+With no argument the archive lands in `dist\` in the repository root. There are no machine-specific
 paths here: the root is derived from this file's location, and the version and name come from
 the plugin itself.
 """
@@ -40,7 +40,7 @@ SHIP_DIRS = ('locale',)
 
 def find_package():
     """The plugin's own folder - the neighbour holding __init__.py. We search rather than
-    assemble the name: the module root and the package share a name only by convention, and
+    assemble the name: the repository root and the package have separate names, and
     the checks must not depend on conventions."""
     for name in sorted(os.listdir(ROOT)):
         if os.path.isfile(os.path.join(ROOT, name, '__init__.py')):

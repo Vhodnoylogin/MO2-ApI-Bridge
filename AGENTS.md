@@ -1,7 +1,9 @@
-# MO2 AI Bridge
+# MO2 ApI Bridge
 
-Repository: https://github.com/Vhodnoylogin/mo2aibridge
+Repository: https://github.com/Vhodnoylogin/MO2-ApI-Bridge
 Default branch: main
-Module directory: mo2aibridge/
+Plugin package: plugin_mo2aibridge/
+Build script: pack.py
+Checks: tests/
 
-Read the module README and its CLAUDE.md if present before editing. Preserve the module directory layout used by build and deployment scripts. Other mods live in separate repositories; do not copy their implementation here. Speech Broker dependencies are consumed through their installed SDKs. Treat Skyrim-Mods branches as legacy sources. Before committing or pushing, check git remote -v and identify this repository explicitly. Do not commit credentials, build outputs, external model weights, or local caches.
+Read README.md and CLAUDE.md before editing. This repository contains one plugin; its documentation, build script, and checks live directly in the repository root. Keep the plugin package separate because only its files are installed into MO2. Treat Skyrim-Mods as historical provenance. Before committing or pushing, check git remote -v and identify this repository explicitly. Do not commit credentials, build outputs, external model weights, or local caches.

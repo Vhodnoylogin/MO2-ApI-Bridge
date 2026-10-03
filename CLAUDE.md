@@ -1,6 +1,6 @@
 # MO2 ApI Bridge — manifest for an AI assistant
 
-You are looking at a self-contained module. This file exists so that any chat handed this
+You are looking at the self-contained MO2 ApI Bridge repository. This file exists so that any chat handed this
 folder — with no other context, no project history and no conversation to fall back on —
 can work on it correctly from the first minute.
 
@@ -41,9 +41,10 @@ open it again — slow, lossy, and blind to the virtual `Data`.
 ## 2. Layout
 
 ```
-mo2aibridge/                  the module (this folder)
+MO2-ApI-Bridge/              repository root
+├── AGENTS.md                repository instructions for Codex
 ├── CLAUDE.md                 this file
-├── README.md                 module readme: layout, install, packaging
+├── README.md                 repository readme: layout, install, packaging
 ├── pack.py                   builds the release archive
 ├── plugin_mo2aibridge/       THE PLUGIN — only this ships to MO2
 │   ├── __init__.py           factory, PLUGIN_ID, __version__
@@ -70,13 +71,9 @@ mo2aibridge/                  the module (this folder)
 └── tests/                    CHECKS — never ship to MO2
 ```
 
-**Three names, three levels, deliberately different** so they do not read as one nesting:
-
-| Name | What it is | Where it exists |
-|---|---|---|
-| `wt-mo2aibridge/` | a branch checked out on disk | disk only; git does not know this name |
-| `mo2aibridge/` | the module folder | in the branch |
-| `plugin_mo2aibridge/` | the plugin package | in the module |
+The repository root contains the documentation, `pack.py`, `tests/`, and the
+`plugin_mo2aibridge/` source package. There is no enclosing module directory.
+Only the plugin package is installed into MO2.
 
 MO2 takes the **package name from the folder name** in its `plugins\`, so the folder there
 must be called `mo2aibridge` even though the repository calls it `plugin_mo2aibridge`. In

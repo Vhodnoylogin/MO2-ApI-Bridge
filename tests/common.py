@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Shared ground for the checks: where the plugin is, how to reach it, how to report.
 
-Not one machine-specific path lives here. The module root is derived from this file's
+Not one machine-specific path lives here. The repository root is derived from this file's
 location, the plugin folder is found beside it by the presence of __init__.py, the token
 file name comes from that folder's own name, and the port comes from the environment. So
 the checks travel with the mod and work for whoever cloned it.
@@ -24,8 +24,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def _find_package():
     """The plugin's own folder - the neighbour of tests, the one holding __init__.py.
 
-    We search rather than assemble the name: the module root and the package share a name
-    only by convention, and the checks must not depend on conventions."""
+    We search rather than assemble the name: the repository root and the package have separate names, and the checks must not depend on conventions."""
     for name in sorted(os.listdir(ROOT)):
         if os.path.isfile(os.path.join(ROOT, name, '__init__.py')):
             return os.path.join(ROOT, name)
