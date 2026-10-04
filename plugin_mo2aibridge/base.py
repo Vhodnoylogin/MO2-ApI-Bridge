@@ -7,7 +7,7 @@ main thread, somewhere to record what happened, the settings. That is `Context`.
 is the base of an area class: it holds the context and the busy lock, and it knows one
 shared procedure for any change.
 
-The procedure, and it is the same one for all ten write routes:
+The procedure, and it is the same one for all setup-write routes:
 
     refuse if MO2 is busy  ->  validate the input  ->  do the work  ->  sign the reply
 
@@ -16,8 +16,10 @@ Signing means two keys added to every reply about a change: `op` (which operatio
 are left alone: a reply shape may only gain keys, or other callers break silently.
 """
 import os
+import hashlib
+import uuid
 
-from . import i18n
+from . import i18n, operations
 
 DANGER_KEY = 'iUnderstandTheRisk'
 DANGER_VALUE = 'yes-I-read-the-docs-and-accept-irreversible-changes'
@@ -111,6 +113,23 @@ class Context(object):
         self.docs = docs
         self.note = note
         self.cfg = cfg
+        self.runner = getattr(run_main, '__self__', None)
+        self.boot_id = getattr(self.runner, 'boot_id', None) or uuid.uuid4().hex
+        profile_path = safe(lambda: organizer.profile().absolutePath(), '')
+        self.profiles_root = os.path.dirname(os.path.abspath(profile_path)) if profile_path else ''
+        self.instance_id = hashlib.sha256(os.path.normcase(os.path.realpath(
+            self.profiles_root)).encode('utf-8')).hexdigest()
+        self.operations = operations.Operations(self.boot_id, cfg.get('operationLimit'),
+                                                cfg.get('operationWaitSec'))
+
+    def expected(self, body):
+        """Called on the Qt thread immediately before a targeted mutation."""
+        for key, actual in (('expectedServerBootId', self.boot_id),
+                            ('expectedInstance', self.instance_id),
+                            ('expectedProfile', self.o.profile().name())):
+            value = body.get(key)
+            if value is not None and (not isinstance(value, str) or value != actual):
+                raise ValueError(i18n.t('err.expectedMismatch', field=key, actual=actual))
 
 
 class Domain(object):

@@ -40,6 +40,7 @@ MO2-ApI-Bridge/             корень репозитория
 │   ├── launch.py         запуск программ и окна
 │   ├── updates.py        обновления по живому Nexus: запрос и квота
 │   ├── updatepolicy.py   одни правила обновлений: ни сети, ни MO2, ни диска
+│   ├── operations.py      boot-scoped outcomes and retry deduplication
 │   ├── runtime.py        главный поток Qt, сокеты, JSON, токен
 │   ├── winapi.py         окна и процессы Windows
 │   ├── config.py         настраиваемые значения
@@ -61,8 +62,8 @@ MO2-ApI-Bridge/             корень репозитория
     ├── test_i18n.py               без MO2: каталоги согласованы и все ключи используются
     ├── test_policy.py             без MO2: правила обновлений на таблице страниц
     ├── test_transport_offline.py  без MO2: сокет, токен, коды ответов
-    ├── test_contract_offline.py   без MO2: контракт всех 26 маршрутов на подставном mobase
-    ├── test_routes.py             приёмка: все 26 маршрутов
+    ├── test_contract_offline.py   без MO2: контракт всех 32 маршрута на подставном mobase
+    ├── test_routes.py             приёмка: все 32 маршрута
     ├── test_plugins_txt.py        приёмка: состояние плагина доезжает до файла
     ├── test_install_modes.py      приёмка: установка, слияние и замена на песочнице
     ├── test_busy_live.py          приёмка: замок на запущенной программе
@@ -143,3 +144,10 @@ python tests/run.py
 
 Репозиторий: [MO2 ApI Bridge](https://github.com/Vhodnoylogin/MO2-ApI-Bridge), основная ветка `main`.
 Полная исходная история `Skyrim-Mods/mo2aibridge` сохранена в этом репозитории.
+
+Optional standalone PyQt6 regression checks (no installed MO2 is accessed):
+
+```
+python tests/test_profileui.py
+python tests/test_protocol.py
+```

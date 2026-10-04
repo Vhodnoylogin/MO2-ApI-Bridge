@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """The contract of the routes, with no MO2 running.
 
-Why. The bridge remembers nothing between calls, so its whole contract is the keys of a reply:
+Why. The caller owns reversal policy, so the change contract includes the keys of a reply:
 what was there before a change, what reverses it, why it was refused. The live suite
 test_routes.py checks that against a real MO2, but the manager is raised rarely, and a rework of
 services.py between two such runs can quietly rename a field - which comes to light in somebody
@@ -51,13 +51,15 @@ KEY = {'iUnderstandTheRisk': 'yes-I-read-the-docs-and-accept-irreversible-change
 FOREIGN_RUN = {'C:' + chr(92) + 'x' + chr(92) + 'foo.exe': {'n': 1, 'mine': False}}
 
 GET_ROUTES = ['/ping', '/api', '/mods', '/mod', '/analyze', '/profiles', '/plugins', '/vfs',
-              '/origins', '/resolve', '/dirs', '/procs', '/windows', '/updates']
+              '/origins', '/resolve', '/dirs', '/procs', '/windows', '/updates',
+              '/session', '/operations', '/profiles/capabilities']
 POST_ROUTES = ['/refresh', '/install', '/toggle', '/plugins/state', '/plugins/order',
                '/vfsexport', '/run', '/window', '/mods/priority', '/mods/rename',
-               '/mods/remove', '/profiles/rename']
-# Ten routes that must refuse while MO2 is busy (README, "While the game is running")
+               '/mods/remove', '/profiles/rename', '/profiles/clone', '/profiles/select', '/profiles/local']
+# Routes that must refuse while MO2 is busy (README, "While the game is running")
 MUTATING = ['/refresh', '/install', '/toggle', '/run', '/plugins/state', '/plugins/order',
-            '/mods/priority', '/mods/rename', '/mods/remove', '/profiles/rename']
+            '/mods/priority', '/mods/rename', '/mods/remove', '/profiles/rename',
+            '/profiles/clone', '/profiles/select', '/profiles/local']
 
 # The key sets of the replies - from the return statements in services.py. Compared sorted.
 PING_KEYS = sorted(['busy', 'ok', 'profile', 'game', 'mo2Version', 'modsPath', 'overwrite',
@@ -794,11 +796,16 @@ BODIES = {
     '/mods/rename': dict({'mod': 'Alpha Mod', 'newName': 'Alpha Renamed'}, **KEY),
     '/mods/remove': dict({'mod': 'Alpha Mod'}, **KEY),
     '/profiles/rename': dict({'profile': 'Second', 'newName': 'Renamed'}, **KEY),
+    '/profiles/clone': dict({'profile': 'Second', 'newName': 'Clone'}, **KEY),
+    '/profiles/select': dict({'profile': 'Second'}, **KEY),
+    '/profiles/local': {'profile': 'Second', 'localSaves': False},
 }
 OPS = {'/refresh': 'op.refresh', '/install': 'op.install', '/toggle': 'op.toggle',
        '/run': 'op.run', '/plugins/state': 'op.pluginState', '/plugins/order': 'op.pluginOrder',
        '/mods/priority': 'op.priority', '/mods/rename': 'op.rename',
-       '/mods/remove': 'op.remove', '/profiles/rename': 'op.profileRename'}
+       '/mods/remove': 'op.remove', '/profiles/rename': 'op.profileRename',
+       '/profiles/clone': 'op.profileClone', '/profiles/select': 'op.profileSelect',
+       '/profiles/local': 'op.profileLocalFlags'}
 r.case(T('contract.busyAllWritesListed'), sorted(set(MUTATING) - set(post)), [])
 why_expected = i18n.t('busy.whyUnknown', run=', '.join(sorted(FOREIGN_RUN)))
 for route in MUTATING:
@@ -854,11 +861,11 @@ r.case(T('contract.runNeedsBinary'),
        is_clean_error(raised(post['/run'], {}), 'err.needBinary'), True)
 res = post['/run'](dict({'binary': 'FakeTool', 'args': ['-x']}, **KEY))
 r.case(T('contract.runKeys'), has(res, ['args', 'binary', 'key', 'pid']), ['args', 'binary', 'key', 'pid'])
-r.case(T('contract.runKeyP1'), res['key'], 'p1')
+r.case(T('contract.runKeyP1'), res['key'], svc.ctx.boot_id + ':p1')
 r.case(T('contract.runPidZero'), res['pid'], 0)
 r.case(T('contract.runBinaryAndArgs'), (res['binary'], res['args']), ('FakeTool', ['-x']))
 r.case(T('contract.runMo2AskedExactly'), fx.organizer.started, [('FakeTool', ['-x'], '')])
-r.case(T('contract.runSecondIsP2'), post['/run'](dict({'binary': 'FakeTool'}, **KEY))['key'], 'p2')
+r.case(T('contract.runSecondIsP2'), post['/run'](dict({'binary': 'FakeTool'}, **KEY))['key'], svc.ctx.boot_id + ':p2')
 res = get['/procs']({})
 r.case(T('contract.runProcsSeesBoth'), (len(res['procs']), res['running']), (2, 0))
 r.case(T('contract.runProcsEntryKeys'), has(res['procs'][0], ['alive', 'exit', 'key', 'pid', 'what']), ['alive', 'exit', 'key', 'pid', 'what'])

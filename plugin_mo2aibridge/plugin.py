@@ -255,7 +255,7 @@ class MO2ApIBridge(mobase.IPluginTool):
             cfg = config(reload=True)
             wanted = int(self._setting('port', cfg.get('port')) or cfg.get('port'))
             token = runtime.new_token()
-            self._runner = runtime.MainThreadRunner()
+            self._runner = runtime.MainThreadRunner(limit=cfg.get('mainThreadJobLimit'))
             svc = self._svc = Services(self._organizer, self._runner.call, DOCS,
                                        note=log, cfg=cfg)
             svc.prime()
@@ -264,7 +264,7 @@ class MO2ApIBridge(mobase.IPluginTool):
             # The server comes up BEFORE the token is written: if the bind fails, no file is
             # left behind, and no client gets a key to a bridge that does not exist.
             self._server, self._port = runtime.serve(
-                wanted, runtime.make_handler(token, get, post),
+                wanted, runtime.make_handler(token, get, post, svc.ctx.operations),
                 tries=int(cfg.get('portTries')))
             self._token_file = token_file(self._port, wanted)
             with open(self._token_file, 'w', encoding='utf-8') as fh:
@@ -307,6 +307,10 @@ class MO2ApIBridge(mobase.IPluginTool):
         failed start - so half a raised bridge is not left hanging. Each step separately and
         silently: shutting down has to run to the end whatever the previous step did.
         """
+        if self._runner is not None:
+            self._runner.close()
+        if self._svc is not None:
+            self._svc.ctx.operations.close()
         srv, self._server = self._server, None
         if srv is not None:
             try:

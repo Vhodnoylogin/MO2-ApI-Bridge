@@ -7,6 +7,7 @@ behind the irreversible key as well. The window work exists for WinAPI tools (th
 and TexGen dialogs): closing them through the bridge is what releases the busy state.
 """
 import os
+import threading
 
 from . import i18n, winapi
 from .base import Domain, flag, one, safe
@@ -19,6 +20,8 @@ class Launcher(Domain):
         # What the bridge launched this session: key -> (handle, pid, name)
         self.procs = {}
         self.seq = 0
+        self.lock = threading.RLock()
+        self.identities, self.game_children = {}, {}
 
     def run(self, body):
         """Launch a tool inside the VFS.
@@ -50,18 +53,33 @@ class Launcher(Domain):
         def start():
             # The flag lives inside a single main-thread job: MO2 calls onAboutToRun
             # synchronously from startApplication, and jobs run one at a time.
+            self.ctx.expected(body)
+            stop = self.guard.refusal('op.run')
+            if stop:
+                return self._refusal(stop, 'run', 'busy')
             with self.guard.starting():
                 return self.o.startApplication(binary, args, cwd)
         handle = self.run_main(start)
-        self.seq += 1
-        key = 'p%d' % self.seq
+        if isinstance(handle, dict):
+            return handle
         pid = winapi.process_id(handle) if handle else 0
-        self.procs[key] = (handle, pid, os.path.basename(str(binary)))
+        identity = winapi.process_identity(handle) if handle else None
+        if identity is not None:
+            executable = os.path.basename(identity['path']).casefold()
+            identity['role'] = ('loader' if executable.startswith('skse') else
+                                'game' if executable == self.guard.game_binary() else 'tool')
+        with self.lock:
+            self.seq += 1
+            key = '%s:p%d' % (self.ctx.boot_id, self.seq)
+            self.procs[key] = (handle, pid, os.path.basename(str(binary)))
+            self.identities[key] = identity
         # `started` says whether MO2 handed back a handle at all: given a full path instead
         # of a registered name, startApplication silently returns nothing, and that used to
         # look exactly like a successful launch.
         res = {'key': key, 'pid': pid, 'binary': binary, 'args': args,
-               'started': bool(handle)}
+               'started': bool(handle), 'serverBootId': self.ctx.boot_id,
+               'process': identity, 'gameChildren': [],
+               'gameAlive': winapi.identity_alive(identity) if identity and identity['role'] == 'game' else None}
         if wait and handle:
             # We wait ourselves rather than through waitForApplication: that one never
             # releases the GIL and stalls the whole interpreter along with the server - the
@@ -81,15 +99,33 @@ class Launcher(Domain):
         asked of the system on every call.
         """
         out = []
-        for k, (handle, pid, what) in self.procs.items():
+        with self.lock:
+            records = list(self.procs.items())
+        for k, (handle, pid, what) in records:
             code = (safe(lambda h=handle: winapi.wait_process(h, 0), 0)
                     if handle else 0)
+            identity = winapi.process_identity(handle) if handle else None
+            if identity is not None:
+                identity['role'] = (self.identities.get(k) or {}).get('role', 'tool')
+                self.identities[k] = identity
+            else:
+                identity = self.identities.get(k)
+            children = winapi.game_descendants(identity, self.guard.game_binary())
+            with self.lock:
+                known = self.game_children.setdefault(k, {})
+                for child in children:
+                    known[(child['pid'], child['creationTime'])] = child
+                game = [dict(child, alive=winapi.identity_alive(child))
+                        for child in known.values()]
             out.append({'key': k, 'pid': pid, 'what': what,
-                        'alive': code is None, 'exit': code})
+                        'alive': code is None, 'exit': code, 'process': identity,
+                        'gameChildren': game,
+                        'gameAlive': winapi.identity_alive(identity) if identity and identity.get('role') == 'game'
+                        else any(c['alive'] for c in game) if game else None})
         return {'procs': out,
                 'running': sum(1 for x in out if x['alive']),
                 'launchedByMO2': sorted(self.guard.launched),
-                'busy': self.guard.busy()}
+                'busy': self.guard.busy(), 'serverBootId': self.ctx.boot_id}
 
     def windows(self, q):
         pid = int(one(q, 'pid', '0') or 0)

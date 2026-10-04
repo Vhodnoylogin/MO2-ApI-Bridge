@@ -30,7 +30,7 @@ MO2-ApI-Bridge/             repository root
 │   ├── __init__.py       the factory; mobase is imported lazily
 │   ├── plugin.py         the MO2 plugin life cycle
 │   ├── routes.py         the "path -> operation" table
-│   ├── services.py       the facade of the domain layer: the same 26 methods
+│   ├── services.py       the facade of the domain layer: the same 32 methods
 │   ├── base.py           the domain context and the shared recipe for a change
 │   ├── busy.py           whether MO2 is busy
 │   ├── reading.py        reading state and the virtual Data
@@ -42,6 +42,7 @@ MO2-ApI-Bridge/             repository root
 │   ├── launch.py         starting programs and driving windows
 │   ├── updates.py        updates against the live Nexus: request and allowance
 │   ├── updatepolicy.py   the update rules alone: no network, no MO2, no disk
+│   ├── operations.py      boot-scoped outcomes and retry deduplication
 │   ├── runtime.py        the Qt main thread, sockets, JSON, the token
 │   ├── winapi.py         Windows windows and processes
 │   ├── config.py         the configurable values
@@ -63,8 +64,8 @@ MO2-ApI-Bridge/             repository root
     ├── test_i18n.py               no MO2: the catalogues agree and every key is used
     ├── test_policy.py             no MO2: the update rules against a table of pages
     ├── test_transport_offline.py  no MO2: the socket, the token, the reply codes
-    ├── test_contract_offline.py   no MO2: all 26 routes against a stand-in mobase
-    ├── test_routes.py             acceptance: all 26 routes
+    ├── test_contract_offline.py   no MO2: all 32 routes against a stand-in mobase
+    ├── test_routes.py             acceptance: all 32 routes
     ├── test_plugins_txt.py        acceptance: plugin state reaches the file
     ├── test_install_modes.py      acceptance: install, merge and replace in a sandbox
     ├── test_busy_live.py          acceptance: the lock against a running program
@@ -149,3 +150,10 @@ the package.
 
 Repository: [MO2 ApI Bridge](https://github.com/Vhodnoylogin/MO2-ApI-Bridge), default branch `main`.
 The complete original `Skyrim-Mods/mo2aibridge` history is preserved in this repository.
+
+Optional standalone PyQt6 regression checks (no installed MO2 is accessed):
+
+```
+python tests/test_profileui.py
+python tests/test_protocol.py
+```

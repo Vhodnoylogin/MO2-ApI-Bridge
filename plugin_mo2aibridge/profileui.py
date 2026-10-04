@@ -20,6 +20,18 @@ def owned_by(widget, owner):
 
 
 def rename(old, new, timeout, poll_ms):
+    return operate('rename', old, new, timeout, poll_ms)
+
+
+def clone(old, new, timeout, poll_ms):
+    return operate('clone', old, new, timeout, poll_ms)
+
+
+def select(name, timeout, poll_ms):
+    return operate('select', name, None, timeout, poll_ms)
+
+
+def operate(action, old, new, timeout, poll_ms):
     from PyQt6.QtCore import QTimer, Qt
     from PyQt6.QtWidgets import QApplication, QComboBox, QListWidget, QPushButton, QInputDialog
 
@@ -69,7 +81,9 @@ def rename(old, new, timeout, poll_ms):
                         and owned_by(modal, box.window())):
                     state['dialog'] = modal
                 listing = modal.findChild(QListWidget, 'profilesList')
-                button = modal.findChild(QPushButton, 'renameButton')
+                button = modal.findChild(QPushButton, {'rename': 'renameButton',
+                                                      'clone': 'copyProfileButton',
+                                                      'select': 'select'}[action])
                 if (state['dialog'] is None or listing is None or button is None
                         or not owned_by(modal, box.window())):
                     raise RuntimeError(i18n.t('err.profileDialog'))
@@ -80,6 +94,10 @@ def rename(old, new, timeout, poll_ms):
                 listing.setCurrentItem(items[0])
                 if not button.isEnabled():
                     raise RuntimeError(i18n.t('err.profileDialog'))
+                if action == 'select':
+                    state['phase'], state['done'] = 'finish', True
+                    button.click()
+                    return
                 state['phase'] = 'input'
                 QTimer.singleShot(poll_ms, step)
                 button.click()

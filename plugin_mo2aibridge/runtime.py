@@ -10,12 +10,45 @@ import secrets
 import socket
 import threading
 import traceback
+import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
-from . import i18n
+from . import i18n, operations
+
+
+class MainThreadJob:
+    def __init__(self, identifier, fn, timeout):
+        self.identifier, self.fn = identifier, fn
+        self.deadline = time.monotonic() + max(0, float(timeout))
+        self.lock, self.done = threading.RLock(), threading.Event()
+        self.state, self.value, self.error = 'queued', None, None
+
+    def cancel_queued(self):
+        with self.lock:
+            if self.state != 'queued':
+                return False
+            self.state = 'cancelled'
+            self.fn = None
+            self.done.set()
+            return True
+
+    def snapshot(self, include_result=True):
+        with self.lock:
+            out = {'id': self.identifier, 'state': self.state,
+                   'terminal': self.done.is_set()}
+            if self.error is not None:
+                out['error'] = str(self.error)
+            elif include_result and self.state == 'succeeded':
+                try:
+                    json.dumps(self.value)
+                    out['result'] = self.value
+                except (TypeError, ValueError):
+                    out['resultAvailable'] = False
+            return out
 
 
 class MainThreadRunner(QObject):
@@ -27,41 +60,95 @@ class MainThreadRunner(QObject):
     """
     _fire = pyqtSignal(object)
 
-    def __init__(self):
+    def __init__(self, limit=4096):
         super().__init__()
+        self.boot_id = uuid.uuid4().hex
+        self.jobs, self.lock, self.limit, self.closed = {}, threading.RLock(), int(limit), False
         self._fire.connect(self._run)
 
     def _run(self, job):
-        fn, box, done = job
+        with job.lock:
+            if job.state != 'queued':
+                return
+            if self.closed or time.monotonic() >= job.deadline:
+                job.cancel_queued()
+                return
+            job.state = 'running'
+            fn, job.fn = job.fn, None
         try:
-            box.append(('ok', fn()))
+            value = fn()
         except Exception as exc:
             # The exception is carried over whole, not as a string. This used to produce a
             # RuntimeError("ValueError: mod is required"), and the transport lost the one
             # marker that tells a mistake in the request from a broken bridge.
-            box.append(('err', exc))
-        done.set()
+            with job.lock:
+                job.error, job.state = exc, 'failed'
+        else:
+            with job.lock:
+                job.value, job.state = value, 'succeeded'
+        finally:
+            job.done.set()
 
     def call(self, fn, timeout=120.0):
+        if self.closed:
+            raise RuntimeError(i18n.t('err.runnerClosed'))
         # From the main thread the job runs in place. Otherwise the thread would queue a job
         # for itself and wait for itself to run it - a deadlock until the timeout.
         if QThread.currentThread() is self.thread():
             return fn()
-        box, done = [], threading.Event()
-        self._fire.emit((fn, box, done))
-        if not done.wait(timeout):
-            raise RuntimeError(i18n.t('err.mainThread', sec=timeout))
-        kind, val = box[0]
-        if kind == 'err':
-            raise val
-        return val
+        with self.lock:
+            if self.closed:
+                raise RuntimeError(i18n.t('err.runnerClosed'))
+            # Completed native jobs may be discarded; POST outcomes/retry keys live
+            # independently in Operations and are never evicted during a boot.
+            if len(self.jobs) >= self.limit:
+                for identifier, prior in list(self.jobs.items()):
+                    if prior.done.is_set():
+                        del self.jobs[identifier]
+                        break
+                else:
+                    raise RuntimeError(i18n.t('err.operationCapacity'))
+            job = MainThreadJob(self.boot_id + ':job:' + uuid.uuid4().hex, fn, timeout)
+            self.jobs[job.identifier] = job
+        record = operations.active()
+        if record is not None:
+            with record.lock:
+                record.job = job
+        self._fire.emit(job)
+        if not job.done.wait(max(0, float(timeout))):
+            if job.cancel_queued():
+                raise operations.QueueExpired(job)
+            if record is None:
+                raise operations.JobPending(job)
+            # The HTTP operation has its own bounded wait and pollable outcome.
+            # Keep this continuation alive so native completion can finish the domain
+            # operation (launch bookkeeping, verification and reversal data).
+            job.done.wait()
+        if job.state == 'cancelled':
+            raise operations.QueueExpired(job)
+        if job.error is not None:
+            raise job.error
+        return job.value
+
+    def status(self, identifier):
+        with self.lock:
+            job = self.jobs.get(identifier)
+        if job is None:
+            raise ValueError(i18n.t('err.noOperation', id=identifier))
+        return job.snapshot()
+
+    def close(self):
+        with self.lock:
+            self.closed = True
+            for job in self.jobs.values():
+                job.cancel_queued()
 
 
 def new_token():
     return secrets.token_hex(16)
 
 
-def make_handler(token, routes_get, routes_post):
+def make_handler(token, routes_get, routes_post, operation_store=None):
     """Build the HTTP handler on top of ready route tables."""
 
     class Handler(BaseHTTPRequestHandler):
@@ -97,7 +184,16 @@ def make_handler(token, routes_get, routes_post):
                                         'get': sorted(routes_get),
                                         'post': sorted(routes_post)})
             try:
-                self._send(200, fn(arg))
+                if self.command == 'POST' and operation_store is not None:
+                    code, result = operation_store.invoke(u.path, arg, fn)
+                    self._send(code, result)
+                else:
+                    self._send(200, fn(arg))
+            except operations.QueueExpired as exc:
+                self._send(504, {'error': str(exc), 'code': 'queueExpired',
+                                 'job': exc.job.snapshot()})
+            except operations.JobPending as exc:
+                self._send(202, {'pending': True, 'job': exc.job.snapshot()})
             except ValueError as exc:
                 # A mistake in the request, not a broken bridge: a forgotten parameter, an
                 # unknown mode, an unknown mod, a bad boolean. Both used to come back as a

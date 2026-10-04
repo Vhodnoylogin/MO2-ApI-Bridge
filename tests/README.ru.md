@@ -21,8 +21,8 @@ python run.py
 | `test_i18n.py` | нет | что языки совпадают по ключам и подстановкам, все ключи используются, а `t()` держит позиционный `key` |
 | `test_policy.py` | нет | правила обновлений на таблице выдуманных страниц Nexus: решение и его причина по каждой, и что в правилах нет ни одного импорта сети, MO2 или диска |
 | `test_transport_offline.py` | нет | транспорт на настоящем сокете петли: занятый порт даёт отказ, кривой запрос — 400, а поломка моста — 500, без токена 403, и после остановки порт молчит |
-| `test_contract_offline.py` | нет | контракт всех 25 маршрутов на подставном `mobase` (`fake_mo2.py`): ключи ответов, оба замка, запись `plugins.txt`, установка на настоящей временной папке |
-| `test_routes.py` | да | все 25 маршрутов и оба замка |
+| `test_contract_offline.py` | нет | контракт всех 32 маршрутов на подставном `mobase` (`fake_mo2.py`): ключи ответов, оба замка, запись `plugins.txt`, установка на настоящей временной папке |
+| `test_routes.py` | да | все 32 маршрутов и оба замка |
 | `test_plugins_txt.py` | да | что состояние плагина доезжает до `plugins.txt` и переживает `/refresh` |
 | `test_install_modes.py` | да | установку, слияние и замену на песочнице |
 | `test_busy_live.py` | да | замок на настоящей запущенной программе |
@@ -91,3 +91,7 @@ Python схлопывает `CRLF` в `LF`, — и запись сменила �
 собирается взять.
 
 Дополнительная проверка настоящих циклов событий Qt: `python test_profileui.py`. Нужен отдельный PyQt6. Окна невидимы, профили временные, установленная MO2 не используется. Проверяются завершение вложенных окон, отмена, таймаут, отсутствие элементов интерфейса и сохранность чужого модального окна.
+
+Standalone PyQt6 protocol regression checks: `python tests/test_protocol.py`.
+Covers expired queue cancellation, started pending work, HTTP retries, boot/profile/instance identity,
+clone/select readback, shutdown and Windows process identity. No installed MO2 or game is accessed.

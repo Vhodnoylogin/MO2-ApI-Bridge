@@ -5,7 +5,6 @@
  "err.badMode": "mode: merge (overlay) or replace (wipe first), not %(mode)s",
  "err.badName": "the mod name must be a plain folder name, with no path separators and no colon: %(name)s",
  "err.createFailed": "createMod returned nothing - the name is taken or was refused",
- "err.mainThread": "MO2's main thread did not answer within %(sec).0f s",
  "err.modExists": "mod \"%(mod)s\" already exists. Nothing is written over it silently: pass mode - merge to overlay the selection, or replace to send the previous contents to the Recycle Bin first",
  "err.needBinary": "binary is required - a name REGISTERED in MO2, not a path",
  "err.needButton": "button caption required - refusing to click blindly",
@@ -36,5 +35,18 @@
  "err.activeProfile": "The active profile %(profile)s cannot be renamed. Select a different profile in MO2 first.",
  "err.profileRenameFailed": "MO2 did not complete renaming %(profile)s to %(newName)s; inspect /profiles before retrying",
  "err.profileDialog": "MO2 profile manager is unavailable or another modal dialog is open",
- "err.profileDialogTimeout": "MO2 profile rename dialog did not complete within %(sec).0f s"
+ "err.profileDialogTimeout": "MO2 profile rename dialog did not complete within %(sec).0f s",
+ "err.queueExpired": "Queued MO2 work expired before it started; it was cancelled.",
+ "err.jobPending": "MO2 work has already started; poll its outcome before retrying.",
+ "err.operationBody": "The operation body must be an object.",
+ "err.operationField": "Invalid operation field: %(field)s",
+ "err.bootMismatch": "The expected bridge boot does not match; reconcile the previous run before retrying.",
+ "err.expectedBoot": "Retry keys require expectedServerBootId from /session.",
+ "err.operationConflict": "This retry key was used with a different request.",
+ "err.operationCapacity": "The bridge operation registry is full or stopping; no new work was accepted.",
+ "err.noOperation": "Unknown or expired operation/job ID: %(id)s",
+ "err.runnerClosed": "The MO2 main-thread runner is stopping.",
+ "err.expectedMismatch": "Expected target mismatch: %(field)s; actual: %(actual)s",
+ "err.profileCapabilities": "MO2 2.5 Python exposes no safe public setter for local saves/settings and no supported Root Builder service. Remembered native deletion prompts must not be bypassed.",
+ "err.profileSelectFailed": "MO2 did not select profile %(profile)s; inspect /profiles."
 }

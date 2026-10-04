@@ -21,8 +21,8 @@ to be loud, not papered over.
 | `test_i18n.py` | no | that the languages agree on keys and substitutions, that every key is used, and that `t()` keeps `key` positional |
 | `test_policy.py` | no | the update rules against a table of made-up Nexus pages: the verdict and the reason for each, and that the rules import nothing of the network, MO2 or the disk |
 | `test_transport_offline.py` | no | the transport on a real loopback socket: a taken port refuses, a bad request is 400 and a broken bridge is 500, no token means 403, and the port falls silent after a stop |
-| `test_contract_offline.py` | no | the contract of all 25 routes against a stand-in `mobase` (`fake_mo2.py`): reply keys, both locks, writing `plugins.txt`, installing into a real temporary folder |
-| `test_routes.py` | yes | all 25 routes and both locks |
+| `test_contract_offline.py` | no | the contract of all 32 routes against a stand-in `mobase` (`fake_mo2.py`): reply keys, both locks, writing `plugins.txt`, installing into a real temporary folder |
+| `test_routes.py` | yes | all 32 routes and both locks |
 | `test_plugins_txt.py` | yes | that plugin state reaches `plugins.txt` and survives `/refresh` |
 | `test_install_modes.py` | yes | install, merge and replace in a sandbox |
 | `test_busy_live.py` | yes | the lock against a real running program |
@@ -98,3 +98,7 @@ plugin would have spoken in bare keys. Invisible until release day, so `test_sou
 asks `pack.py` itself what it is going to take.
 
 An optional native Qt regression suite is `python test_profileui.py`. It requires standalone PyQt6, uses offscreen dialogs and temporary profiles, and never accesses installed MO2. It verifies nested dialog completion, cancellation, timeouts, missing controls, and preservation of unrelated modal windows.
+
+Standalone PyQt6 protocol regression checks: `python tests/test_protocol.py`.
+Covers expired queue cancellation, started pending work, HTTP retries, boot/profile/instance identity,
+clone/select readback, shutdown and Windows process identity. No installed MO2 or game is accessed.

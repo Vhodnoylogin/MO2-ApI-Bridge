@@ -5,6 +5,7 @@ Below every other layer. It knows nothing of MO2 or of HTTP - only of Windows. S
 exercised on its own, with neither the manager nor the server running.
 """
 import ctypes
+import os
 
 from . import i18n
 
@@ -198,6 +199,11 @@ if wintypes is not None:
                 (kernel32, 'WaitForSingleObject', (H, D), D),
                 (kernel32, 'GetExitCodeProcess', (H, ctypes.POINTER(D)), B),
                 (kernel32, 'GetProcessId', (H,), D),
+                (kernel32, 'OpenProcess', (D, B, D), H),
+                (kernel32, 'GetProcessTimes', (H, ctypes.c_void_p, ctypes.c_void_p,
+                                             ctypes.c_void_p, ctypes.c_void_p), B),
+                (kernel32, 'QueryFullProcessImageNameW', (H, D, wintypes.LPWSTR,
+                                                         ctypes.POINTER(D)), B),
                 (shell32, 'SHFileOperationW', (ctypes.c_void_p,), I),
                 (advapi32, 'CredReadW', (wintypes.LPCWSTR, D, D, ctypes.c_void_p), B),
                 (advapi32, 'CredFree', (ctypes.c_void_p,), None)):
@@ -239,6 +245,82 @@ def process_id(handle):
         return int(kernel32.GetProcessId(wintypes.HANDLE(int(handle))))
     except Exception:
         return 0
+
+
+def process_identity(handle):
+    """Read identity from the original handle, which cannot be reused as another PID."""
+    if kernel32 is None or not handle:
+        return None
+    h = wintypes.HANDLE(int(handle))
+    times = [wintypes.FILETIME() for _ in range(4)]
+    if not kernel32.GetProcessTimes(h, *(ctypes.byref(t) for t in times)):
+        return None
+    stamp = lambda t: (int(t.dwHighDateTime) << 32) | int(t.dwLowDateTime)
+    size = wintypes.DWORD(32768)
+    path = ctypes.create_unicode_buffer(size.value)
+    if not kernel32.QueryFullProcessImageNameW(h, 0, path, ctypes.byref(size)):
+        return None
+    return {'pid': process_id(handle), 'creationTime': stamp(times[0]),
+            'exitTime': stamp(times[1]) or None, 'path': path.value}
+
+
+def identity_by_pid(pid):
+    if kernel32 is None:
+        return None
+    handle = kernel32.OpenProcess(0x1000, False, int(pid))
+    if not handle:
+        return None
+    try:
+        return process_identity(handle)
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def identity_alive(identity):
+    current = identity_by_pid(identity['pid'])
+    return bool(current and current['creationTime'] == identity['creationTime']
+                and current['path'].casefold() == identity['path'].casefold()
+                and not current['exitTime'])
+
+
+def game_descendants(parent, game_exe):
+    """Only observed parent chains with creation times inside each parent's lifetime.
+
+    Absence is inconclusive (a short-lived intermediate may have already vanished).
+    Never identify a game merely because its executable name matches.
+    """
+    if not parent or not game_exe or kernel32 is None:
+        return []
+    snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    if snap == INVALID_HANDLE:
+        return []
+    rows = []
+    try:
+        e = PROCESSENTRY32W()
+        e.dwSize = ctypes.sizeof(e)
+        more = kernel32.Process32FirstW(snap, ctypes.byref(e))
+        while more:
+            rows.append((int(e.th32ProcessID), int(e.th32ParentProcessID), e.szExeFile))
+            more = kernel32.Process32NextW(snap, ctypes.byref(e))
+    finally:
+        kernel32.CloseHandle(snap)
+    ancestry, found = {parent['pid']: parent}, []
+    while True:
+        added = False
+        for pid, ppid, name in rows:
+            if pid in ancestry or ppid not in ancestry:
+                continue
+            child, prior = identity_by_pid(pid), ancestry[ppid]
+            if (not child or child['creationTime'] < prior['creationTime']
+                    or (prior['exitTime'] and child['creationTime'] > prior['exitTime'])):
+                continue
+            ancestry[pid] = child
+            added = True
+            if (name.casefold() == game_exe.casefold()
+                    and os.path.basename(child['path']).casefold() == game_exe.casefold()):
+                found.append(dict(child, parentPid=ppid, role='game', evidence='parentChain'))
+        if not added:
+            return found
 
 
 def wait_process(handle, timeout_sec=None):

@@ -13,5 +13,8 @@
  "op.rename": "renaming a mod",
  "op.run": "launching another program",
  "op.toggle": "enabling or disabling a mod",
- "op.profileRename": "renaming a profile"
+ "op.profileRename": "renaming a profile",
+ "op.profileSelect": "selecting a profile",
+ "op.profileClone": "copying a profile",
+ "op.profileLocalFlags": "changing local profile flags"
 }

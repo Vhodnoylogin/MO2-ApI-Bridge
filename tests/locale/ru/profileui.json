@@ -1,14 +1,14 @@
 {
  "profileui.skipped": "ПРОПУЩЕНО: отдельный PyQt6 не установлен",
  "profileui.title": "менеджер профилей: настоящие циклы событий Qt",
- "profileui.success": "переименование завершено без ошибки",
- "profileui.folder": "штатное окно переименовало папку",
+ "profileui.success": "операция завершена без ошибки",
+ "profileui.folder": "штатное окно выполнило операцию",
  "profileui.contents": "байты сохранения не изменены",
  "profileui.failure": "получен отказ: %(mode)s",
  "profileui.source": "исходная папка сохранена: %(mode)s",
  "profileui.noDestination": "новая папка не создана: %(mode)s",
  "profileui.bounded": "ожидание ограничено: %(mode)s",
- "profileui.current": "выбор профиля не меняется: %(mode)s",
+ "profileui.current": "активный профиль верен: %(mode)s",
  "profileui.closed": "собственные окна закрыты: %(mode)s",
  "profileui.foreignRefused": "ранее открытое модальное окно блокирует переименование",
  "profileui.foreignKept": "ранее открытое окно не изменено"

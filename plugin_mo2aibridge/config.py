@@ -55,6 +55,10 @@ DEFAULTS = {
     'listLimit': 200,
     # Native profile dialog polling interval, in milliseconds.
     'profileDialogPollMs': 20,
+    # HTTP waits are bounded independently of native operation completion.
+    'operationWaitSec': 120,
+    'operationLimit': 4096,
+    'mainThreadJobLimit': 4096,
     'analyzeLimit': 80,
     'orderReportLimit': 20,
     # The tail of 7-Zip's output that goes into the text of an unpack error.
@@ -94,7 +98,7 @@ DEFAULTS = {
         # itself keeps it.
         'credentialTarget': 'ModOrganizer2_APIKEY',
         'apiHost': 'https://api.nexusmods.com',
-        'appVersion': '2.2.0',
+        'appVersion': '2.3.0',
         # How many consecutive network failures count as a dead channel and stop the sweep.
         # One failure happens to anyone; five in a row mean the remaining thousand requests
         # will fail the same way, only slower - each waiting out its own timeout.

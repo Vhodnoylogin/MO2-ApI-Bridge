@@ -12,11 +12,14 @@ def build(svc):
     uses it to decide whether arguments come from the query string or from the body."""
     get = {
         '/ping': svc.ping,
+        '/session': svc.session,
+        '/operations': svc.operation_status,
         '/api': svc.api,
         '/mods': svc.mods,
         '/mod': svc.mod,
         '/analyze': svc.analyze,
         '/profiles': svc.profiles,
+        '/profiles/capabilities': svc.profiles_capabilities,
         '/plugins': svc.plugins,
         '/vfs': svc.vfs,
         '/origins': svc.origins,
@@ -40,6 +43,9 @@ def build(svc):
         '/mods/priority': svc.mods_priority,
         '/mods/rename': svc.mods_rename,
         '/profiles/rename': svc.profiles_rename,
+        '/profiles/clone': svc.profiles_clone,
+        '/profiles/select': svc.profiles_select,
+        '/profiles/local': svc.profiles_local,
         '/mods/remove': svc.mods_remove,
     }
     return get, post

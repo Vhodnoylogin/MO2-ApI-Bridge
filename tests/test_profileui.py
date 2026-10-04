@@ -6,6 +6,7 @@ They catch hangs, late callbacks, unwanted profile switches and cancelled input.
 No installed MO2 or game is accessed. QT_QPA_PLATFORM=offscreen keeps tests invisible.
 """
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -33,6 +34,7 @@ class ProfilesDialog(QDialog):
         super().__init__(window)
         self.setObjectName('ProfilesDialog')
         self.window_owner = window
+        self.selected = None
         layout = QVBoxLayout(self)
         self.listing = QListWidget(self)
         self.listing.setObjectName('profilesList')
@@ -43,6 +45,28 @@ class ProfilesDialog(QDialog):
             self.button.setObjectName('renameButton')
             self.button.clicked.connect(self.rename_selected)
             layout.addWidget(self.button)
+            self.copy_button = QPushButton(self)
+            self.copy_button.setObjectName('copyProfileButton')
+            self.copy_button.clicked.connect(self.copy_selected)
+            layout.addWidget(self.copy_button)
+            self.select_button = QPushButton(self)
+            self.select_button.setObjectName('select')
+            self.select_button.clicked.connect(self.select_profile)
+            layout.addWidget(self.select_button)
+
+    def copy_selected(self):
+        old = self.listing.currentItem().text()
+        if self.window_owner.mode == 'cancel':
+            QTimer.singleShot(0, lambda: app.activeModalWidget().reject())
+        new, ok = QInputDialog.getText(self, '', '', text=old)
+        if ok:
+            shutil.copytree(os.path.join(self.window_owner.root, old),
+                            os.path.join(self.window_owner.root, new))
+            self.listing.addItem(new)
+
+    def select_profile(self):
+        self.selected = self.listing.currentItem().text()
+        self.accept()
 
     def rename_selected(self):
         old = self.listing.currentItem().text()
@@ -80,12 +104,12 @@ class MainWindow(QWidget):
         self.box.blockSignals(True)
         self.box.clear()
         self.box.addItems(['<Manage...>'] + sorted(os.listdir(self.root)))
-        self.box.setCurrentText('Claude')
+        self.box.setCurrentText(dialog.selected or 'Claude')
         self.box.blockSignals(False)
         dialog.deleteLater()
 
 
-def exercise(mode, old='Second'):
+def exercise(mode, old='Second', action='rename'):
     with tempfile.TemporaryDirectory(prefix='mo2-profileui-') as root:
         for name in ('Claude', 'Second'):
             os.makedirs(os.path.join(root, name))
@@ -96,22 +120,29 @@ def exercise(mode, old='Second'):
         error = None
         started = time.monotonic()
         try:
-            profileui.rename(old, 'Renamed', 0.3, 5)
+            if action == 'select':
+                profileui.select(old, 0.3, 5)
+            else:
+                getattr(profileui, action)(old, 'Renamed', 0.3, 5)
         except Exception as exc:
             error = exc
         elapsed = time.monotonic() - started
         destination = os.path.join(root, 'Renamed')
         if mode == 'success' and old == 'Second':
             r.case(common.T('profileui.success'), error, None)
-            r.case(common.T('profileui.folder'), os.path.isdir(destination), True)
-            with open(os.path.join(destination, 'save.ess'), 'rb') as f:
+            r.case(common.T('profileui.folder'), os.path.isdir(destination) if action != 'select'
+                   else os.path.isdir(os.path.join(root, old)), True)
+            with open(sample if action == 'select' else os.path.join(destination, 'save.ess'), 'rb') as f:
                 r.case(common.T('profileui.contents'), f.read(), b'SAVE\x00\xff')
         else:
             r.case(common.T('profileui.failure', mode=mode), isinstance(error, Exception), True)
             r.case(common.T('profileui.source', mode=mode), os.path.isfile(sample), True)
             r.case(common.T('profileui.noDestination', mode=mode), os.path.exists(destination), False)
         r.case(common.T('profileui.bounded', mode=mode), elapsed < 2, True)
-        r.case(common.T('profileui.current', mode=mode), window.box.currentText(), 'Claude')
+        r.case(common.T('profileui.current', mode=mode), window.box.currentText(),
+               old if action == 'select' and mode == 'success' else 'Claude')
+        if action == 'clone':
+            r.case(common.T('profileui.source', mode=mode), os.path.isfile(sample), True)
         r.case(common.T('profileui.closed', mode=mode), app.activeModalWidget(), None)
         # Drain pending singleShot callbacks: none may rename anything after refusal.
         for _ in range(4):
@@ -127,6 +158,12 @@ exercise('missingProfile', 'Missing')
 exercise('missingControls')
 exercise('cancel')
 exercise('unexpectedChild')
+exercise('success', action='clone')
+exercise('cancel', action='clone')
+exercise('missingControls', action='clone')
+exercise('success', action='select')
+exercise('missingControls', action='select')
+exercise('missingProfile', 'Missing', action='select')
 with tempfile.TemporaryDirectory(prefix='mo2-profileui-') as root:
     window = MainWindow(root)
     foreign = QDialog(window)

@@ -30,7 +30,7 @@ on their own.
 Documentation: README.md and README.ru.md next to this file.
 """
 
-__version__ = '2.2.0'
+__version__ = '2.3.0'
 
 # The name MO2 knows this plugin by: the folder in its plugins\ is called this, and so is
 # the package when imported from there. The repository folder name deliberately differs -

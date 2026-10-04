@@ -22,6 +22,8 @@ attributes (`launched`, `game_exe`, `_self_hwnd`, `procs`) stay here too - the b
 checks set them directly.
 """
 
+import os
+
 from . import base, busy, config, install, launch, loadorder, mods, profiles, reading, updates
 from .base import DANGER_KEY, DANGER_VALUE, one as _one, safe as _safe  # noqa: F401
 from .install import tree_files as _tree_files  # noqa: F401
@@ -97,6 +99,20 @@ class Services(object):
                    lambda s, v: setattr(s.launcher, 'seq', v))
 
     # ================================================== reads
+    def session(self, q=None):
+        from . import __version__
+        return {'serverBootId': self.ctx.boot_id, 'instanceId': self.ctx.instance_id,
+                'mo2Pid': os.getpid(), 'bridgeVersion': __version__,
+                'profilesPath': self.ctx.profiles_root}
+
+    def operation_status(self, q):
+        identifier = _one(q, 'id', '')
+        if _one(q, 'jobId', ''):
+            if self.ctx.runner is None:
+                raise ValueError(base.i18n.t('err.noOperation', id=_one(q, 'jobId', '')))
+            return self.ctx.runner.status(_one(q, 'jobId', ''))
+        return self.ctx.operations.status(identifier)
+
     def ping(self, q=None):
         return self.reader.ping(q)
 
@@ -108,6 +124,18 @@ class Services(object):
 
     def profiles_rename(self, body):
         return self.profileops.rename(body)
+
+    def profiles_clone(self, body):
+        return self.profileops.clone(body)
+
+    def profiles_select(self, body):
+        return self.profileops.select(body)
+
+    def profiles_local(self, body):
+        return self.profileops.local_flags(body)
+
+    def profiles_capabilities(self, q=None):
+        return self.profileops.capabilities(q)
 
     def profiles(self, q=None):
         return self.reader.profiles(q)

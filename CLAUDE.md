@@ -26,8 +26,8 @@ open it again — slow, lossy, and blind to the virtual `Data`.
 
 ### The contract it must keep
 
-- **The bridge only executes. The caller remembers.** It keeps no state between calls except
-  its record of running programs.
+- **The bridge only executes. The caller remembers.** It retains boot-scoped launch records, bounded operation outcomes and retry keys;
+  the caller owns rollback decisions and durable reversal data.
 - **The bridge decides nothing** for the caller: it does not guess a "correct" priority, does
   not pick between options, does not roll anything back on its own.
 - **The bridge delegates nothing back.** If an operation needs an archive unpacked, files
@@ -62,6 +62,7 @@ MO2-ApI-Bridge/              repository root
 │   ├── launch.py             launching programs through MO2, window actions
 │   ├── updates.py            update checking against the Nexus API: request and allowance
 │   ├── updatepolicy.py       the update rules alone: no network, no MO2, no disk
+│   ├── operations.py         boot-scoped outcomes and retry deduplication
 │   ├── runtime.py            Qt main thread, HTTP server, token
 │   ├── winapi.py             windows, processes, Recycle Bin, credential store
 │   ├── config.py             settings from JSON, defaults built in
@@ -93,6 +94,7 @@ Each layer knows only the one below it. Keep it that way.
 | File | Knows about | Knows nothing about |
 |---|---|---|
 | `winapi.py` | Windows processes and windows | MO2, networking |
+| `operations.py` | retry keys and worker outcomes | MO2, Qt widgets |
 | `runtime.py` | threads, sockets, JSON, the token | what the routes do |
 | `services.py` and the domain files | `mobase` and the setup | HTTP, JSON, tokens |
 | `routes.py` | path names | `mobase`, sockets |
@@ -109,7 +111,7 @@ Adding a route means adding a line to `routes.py`. Method names on the facade ar
 
 **Busy lock.** While a game or tool runs under MO2, the virtual `Data` is mounted into another
 process. Changing mods, order or plugins then means the running program sees one setup while
-the files on disk describe another. So all ten write routes refuse, and every read keeps
+the files on disk describe another. So all thirteen setup-write routes refuse, and every read keeps
 working. Busy is decided by three independent sources, and that is not redundancy:
 
 1. MO2's own callbacks (`onAboutToRun` / `onFinishedRun`) — they know about launches through
@@ -211,3 +213,6 @@ Do not close these in passing.
 |---|---|
 | Graded danger levels | The owner ranked the operations: enable/disable/reorder/rename are cheap and reversible; install is more involved; removal is worse; **launching programs is the most dangerous of all**. Today there is one key for all of them. A graded model has not been agreed |
 | Nexus page and release | Name, presentation and the release archive are the owner's call. `pack.py` builds the archive; nothing is published automatically |
+
+Version 2.3.0: read the reliable-request and profile-capability sections in the plugin README.
+Never retry an uncertain launch with a new key. HTTP 202 is pollable; 504 means queued work was cancelled.

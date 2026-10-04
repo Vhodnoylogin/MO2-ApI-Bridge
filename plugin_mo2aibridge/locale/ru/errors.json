@@ -5,7 +5,6 @@
  "err.badMode": "mode: merge (положить поверх) или replace (заменить), а не %(mode)s",
  "err.badName": "имя мода должно быть именем папки, без разделителей пути и двоеточия: %(name)s",
  "err.createFailed": "createMod вернул пусто - имя занято или отказано",
- "err.mainThread": "главный поток MO2 не ответил за %(sec).0f с",
  "err.modExists": "мод \"%(mod)s\" уже существует. Молча поверх не кладу: укажите mode - merge, чтобы положить выбранное поверх прежнего, или replace, чтобы сперва убрать прежнее содержимое в Корзину",
  "err.needBinary": "нужен binary - ЗАРЕГИСТРИРОВАННОЕ в MO2 имя утилиты, не путь",
  "err.needButton": "нужна подпись кнопки - вслепую не жму",
@@ -36,5 +35,18 @@
  "err.activeProfile": "Активный профиль %(profile)s нельзя переименовать. Сначала выберите другой профиль в MO2.",
  "err.profileRenameFailed": "MO2 не завершила переименование %(profile)s в %(newName)s; проверьте /profiles перед повтором",
  "err.profileDialog": "менеджер профилей MO2 недоступен или открыто другое модальное окно",
- "err.profileDialogTimeout": "окно переименования профиля MO2 не завершило работу за %(sec).0f с"
+ "err.profileDialogTimeout": "окно переименования профиля MO2 не завершило работу за %(sec).0f с",
+ "err.queueExpired": "Работа в очереди MO2 просрочена до старта и отменена.",
+ "err.jobPending": "Работа MO2 уже началась; проверьте её результат перед повтором.",
+ "err.operationBody": "Тело операции должно быть объектом.",
+ "err.operationField": "Недопустимое поле операции: %(field)s",
+ "err.bootMismatch": "Запуск Bridge не совпадает с ожидаемым; проверьте прежний прогон перед повтором.",
+ "err.expectedBoot": "Для ключей повтора нужен expectedServerBootId из /session.",
+ "err.operationConflict": "Этот ключ повтора уже использован с другим запросом.",
+ "err.operationCapacity": "Реестр операций заполнен или Bridge останавливается; новая работа не принята.",
+ "err.noOperation": "Неизвестный или устаревший ID операции/работы: %(id)s",
+ "err.runnerClosed": "Очередь главного потока MO2 останавливается.",
+ "err.expectedMismatch": "Цель не совпадает с ожидаемой: %(field)s; фактически: %(actual)s",
+ "err.profileCapabilities": "Python API MO2 2.5 не даёт безопасных публичных методов для локальных сохранений/INI и службы Root Builder. Запомненные ответы на удаление нельзя обходить.",
+ "err.profileSelectFailed": "MO2 не выбрала профиль %(profile)s; проверьте /profiles."
 }

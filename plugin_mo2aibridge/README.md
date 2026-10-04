@@ -70,7 +70,7 @@ python ../tests/run.py
 ```
 
 Ten suites. Six run without MO2 — source hygiene, the busy-state logic, the strings, the update
-rules, the contract of all 26 routes over a fake `mobase`, and the transport; four acceptance
+rules, the contract of all 32 routes over a fake `mobase`, and the transport; four acceptance
 suites need a running manager and are skipped with a clear message when it is absent. They live **outside** this package, in
 `tests\` next to it, and are never shipped to MO2. Details in `..\tests\README.md`.
 
@@ -89,6 +89,9 @@ The token is supplied by the wrapper and omitted below for brevity.
 |---|---|---|
 | `/ping` | — | profile, game, MO2 version, paths to `mods`, `overwrite`, `downloads`, and `busy` — whether MO2 is occupied by a running program |
 | `/api` | — | what `IOrganizer`, `IModList`, `IPluginList`, `IProfile` actually expose in this MO2 build |
+| `/session` | — | `serverBootId`, `instanceId`, `mo2Pid`, `bridgeVersion`, `profilesPath` |
+| `/operations` | `id` or `jobId` | thread-safe operation outcome or native job status; works while Qt is occupied |
+| `/profiles/capabilities` | — | supported profile operations and explicit unavailable capabilities |
 | `/mods` | — | every mod: name, active, essential, priority |
 | `/mod` | `name` | full mod card, see below |
 | `/analyze` | `name`, `conflicts`, `limit` | one-call analysis: card, files, plugins, who overrides whom |
@@ -116,6 +119,9 @@ The token is supplied by the wrapper and omitted below for brevity.
 | `/window` | `hwnd`, `action`, `button` | `close`, or `click` by button caption |
 | `/mods/priority` | `mod`, `priority` | **irreversible**, see below |
 | `/profiles/rename` | `profile`, `newName` | rename an inactive profile through MO2; acknowledgement key required |
+| `/profiles/clone` | `profile`, `newName` | copy through MO2 without changing the active profile; acknowledgement key required |
+| `/profiles/select` | `profile` | activate through MO2, verify current profile, return undo; acknowledgement key required |
+| `/profiles/local` | `profile` | explicit `applied: false`, `reason: unsupported`; no local-save or INI flags are changed |
 | `/mods/rename` | `mod`, `newName` | **irreversible** |
 | `/mods/remove` | `mod`, `withArchive` | **irreversible**; the reply carries the mod card taken before deletion |
 
@@ -127,10 +133,12 @@ a read sent as a POST, or the other way round.
 | Code | `code` field | What it means |
 |---|---|---|
 | 200 | — | done; a lock's refusal also arrives as 200, with `applied: false` and `reason` |
+| 202 | — | started/accepted work is pending; poll the returned operation/job ID |
 | 400 | `badRequest` | **a mistake in the request**: a missing field, an unknown mode, an unknown mod, a bad boolean. The text is in `error`, no traceback |
 | 403 | — | the `X-Token` header is missing or wrong |
 | 404 | — | no such path; the reply carries both route tables |
 | 500 | `bridgeFailure` | **the bridge broke**: an unexpected exception. `trace` holds the last 800 characters |
+| 504 | `queueExpired` | native job expired before starting and was cancelled; it cannot run later |
 
 The difference between 400 and 500 matters: the first means "ask differently", the second
 "the bridge broke, retrying is pointless". Both used to come back as a 500, indistinguishable.
@@ -143,9 +151,9 @@ and the caller should read the body rather than catch an exception.
 
 ## The bridge executes, the caller remembers
 
-The plugin **keeps nothing between calls** and decides nothing on the caller's behalf. There is
-no undo journal inside it, and there should not be: deciding where a mod belongs is the job of
-whoever issued the command, not of whoever carried it out.
+The plugin decides no rollback policy on the caller's behalf. It keeps launch records and
+bounded operation outcomes/retry keys for the current server boot, so uncertain requests can
+be resolved safely. The caller retains reversal data across bridge restarts.
 
 Hence the duty that replaces memory: **the reply to a mutating operation carries everything
 needed to reverse it.** Not a hint, not "something changed", but ready data.
@@ -158,17 +166,19 @@ needed to reverse it.** Not a hint, not "something changed", but ready data.
 | `/plugins/order` | restoring the order | `before` — the **whole** previous order |
 | `/mods/rename` | renaming back | `fromPath`, `toPath` and `nexusId` |
 | `/profiles/rename` | renaming back | `profile`, `newName`, `fromPath`, `toPath` and `undo` |
+| `/profiles/select` | selecting back | `before`, `current`, `path` and `undo` |
+| `/profiles/clone` | removing the created profile through MO2 | `created`, `fromPath`, `toPath`, `reversal`; automatic profile deletion is not exposed |
 | `/install` | deleting the created folder | `path` and `created` |
 | `/mods/remove` | reinstalling from the archive | `card` — the mod card taken **before** deletion |
 
 Where the reversal is a single request, the reply contains it whole — an `undo` field with a
 ready `route` and `body`. That is a suggestion, not a promise: the bridge does not verify that
-nothing has changed since, and does not store it. Send it back if you want the rollback; drop it
+nothing has changed since, and retains it only for this server boot. Send it back if you want the rollback; drop it
 if you do not.
 
 **The card signature.** Every reply to a mutating route carries `op` — the operation name
 (`toggle`, `install`, `refresh`, `pluginState`, `pluginOrder`, `run`, `priority`, `rename`,
-`remove`, `profileRename`) — and `applied`. Every refusal additionally carries `reason`: `busy` when MO2 is held
+`remove`, `profileRename`, `profileClone`, `profileSelect`, `profileLocalFlags`) — and `applied`. Every refusal additionally carries `reason`: `busy` when MO2 is held
 by a running program, `danger` when the irreversible-operations key is missing. The old keys stay
 where they were: the reply shape only ever grows, otherwise other callers break silently.
 
@@ -445,7 +455,7 @@ disk describe a new one. That surfaces later and elsewhere — saves referencing
 order, and a `refresh` under a live USVFS can take MO2 down with it.
 
 Refused: `/refresh`, `/install`, `/toggle`, `/run`, `/plugins/state` and `/plugins/order` **with**
-`apply`, `/profiles/rename`, and the whole irreversible trio `/mods/priority`, `/mods/rename`, `/mods/remove`.
+`apply`, `/profiles/rename`, `/profiles/clone`, `/profiles/select`, `/profiles/local`, and the whole irreversible trio `/mods/priority`, `/mods/rename`, `/mods/remove`.
 
 Still working: **every** read route — `/mods`, `/plugins`, `/vfs`, `/origins`, `/resolve`,
 `/analyze` and the rest — plus `/plugins/state` and `/plugins/order` previews without `apply`,
@@ -601,6 +611,7 @@ The defaults contain no machine-specific paths: the `7z.exe` candidates are asse
 | File | Layer | Knows about |
 |---|---|---|
 | `winapi.py` | operating system | windows and buttons; nothing about MO2 or the network |
+| `operations.py` | transport | boot-scoped outcomes, retry keys and worker continuations |
 | `runtime.py` | transport | the Qt main thread, sockets, JSON, the token |
 | `services.py` | domain, facade | assembles the areas and hands the routes their methods under the old names |
 | `base.py` | domain | the areas' context, the shared mutation recipe, the card signature |
@@ -624,7 +635,7 @@ The domain layer is split by area, and none of the areas knows about HTTP. Every
 one `Context` — the `IOrganizer`, the way onto the main thread, where to leave a trace, the
 settings — and the shared busy lock `BusyGuard`. Mutating routes all follow one recipe,
 `Domain.change`: refuse if MO2 is busy → validate the input → run on the main thread → sign the
-card. `Services` is a thin facade: the same 26 methods, the same names, and the bookkeeping
+card. `Services` is a thin facade: the same 32 methods, the same names, and the bookkeeping
 attributes (`launched`, `game_exe`, `procs`) where they always were, because tests rely on them.
 
 `__init__.py` deliberately holds only the factory, and imports `mobase` lazily: otherwise
@@ -649,3 +660,61 @@ but reachable over a loopback socket. Keep it enabled while something is using i
 
 MIT, see `LICENSE` next to this file. Use, change and redistribute freely, keeping the author
 line. The author shown in MO2 is the Nexus name: `author()` in `plugin.py`.
+
+## Reliable requests (2.3.0)
+
+Read `GET /session` first. The server boot changes whenever the bridge starts; the instance
+ID identifies the canonical profiles directory. Keep a unique `callerRunId` for your test run.
+For each POST, send a unique `idempotencyKey` and/or `operationId`, together with
+`expectedServerBootId` from that session. Retry the exact same route and JSON body:
+
+```json
+{"binary":"SKSE", "args":[], "wait":false,
+ "callerRunId":"test-2026-10-04", "operationId":"launch-1", "idempotencyKey":"launch-1",
+ "expectedServerBootId":"<serverBootId>", "expectedInstance":"<instanceId>",
+ "expectedProfile":"SkyrimVR-Core",
+ "iUnderstandTheRisk":"yes-I-read-the-docs-and-accept-irreversible-changes"}
+```
+
+The registered executable name must match MO2 exactly. A matching retry returns the original
+operation, including refusals or failures. A changed body with the same key is rejected.
+Without a retry key, a second POST is a new operation. A stale boot ID is rejected, so an old
+request cannot silently relaunch after a restart. `/run` and profile rename/clone/select/local
+also check `expectedInstance` and `expectedProfile` on the Qt thread before acting.
+
+HTTP 202 is a pending outcome, not a failure or permission to launch again. Poll
+`GET /operations?id=<operation.id>` until `terminal: true`, then inspect `httpStatus` and
+`result`. Every POST is tracked even without a retry key. Operation IDs include the server boot.
+The registry retains up to `operationLimit` outcomes (default 4096) until the bridge stops;
+it refuses new work at capacity rather than forgetting a key and allowing a duplicate.
+`operationWaitSec` (default 120) bounds the initial HTTP wait.
+
+Native Qt jobs have an atomic deadline. A queued job cancelled at timeout returns 504 and
+cannot run when the UI resumes. An already started job keeps its continuation; POST returns
+202 while `/operations` can still be polled. Read requests may instead return a native `job`
+with HTTP 202; poll `/operations?jobId=<job.id>`. `mainThreadJobLimit` defaults to 4096:
+completed native job records can be replaced, while POST outcomes and retry keys are retained.
+Shutdown cancels queued jobs; it does not claim to cancel an already executing native call.
+
+`/run` keys are opaque `<serverBootId>:pN` strings. Process cards use `pid`, `creationTime`
+(Windows FILETIME ticks) and executable `path`. `/procs` separates the original process
+(`role: loader/game/tool`) from verified `gameChildren`. Descendants must have an observed
+parent chain and compatible creation times; a name match alone is insufficient. `gameAlive`
+is `null` when no game process has been verified. The SKSE loader exiting therefore does
+not mean the game exited. PID reuse fails the identity check. A child missed before its
+intermediate parent exits remains unknown; do not infer absence or completion from it.
+
+## Profile capabilities (2.3.0)
+
+`GET /profiles/capabilities` advertises rename, clone and select through the native MO2 2.5
+profile manager. Clone returns the source and created paths plus `reversal`, while keeping
+the active profile. Select reads the actual active profile back and returns an `undo` request.
+All require the acknowledgement key and obey the busy lock. Use a fresh operation key for an
+undo. The native dialog adapter refuses missing controls or a pre-existing modal dialog.
+
+Local-save/local-INI setters and Root Builder are explicitly unavailable. MO2 2.5.2 exposes
+no safe public profile flag setters; disabling flags through its remembered confirmation
+can delete files before the caller can choose to preserve them. `/profiles/local` therefore
+returns `applied: false`, `reason: unsupported`. Root Builder private modules/settings are
+not imported or modified. Profile deletion is also not exposed; clone reversal identifies
+the created profile for removal through MO2.
