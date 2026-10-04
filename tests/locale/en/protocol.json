@@ -52,5 +52,14 @@
  "protocol.failureReplays": "terminal failure is replayed unchanged",
  "protocol.failureRunsOnce": "failed action also executes only once",
  "protocol.readStartedPending": "started read returns a pending job",
- "protocol.readEventuallyPolls": "read result can be polled after timeout"
+ "protocol.readEventuallyPolls": "read result can be polled after timeout",
+ "protocol.ownsBorrowedHandle": "bridge owns a duplicate of the MO2 handle",
+ "protocol.aliveAfterMo2ClosesHandle": "process stays alive after MO2 closes its handle",
+ "protocol.ownedHandleReadsExit": "owned handle reads actual exit status",
+ "protocol.deadIdentityKeepsExitTime": "ended process retains exit-time identity",
+ "protocol.ownedHandleReleased": "bridge stop releases its handle",
+ "protocol.invalidWaitIsNotZeroExit": "invalid handle does not fabricate successful exit",
+ "protocol.argvNativeRoundtrip": "quoted argv survives native Windows parsing",
+ "protocol.argvConflictsRejected": "argv and args conflict is rejected",
+ "protocol.argvNullRejected": "NUL in argv is rejected"
 }

@@ -98,7 +98,7 @@ def import_package(with_mobase=False):
 # The name MO2 knows the plugin by is asked of the plugin itself: the folder holding it
 # deliberately has another name, and one must not be derived from the other.
 PLUGIN_ID = import_package().PLUGIN_ID
-TOKEN_FILE = os.path.join(PKG, PLUGIN_ID + '-token.txt')
+TOKEN_FILE = os.environ.get('MO2AIBRIDGE_TOKEN_FILE') or os.path.join(PKG, PLUGIN_ID + '-token.txt')
 
 # ---------------------------------------------------------------- what the checks say
 # The checks carry no phrases of their own either. Their wording lives in

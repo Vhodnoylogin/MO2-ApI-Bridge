@@ -98,7 +98,7 @@ DEFAULTS = {
         # itself keeps it.
         'credentialTarget': 'ModOrganizer2_APIKEY',
         'apiHost': 'https://api.nexusmods.com',
-        'appVersion': '2.3.0',
+        'appVersion': '2.3.1',
         # How many consecutive network failures count as a dead channel and stop the sweep.
         # One failure happens to anyone; five in a row mean the remaining thousand requests
         # will fail the same way, only slower - each waiting out its own timeout.

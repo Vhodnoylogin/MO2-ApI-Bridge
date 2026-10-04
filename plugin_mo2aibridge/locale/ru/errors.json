@@ -48,5 +48,7 @@
  "err.runnerClosed": "Очередь главного потока MO2 останавливается.",
  "err.expectedMismatch": "Цель не совпадает с ожидаемой: %(field)s; фактически: %(actual)s",
  "err.profileCapabilities": "Python API MO2 2.5 не даёт безопасных публичных методов для локальных сохранений/INI и службы Root Builder. Запомненные ответы на удаление нельзя обходить.",
- "err.profileSelectFailed": "MO2 не выбрала профиль %(profile)s; проверьте /profiles."
+ "err.profileSelectFailed": "MO2 не выбрала профиль %(profile)s; проверьте /profiles.",
+ "err.processWait": "Не удалось прочитать ожидание/завершение процесса (ошибка Windows %(code)d).",
+ "err.runArgv": "argv должен быть списком строк без NUL; не передавайте args одновременно."
 }

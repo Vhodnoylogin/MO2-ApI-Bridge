@@ -84,7 +84,7 @@ ghosts = [x for x in pr.get('procs') or []
 r.case(T('routes.noWalkingDead'), ghosts, [])
 
 code, w = get('/windows')
-r.case(T('routes.windowsNeedsPid'), code, 500)
+r.case(T('routes.windowsNeedsPid'), code, 400)
 
 r.head(T('routes.actionsNoEffect'))
 code, ref = common.call('POST', '/refresh', {})

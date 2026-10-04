@@ -170,6 +170,48 @@ finally:
     fx.cleanup()
 
 if os.name == 'nt':
+    # Simulate MO2 closing its borrowed handle while the process remains alive.
+    owner_fx = fake_mo2.Fixture()
+    owner_svc = services.Services(owner_fx.organizer, lambda fn, timeout=None: fn(), 'README.md')
+    owner_svc.game_exe, owner_svc._self_hwnd = 'nosuch.exe', 0
+    owned_child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(10)'],
+                                   creationflags=subprocess.CREATE_NO_WINDOW)
+    try:
+        borrowed = winapi.duplicate_process_handle(owned_child._handle)
+        owner_fx.organizer.start_result = borrowed
+        result = owner_svc.run(dict(key, binary='BorrowedHandleTest'))
+        owned_handle = owner_svc.procs[result['key']][0]
+        winapi.close_process_handle(borrowed)
+        check('ownsBorrowedHandle', result['processHandleOwned'] and owned_handle != borrowed)
+        proc = owner_svc.procs_list({})['procs'][0]
+        check('aliveAfterMo2ClosesHandle', proc['alive'] and proc['pid'] == owned_child.pid)
+        owned_child.terminate(); owned_child.wait(timeout=3)
+        proc = owner_svc.procs_list({})['procs'][0]
+        check('ownedHandleReadsExit', not proc['alive'] and proc['exit'] is not None)
+        check('deadIdentityKeepsExitTime', bool(proc['process']['exitTime']))
+        owner_svc.launcher.close()
+        check('ownedHandleReleased', winapi.process_id(owned_handle), 0)
+        check('invalidWaitIsNotZeroExit', isinstance(error(lambda: winapi.wait_process(owned_handle, 0)), RuntimeError))
+    finally:
+        if owned_child.poll() is None: owned_child.terminate(); owned_child.wait(timeout=3)
+        owner_svc.launcher.close(); owner_fx.cleanup()
+    # Test the wire command line against Windows' independent native argv parser.
+    import ctypes
+    values = ['', r'folder with spaces\file.py', 'with"quote', 'trailing\\']
+    fragments = services.launch.Launcher.arguments({'argv': values})
+    parser = ctypes.windll.shell32.CommandLineToArgvW
+    parser.argtypes = [ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_int)]
+    parser.restype = ctypes.POINTER(ctypes.c_wchar_p)
+    count = ctypes.c_int()
+    pointer = parser('probe.exe ' + ' '.join(fragments), ctypes.byref(count))
+    try:
+        check('argvNativeRoundtrip', list(pointer[i] for i in range(count.value))[1:], values)
+    finally:
+        local_free = ctypes.windll.kernel32.LocalFree
+        local_free.argtypes, local_free.restype = [ctypes.c_void_p], ctypes.c_void_p
+        local_free(pointer)
+    check('argvConflictsRejected', isinstance(error(lambda: services.launch.Launcher.arguments({'argv': [], 'args': []})), ValueError))
+    check('argvNullRejected', isinstance(error(lambda: services.launch.Launcher.arguments({'argv': ['bad\x00']})), ValueError))
     child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(10)'],
                              creationflags=subprocess.CREATE_NO_WINDOW)
     try:

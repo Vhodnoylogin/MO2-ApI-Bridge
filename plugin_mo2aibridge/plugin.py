@@ -311,6 +311,7 @@ class MO2ApIBridge(mobase.IPluginTool):
             self._runner.close()
         if self._svc is not None:
             self._svc.ctx.operations.close()
+            self._svc.launcher.close()
         srv, self._server = self._server, None
         if srv is not None:
             try:

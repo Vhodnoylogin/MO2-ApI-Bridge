@@ -52,5 +52,14 @@
  "protocol.failureReplays": "ошибка возвращается повторно без изменений",
  "protocol.failureRunsOnce": "ошибочное действие тоже выполняется один раз",
  "protocol.readStartedPending": "начавшееся чтение возвращает ожидающее задание",
- "protocol.readEventuallyPolls": "результат чтения доступен после тайм-аута"
+ "protocol.readEventuallyPolls": "результат чтения доступен после тайм-аута",
+ "protocol.ownsBorrowedHandle": "мост владеет копией дескриптора MO2",
+ "protocol.aliveAfterMo2ClosesHandle": "процесс жив после закрытия дескриптора MO2",
+ "protocol.ownedHandleReadsExit": "собственный дескриптор читает реальное завершение",
+ "protocol.deadIdentityKeepsExitTime": "личность завершённого процесса сохраняет время выхода",
+ "protocol.ownedHandleReleased": "остановка моста освобождает дескриптор",
+ "protocol.invalidWaitIsNotZeroExit": "негодный дескриптор не выдаёт ложный успешный выход",
+ "protocol.argvNativeRoundtrip": "аргументы сохраняются при разборе Windows",
+ "protocol.argvConflictsRejected": "одновременные argv и args отклонены",
+ "protocol.argvNullRejected": "NUL в аргументах отклонён"
 }

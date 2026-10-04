@@ -48,5 +48,7 @@
  "err.runnerClosed": "The MO2 main-thread runner is stopping.",
  "err.expectedMismatch": "Expected target mismatch: %(field)s; actual: %(actual)s",
  "err.profileCapabilities": "MO2 2.5 Python exposes no safe public setter for local saves/settings and no supported Root Builder service. Remembered native deletion prompts must not be bypassed.",
- "err.profileSelectFailed": "MO2 did not select profile %(profile)s; inspect /profiles."
+ "err.profileSelectFailed": "MO2 did not select profile %(profile)s; inspect /profiles.",
+ "err.processWait": "Cannot read process wait/exit status (Windows error %(code)d).",
+ "err.runArgv": "argv must be a list of strings without NUL; do not also supply args."
 }

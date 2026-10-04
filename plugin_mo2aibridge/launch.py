@@ -8,6 +8,7 @@ and TexGen dialogs): closing them through the bridge is what releases the busy s
 """
 import os
 import threading
+import subprocess
 
 from . import i18n, winapi
 from .base import Domain, flag, one, safe
@@ -22,6 +23,26 @@ class Launcher(Domain):
         self.seq = 0
         self.lock = threading.RLock()
         self.identities, self.game_children = {}, {}
+        self.owned_handles = set()
+        self.closed = False
+
+    def close(self):
+        with self.lock:
+            self.closed = True
+            handles, self.owned_handles = self.owned_handles, set()
+        for handle in handles:
+            winapi.close_process_handle(handle)
+
+    @staticmethod
+    def arguments(body):
+        if 'argv' not in body:
+            return body.get('args') or []
+        values = body['argv']
+        if ('args' in body or not isinstance(values, list)
+                or any(not isinstance(v, str) or '\x00' in v for v in values)):
+            raise ValueError(i18n.t('err.runArgv'))
+        # MO2 joins its argument fragments; quote ordinary argv items before that join.
+        return [subprocess.list2cmdline([value]) for value in values]
 
     def run(self, body):
         """Launch a tool inside the VFS.
@@ -33,6 +54,7 @@ class Launcher(Domain):
             if not body.get('binary'):
                 raise ValueError(i18n.t('err.needBinary'))
             flag(body, 'wait')
+            self.arguments(body)
             # Launching is the bridge's most dangerous operation: a foreign process comes up
             # under MO2 with the virtual Data, and what it does to the setup is beyond the
             # bridge's control. So on top of the busy lock there is the irreversible key,
@@ -46,7 +68,7 @@ class Launcher(Domain):
 
     def _run(self, body):
         binary = body.get('binary')
-        args = body.get('args') or []
+        args = self.arguments(body)
         cwd = body.get('cwd') or ''
         wait = flag(body, 'wait')
 
@@ -58,12 +80,22 @@ class Launcher(Domain):
             if stop:
                 return self._refusal(stop, 'run', 'busy')
             with self.guard.starting():
-                return self.o.startApplication(binary, args, cwd)
-        handle = self.run_main(start)
-        if isinstance(handle, dict):
-            return handle
-        pid = winapi.process_id(handle) if handle else 0
-        identity = winapi.process_identity(handle) if handle else None
+                borrowed = self.o.startApplication(binary, args, cwd)
+            handle = winapi.duplicate_process_handle(borrowed) if borrowed else None
+            pid = winapi.process_id(handle or borrowed) if borrowed else 0
+            identity = winapi.process_identity(handle or borrowed) if borrowed else None
+            if handle:
+                with self.lock:
+                    if self.closed:
+                        winapi.close_process_handle(handle)
+                        handle = None
+                    else:
+                        self.owned_handles.add(handle)
+            return bool(borrowed), handle, pid, identity
+        launch = self.run_main(start)
+        if isinstance(launch, dict):
+            return launch
+        started, handle, pid, identity = launch
         if identity is not None:
             executable = os.path.basename(identity['path']).casefold()
             identity['role'] = ('loader' if executable.startswith('skse') else
@@ -77,16 +109,19 @@ class Launcher(Domain):
         # of a registered name, startApplication silently returns nothing, and that used to
         # look exactly like a successful launch.
         res = {'key': key, 'pid': pid, 'binary': binary, 'args': args,
-               'started': bool(handle), 'serverBootId': self.ctx.boot_id,
+               'started': started, 'serverBootId': self.ctx.boot_id,
+               'processHandleOwned': bool(handle),
                'process': identity, 'gameChildren': [],
                'gameAlive': winapi.identity_alive(identity) if identity and identity['role'] == 'game' else None}
-        if wait and handle:
+        if 'argv' in body:
+            res['argv'] = list(body['argv'])
+        if wait and started:
             # We wait ourselves rather than through waitForApplication: that one never
             # releases the GIL and stalls the whole interpreter along with the server - the
             # bridge goes silent entirely.
             res['exit'] = winapi.wait_process(
-                handle, float(body.get('timeout') or self.timeout('runWait')))
-            res['waitedBy'] = 'WaitForSingleObject'
+                handle, float(body.get('timeout') or self.timeout('runWait'))) if handle else None
+            res['waitedBy'] = 'WaitForSingleObject' if handle else 'unavailable'
         return res
 
     def procs_list(self, _=None):
@@ -102,9 +137,10 @@ class Launcher(Domain):
         with self.lock:
             records = list(self.procs.items())
         for k, (handle, pid, what) in records:
-            code = (safe(lambda h=handle: winapi.wait_process(h, 0), 0)
-                    if handle else 0)
-            identity = winapi.process_identity(handle) if handle else None
+            code = (safe(lambda h=handle: winapi.wait_process(h, 0), None)
+                    if handle else None)
+            prior = self.identities.get(k)
+            identity = winapi.process_identity(handle, (prior or {}).get('path')) if handle else None
             if identity is not None:
                 identity['role'] = (self.identities.get(k) or {}).get('role', 'tool')
                 self.identities[k] = identity
@@ -118,7 +154,8 @@ class Launcher(Domain):
                 game = [dict(child, alive=winapi.identity_alive(child))
                         for child in known.values()]
             out.append({'key': k, 'pid': pid, 'what': what,
-                        'alive': code is None, 'exit': code, 'process': identity,
+                        'alive': winapi.identity_alive(identity) if identity else bool(handle) and code is None,
+                        'exit': code, 'process': identity,
                         'gameChildren': game,
                         'gameAlive': winapi.identity_alive(identity) if identity and identity.get('role') == 'game'
                         else any(c['alive'] for c in game) if game else None})

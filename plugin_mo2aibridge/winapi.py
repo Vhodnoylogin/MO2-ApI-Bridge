@@ -196,6 +196,8 @@ if wintypes is not None:
                 (kernel32, 'Process32FirstW', (H, ctypes.c_void_p), B),
                 (kernel32, 'Process32NextW', (H, ctypes.c_void_p), B),
                 (kernel32, 'CloseHandle', (H,), B),
+                (kernel32, 'GetCurrentProcess', (), H),
+                (kernel32, 'DuplicateHandle', (H, H, H, ctypes.POINTER(H), D, B, D), B),
                 (kernel32, 'WaitForSingleObject', (H, D), D),
                 (kernel32, 'GetExitCodeProcess', (H, ctypes.POINTER(D)), B),
                 (kernel32, 'GetProcessId', (H,), D),
@@ -247,7 +249,24 @@ def process_id(handle):
         return 0
 
 
-def process_identity(handle):
+def duplicate_process_handle(handle):
+    """Own a copy; MO2 may close the borrowed handle after startApplication returns."""
+    if kernel32 is None or not handle:
+        return None
+    current = kernel32.GetCurrentProcess()
+    target = wintypes.HANDLE()
+    if not kernel32.DuplicateHandle(current, wintypes.HANDLE(int(handle)), current,
+                                    ctypes.byref(target), 0, False, 2):
+        return None
+    return int(target.value)
+
+
+def close_process_handle(handle):
+    if kernel32 is not None and handle:
+        kernel32.CloseHandle(wintypes.HANDLE(int(handle)))
+
+
+def process_identity(handle, known_path=None):
     """Read identity from the original handle, which cannot be reused as another PID."""
     if kernel32 is None or not handle:
         return None
@@ -258,10 +277,11 @@ def process_identity(handle):
     stamp = lambda t: (int(t.dwHighDateTime) << 32) | int(t.dwLowDateTime)
     size = wintypes.DWORD(32768)
     path = ctypes.create_unicode_buffer(size.value)
-    if not kernel32.QueryFullProcessImageNameW(h, 0, path, ctypes.byref(size)):
+    queried = kernel32.QueryFullProcessImageNameW(h, 0, path, ctypes.byref(size))
+    if not queried and not known_path:
         return None
     return {'pid': process_id(handle), 'creationTime': stamp(times[0]),
-            'exitTime': stamp(times[1]) or None, 'path': path.value}
+            'exitTime': stamp(times[1]) or None, 'path': path.value if queried else known_path}
 
 
 def identity_by_pid(pid):
@@ -338,8 +358,11 @@ def wait_process(handle, timeout_sec=None):
     r = kernel32.WaitForSingleObject(wintypes.HANDLE(int(handle)), wintypes.DWORD(ms))
     if r == WAIT_TIMEOUT:
         return None
+    if r != 0:
+        raise RuntimeError(i18n.t('err.processWait', code=ctypes.get_last_error()))
     code = wintypes.DWORD()
-    kernel32.GetExitCodeProcess(wintypes.HANDLE(int(handle)), ctypes.byref(code))
+    if not kernel32.GetExitCodeProcess(wintypes.HANDLE(int(handle)), ctypes.byref(code)):
+        raise RuntimeError(i18n.t('err.processWait', code=ctypes.get_last_error()))
     return int(code.value)
 
 

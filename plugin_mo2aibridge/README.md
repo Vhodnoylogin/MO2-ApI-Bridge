@@ -718,3 +718,22 @@ can delete files before the caller can choose to preserve them. `/profiles/local
 returns `applied: false`, `reason: unsupported`. Root Builder private modules/settings are
 not imported or modified. Profile deletion is also not exposed; clone reversal identifies
 the created profile for removal through MO2.
+
+## Process ownership and argv (2.3.1)
+
+The bridge duplicates MO2's borrowed process handle immediately on the Qt thread and owns
+that copy until it stops. MO2 closing its copy therefore cannot fabricate an exit. A failed
+Windows wait is reported as unknown/error, never a successful exit code. Process creation
+and exit times remain readable from the owned handle after termination; a cached path is
+used only with that same process object. Stopping the bridge closes its copies, leaving
+the launched programs running.
+
+For ordinary argument values, prefer `/run` with `argv: ["path with spaces\\probe.py"]`.
+The bridge quotes every value according to Windows argv rules, including empty strings,
+quotes and trailing backslashes. Supply either `argv` or `args`. Existing `args` keeps its
+legacy MO2 command-fragment semantics: quote paths containing spaces yourself. A response
+includes the actual fragments in `args` and the original values in `argv` when supplied.
+
+For acceptance against a separately installed package, set `MO2AIBRIDGE_TOKEN_FILE` to
+its token file path. The default remains the source package's token file. The token itself
+is never supplied through an environment variable or committed.

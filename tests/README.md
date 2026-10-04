@@ -102,3 +102,5 @@ An optional native Qt regression suite is `python test_profileui.py`. It require
 Standalone PyQt6 protocol regression checks: `python tests/test_protocol.py`.
 Covers expired queue cancellation, started pending work, HTTP retries, boot/profile/instance identity,
 clone/select readback, shutdown and Windows process identity. No installed MO2 or game is accessed.
+
+For a separately installed package, set `MO2AIBRIDGE_TOKEN_FILE` to its token file path.
