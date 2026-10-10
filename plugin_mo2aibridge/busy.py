@@ -121,7 +121,7 @@ class BusyGuard(object):
                 return ''
         return self.game_exe
 
-    def busy(self):
+    def busy(self, refresh_game=True):
         """Who is holding MO2 right now, or None.
 
         MO2's callbacks know about launches through it but will not survive a missed
@@ -129,7 +129,9 @@ class BusyGuard(object):
         itself tell a launch through MO2 from one beside it. Together they give both, and the
         bookkeeping heals itself of stuck records.
         """
-        game = self.game_binary()
+        # Health reads must never queue an additional native lookup ahead of their
+        # own main-thread deadline. Setup writes retain the normal cold-cache lookup.
+        game = self.game_binary() if refresh_game else (self.game_exe or '')
         names = {os.path.basename(k).lower() for k in self.launched}
         if game:
             names.add(game)

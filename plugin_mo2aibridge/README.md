@@ -737,3 +737,19 @@ includes the actual fragments in `args` and the original values in `argv` when s
 For acceptance against a separately installed package, set `MO2AIBRIDGE_TOKEN_FILE` to
 its token file path. The default remains the source package's token file. The token itself
 is never supplied through an environment variable or committed.
+
+## Health and Unicode logging (2.3.2)
+
+`/ping` uses cached game identity for its initial busy check and queues only one
+native read under `timeouts.ping` (15 seconds by default). A cold cache is warmed
+inside that same native read; it no longer adds a separate `timeouts.gameName`
+wait. The response adds `busyKnown`: false means the game executable cache is
+unavailable, so a null `busy` alone must not be interpreted as proof of idleness.
+Setup-write guards keep their normal native game lookup and all busy protections.
+An unavailable main thread still returns `ok: false` and its diagnostic.
+This bounds the Qt queue wait; a host call holding the entire Python interpreter
+cannot be recovered by an in-process HTTP timeout.
+
+Messages to MO2's Qt logger are explicitly UTF-8, preserving Russian and other
+Unicode text without disabling that sink. The independent file log remains UTF-8.
+Standalone regression checks: `python tests/test_health_logging.py` (PyQt6 required).

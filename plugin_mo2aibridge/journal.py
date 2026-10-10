@@ -77,7 +77,9 @@ class QtSink(Sink):
 
     def emit(self, line):
         from PyQt6.QtCore import qCritical
-        qCritical(line)
+        # This API takes const char*, and PyQt encodes str as ASCII. Qt decodes
+        # explicitly supplied bytes as UTF-8, preserving translated diagnostics.
+        qCritical(line.encode('utf-8'))
 
 
 class FileSink(Sink):

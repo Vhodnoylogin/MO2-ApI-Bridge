@@ -97,3 +97,9 @@ Covers expired queue cancellation, started pending work, HTTP retries, boot/prof
 clone/select readback, shutdown and Windows process identity. No installed MO2 or game is accessed.
 
 For a separately installed package, set `MO2AIBRIDGE_TOKEN_FILE` to its token file path.
+
+`python tests/test_health_logging.py` требует отдельный PyQt6. Проверяет холодный
+запрос здоровья при остановленной обработке очереди Qt, отмену без позднего
+запроса имени игры, сохранённые признаки занятости, обычную защиту операций
+изменения и реальный вывод Qt для кириллицы, другого Unicode и знаков процента.
+Используется временный имитатор MO2; установленная MO2 не затрагивается.

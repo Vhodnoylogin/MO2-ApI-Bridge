@@ -19,6 +19,10 @@ class Reader(Domain):
     # ================================================== state
     def ping(self, _=None):
         def f():
+            # A cold cache is warmed inside this one main-thread job, never by
+            # a separate ten-second wait in the HTTP thread's busy check.
+            if self.guard.game_exe is None:
+                self.guard.prime()
             return {'ok': True,
                     'profile': self.o.profile().name(),
                     'game': self.o.managedGame().gameShortName(),
@@ -28,15 +32,19 @@ class Reader(Domain):
                     'downloads': self.o.downloadsPath()}
         # Busy is determined first and without the main thread: this is the very call needed
         # when MO2 is not responding, and it has to answer quickly.
-        res = {'busy': self.guard.busy()}
+        res = {'busy': self.guard.busy(refresh_game=False)}
         try:
             res.update(self.run_main(f, timeout=self.timeout('ping')))
+            # The first successful native read may have discovered the game name.
+            res['busy'] = self.guard.busy(refresh_game=False)
             res['mainThread'] = 'ok'
         except Exception as exc:
             # An unresponsive main thread is an answer, not an error: it means MO2 is busy
             # with something.
             res['ok'] = False
             res['mainThread'] = str(exc)
+        # Null busy with an unavailable executable cache is not proof of idleness.
+        res['busyKnown'] = bool(self.guard.game_exe)
         return res
 
     def api(self, _=None):
