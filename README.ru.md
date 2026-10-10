@@ -151,3 +151,7 @@ Optional standalone PyQt6 regression checks (no installed MO2 is accessed):
 python tests/test_profileui.py
 python tests/test_protocol.py
 ```
+
+## Участие в разработке
+
+В разработке участвовал [Codex (OpenAI)](https://github.com/codex).
