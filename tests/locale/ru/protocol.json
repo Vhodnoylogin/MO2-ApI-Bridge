@@ -1,4 +1,7 @@
 {
+ "protocol.busyQueueAdmitted": "команда принята в очередь до изменения занятости",
+ "protocol.busyQueueFinished": "отложенная команда завершена после обработки Qt",
+ "protocol.busyQueueRefused": "отказ при выполнении сохраняет состояние мода",
  "protocol.title": "Протокол операций и настоящий Qt",
  "protocol.skipped": "ПРОПУСК: нужен отдельный PyQt6",
  "protocol.expiredError": "ошибка просроченной очереди",

@@ -106,8 +106,11 @@ class Operations:
             with record.lock:
                 record.state = 'running'
             result = fn(body)
-            code, state = 200, ('refused' if isinstance(result, dict)
-                                and result.get('applied') is False else 'succeeded')
+            if isinstance(result, dict) and result.get('failed'):
+                code, state = 500, 'failed'
+            else:
+                code, state = 200, ('refused' if isinstance(result, dict)
+                                    and result.get('applied') is False else 'succeeded')
         except QueueExpired as exc:
             code, state = 504, 'failed'
             result = {'error': str(exc), 'code': 'queueExpired', 'job': exc.job.snapshot()}

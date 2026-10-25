@@ -7,11 +7,12 @@ With apply they are ordinary writes, behind every lock.
 import io
 import os
 import shutil
+import tempfile
 
 import mobase
 
 from . import i18n
-from .base import Domain, flag, stamp
+from .base import Domain, flag, safe, stamp
 
 
 class LoadOrder(Domain):
@@ -23,6 +24,8 @@ class LoadOrder(Domain):
             raise ValueError(i18n.t('err.needSet'))
 
         def f():
+            if apply_it:
+                self.ctx.expected(body)
             pl = self.o.pluginList()
             known = set(pl.pluginNames())
             plan, missing = [], []
@@ -38,9 +41,20 @@ class LoadOrder(Domain):
                     pl.setState(p['plugin'], mobase.PluginState.ACTIVE if p['to']
                                 else mobase.PluginState.INACTIVE)
             res = {'applied': apply_it, 'changes': plan, 'unknown': missing}
-            if apply_it and plan:
+            if apply_it and any(name in known for name in want):
+                # Retry must reconcile disk even when a previous failed persistence
+                # attempt already changed memory and the new plan is empty.
                 res['file'] = self.write_plugins_txt(
-                    {p['plugin'].lower(): p['to'] for p in plan})
+                    {name.lower(): bool(active) for name, active in want.items() if name in known})
+                if not res['file']['written'] or res['file'].get('notInFile'):
+                    res.update(applied=False, failed=True, partial=True,
+                               memoryApplied=bool(plan), persisted=False,
+                               reason='persistence', error=i18n.t('err.pluginPersistence'),
+                               reconciliationRequired=True,
+                               undo={'route': '/plugins/state', 'body': {
+                                   'set': {p['plugin']: p['from'] for p in plan}, 'apply': True}})
+                else:
+                    res['persisted'] = True
             return res
         # A preview is always available: it changes nothing.
         if not apply_it:
@@ -71,12 +85,13 @@ class LoadOrder(Domain):
         except Exception as exc:
             return {'written': False, 'error': str(exc), 'path': path}
         eol = chr(13) + chr(10) if chr(13) + chr(10) in raw else chr(10)
-        out, done = [], set()
+        out, done, matches = [], set(), True
         for line in raw.split(chr(10)):
             bare = line.rstrip(chr(13))
             name = bare[1:] if bare.startswith('*') else bare
             key = name.strip().lower()
             if key in wanted and name.strip():
+                matches = matches and bare.startswith('*') == wanted[key]
                 out.append(('*' if wanted[key] else '') + name)
                 done.add(key)
             else:
@@ -84,6 +99,14 @@ class LoadOrder(Domain):
         while out and not out[-1]:
             out.pop()
         text = eol.join(out) + eol
+        missing = sorted(set(wanted) - done)
+        if missing or matches:
+            # A converged retry must preserve the reversal bytes of the last actual
+            # change. Missing entries are a validation failure, not a reason to save
+            # unrelated lines or overwrite that backup.
+            return {'written': not missing, 'path': path, 'changed': [],
+                    'backup': path + '.bak' if os.path.isfile(path + '.bak') else '',
+                    'notInFile': missing, 'unchanged': True}
         # We write through a draft and a swap, not over the original. plugins.txt is the one
         # user file the bridge edits with its own hands, and writing over it meant that any
         # failure during the write (disk full, an antivirus holding the file, the thread cut
@@ -95,14 +118,22 @@ class LoadOrder(Domain):
         # what was there a moment earlier. Hence refreshing it on every write - a week-old
         # copy would also undo everything the person changed since.
         backup = path + '.bak'
+        draft = None
         try:
             shutil.copyfile(path, backup)
-            draft = path + '.new'
-            io.open(draft, 'w', encoding='utf-8', newline='').write(text)
+            fd, draft = tempfile.mkstemp(prefix='.mo2aibridge-', suffix='.new',
+                                         dir=os.path.dirname(path))
+            with os.fdopen(fd, 'w', encoding='utf-8', newline='') as stream:
+                stream.write(text)
+                stream.flush()
+                os.fsync(stream.fileno())
             os.replace(draft, path)
         except Exception as exc:
             return {'written': False, 'error': str(exc), 'path': path,
                     'backup': backup if os.path.isfile(backup) else ''}
+        finally:
+            if draft and os.path.isfile(draft):
+                safe(lambda: os.remove(draft))
         return {'written': True, 'path': path, 'changed': sorted(done),
                 'backup': backup, 'notInFile': sorted(set(wanted) - done)}
 

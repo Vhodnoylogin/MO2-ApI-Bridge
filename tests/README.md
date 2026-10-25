@@ -22,6 +22,7 @@ to be loud, not papered over.
 | `test_policy.py` | no | the update rules against a table of made-up Nexus pages: the verdict and the reason for each, and that the rules import nothing of the network, MO2 or the disk |
 | `test_transport_offline.py` | no | the transport on a real loopback socket: a taken port refuses, a bad request is 400 and a broken bridge is 500, no token means 403, and the port falls silent after a stop |
 | `test_contract_offline.py` | no | the contract of all 32 routes against a stand-in `mobase` (`fake_mo2.py`): reply keys, both locks, writing `plugins.txt`, installing into a real temporary folder |
+| `test_mutation_failures.py` | no | Failed persistence, retry repair and backup preservation; partial copy, unreadable selections and uncertain inventories; dispatch-time busy checks |
 | `test_routes.py` | yes | all 32 routes and both locks |
 | `test_plugins_txt.py` | yes | that plugin state reaches `plugins.txt` and survives `/refresh` |
 | `test_install_modes.py` | yes | install, merge and replace in a sandbox |

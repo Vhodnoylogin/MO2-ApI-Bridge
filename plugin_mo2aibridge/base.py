@@ -168,7 +168,14 @@ class Domain(object):
             if stop:
                 return self._refusal(stop, op, 'danger')
         if on_main:
-            res = self.run_main(fn, timeout=timeout) if timeout else self.run_main(fn)
+            def checked():
+                # Admission can precede Qt execution by seconds. A launch or modal may
+                # have made the host busy while this job was waiting in the queue.
+                stop = self.guard.refusal('op.' + op)
+                if stop:
+                    return self._refusal(stop, op, 'busy')
+                return fn()
+            res = self.run_main(checked, timeout=timeout) if timeout else self.run_main(checked)
         else:
             res = fn()
         return stamp(res, op)

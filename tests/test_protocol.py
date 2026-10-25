@@ -291,4 +291,30 @@ app.processEvents()
 observer_thread.join(2)
 check('readStartedPending', isinstance(read_errors[0], operations.JobPending))
 check('readEventuallyPolls', read_runner.status(read_errors[0].job.identifier)['result'], {'read': 42})
+# Host busy can change after admission while the real Qt job is still queued.
+from PyQt6.QtCore import Qt
+busy_fx = fake_mo2.Fixture()
+busy_runner = runtime.MainThreadRunner()
+busy_svc = services.Services(busy_fx.organizer, run_main=busy_runner.call, docs_path='README.md')
+busy_flag, busy_checks, busy_outcome = {'value': False}, [], []
+busy_queued = threading.Event()
+
+def busy_refusal(*args):
+    busy_checks.append(busy_flag['value'])
+    return {'applied': False, 'busy': True} if busy_flag['value'] else None
+
+busy_svc.guard.refusal = busy_refusal
+busy_runner._fire.connect(lambda job: busy_queued.set(), type=Qt.ConnectionType.DirectConnection)
+busy_thread = threading.Thread(target=lambda: busy_outcome.append(
+    busy_svc.toggle({'mod': 'Alpha Mod', 'active': False})))
+busy_thread.start()
+check('busyQueueAdmitted', busy_queued.wait(2))
+busy_flag['value'] = True
+check('busyQueueFinished', drain_until(lambda: bool(busy_outcome)))
+busy_thread.join(2)
+check('busyQueueRefused', (busy_checks, busy_outcome[0]['applied'],
+                          bool(busy_fx.organizer.modList().state('Alpha Mod') & 2)),
+      ([False, True], False, True))
+busy_runner.close()
+busy_fx.cleanup()
 r.done()

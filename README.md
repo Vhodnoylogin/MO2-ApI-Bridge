@@ -65,6 +65,7 @@ MO2-ApI-Bridge/             repository root
     ├── test_policy.py             no MO2: the update rules against a table of pages
     ├── test_transport_offline.py  no MO2: the socket, the token, the reply codes
     ├── test_contract_offline.py   no MO2: all 32 routes against a stand-in mobase
+    ├── test_mutation_failures.py  no MO2: failed writes, partial installs and retry repair
     ├── test_routes.py             acceptance: all 32 routes
     ├── test_plugins_txt.py        acceptance: plugin state reaches the file
     ├── test_install_modes.py      acceptance: install, merge and replace in a sandbox
@@ -126,8 +127,8 @@ that file, so the file has to arrive together with the plugin.
 python tests/run.py
 ```
 
-Six standalone suites run without MO2 — source hygiene, the busy logic, the string catalogues,
-the update rules, the transport, and the contract of every route against a stand-in `mobase`.
+Seven standalone suites run without MO2 — source hygiene, the busy logic, the string catalogues,
+the update rules, the transport, the contract of every route against a stand-in `mobase`, and mutation failure/retry checks.
 Four acceptance
 suites need a running manager and are skipped with a plain word when there is none; a skip does
 not count as a failure. The details are in [tests/README.md](tests/README.md).

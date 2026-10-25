@@ -1,0 +1,19 @@
+{
+ "mutation.title": "Mutation failure and retry contracts (scratch files only)",
+ "mutation.backupPreserved": "converged no-op preserves earlier reversal bytes",
+ "mutation.unreadableSelection": "unreadable root or nested selection cannot wipe or create a mod",
+ "mutation.inventoryFailureRetained": "unknown inventory preserves the original partial failure",
+ "mutation.overwriteEvidence": "only completed or possibly partial overwrites are reported",
+ "mutation.persistenceFailed": "persistence failure is terminal failure, not success",
+ "mutation.partialDisclosed": "memory/disk divergence is disclosed",
+ "mutation.originalIntact": "failed replacement preserves original bytes",
+ "mutation.retrySameFailure": "same retry key retains the failed outcome",
+ "mutation.draftRemoved": "unique draft is cleaned after a failed replacement",
+ "mutation.retryReconciles": "fresh retry reconciles disk even when memory already matches",
+ "mutation.missingNotSuccess": "missing file entry cannot report persistence success",
+ "mutation.copyFailureReported": "partial copy reports failure and partial effects",
+ "mutation.partialRefreshed": "partial copy still requests native reconciliation",
+ "mutation.partialEvidence": "partial effects remain visible in the result",
+ "mutation.selectionBeforeWrites": "all selected folders are validated before target changes",
+ "mutation.dequeueRechecks": "busy is checked again when the queued mutation executes"
+}

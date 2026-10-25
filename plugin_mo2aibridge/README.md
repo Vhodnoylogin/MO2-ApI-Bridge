@@ -69,8 +69,8 @@ work.
 python ../tests/run.py
 ```
 
-Ten suites. Six run without MO2 — source hygiene, the busy-state logic, the strings, the update
-rules, the contract of all 32 routes over a fake `mobase`, and the transport; four acceptance
+Eleven suites. Seven run without MO2 — source hygiene, the busy-state logic, the strings, the update
+rules, the contract of all 32 routes over a fake `mobase`, the transport, and mutation failure/retry checks; four acceptance
 suites need a running manager and are skipped with a clear message when it is absent. They live **outside** this package, in
 `tests\` next to it, and are never shipped to MO2. Details in `..\tests\README.md`.
 
@@ -753,3 +753,34 @@ cannot be recovered by an in-process HTTP timeout.
 Messages to MO2's Qt logger are explicitly UTF-8, preserving Russian and other
 Unicode text without disabling that sink. The independent file log remains UTF-8.
 Standalone regression checks: `python tests/test_health_logging.py` (PyQt6 required).
+
+## Mutation failure handling (2.3.3)
+
+Queued setup mutations check busy state again when Qt executes them. Installation
+also rechecks the expected session/profile and busy state after extraction, before
+creating or changing the target. This is a fresh guard, not a transaction lock over
+other MO2 plugins or external writers.
+
+`/plugins/state` does not report success when `plugins.txt` cannot be persisted or a
+requested entry is absent. The response has `failed: true`, `partial: true`,
+`persisted: false`, reversal data and `reconciliationRequired: true`; tracked HTTP
+operations finish with status 500 and state `failed`. In-memory effects may remain.
+The same retry key returns that failure. After inspecting it and removing the cause,
+a deliberate new request can reconcile disk even if memory already matches. A
+converged no-op preserves the previous backup. Files use unique drafts that are
+closed and flushed before replacement.
+
+Installation validates every selected extracted folder before target changes.
+Enumeration failures are errors, including failures in nested folders. If copying
+or replacement partially fails, the reply retains the original error, target and
+partial effects, and requests MO2 refresh when idle. `refreshRequested` means the
+asynchronous refresh was requested, not completed. A failed inventory is reported
+as `inventoryKnown: false` with null counts. Failed merge replies distinguish
+`confirmedOverwritten` and `possibleOverwritten`; the successful legacy
+`overwritten` field remains an inventory intersection. No automatic rollback is
+performed. Inspect and reconcile partial results before launching.
+
+The native `GamePlugins.writePluginLists(organizer.pluginList())` path was separately
+qualified in isolated MO2 2.5.2 with Skyrim VR: disk state/order, native reread and
+full refresh preserved the fixture changes. It is not enabled automatically here:
+provider behavior and failures require qualification for each supported setup.

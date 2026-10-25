@@ -1,4 +1,7 @@
 {
+ "protocol.busyQueueAdmitted": "mutation was admitted before the host became busy",
+ "protocol.busyQueueFinished": "queued mutation returned after Qt dispatch",
+ "protocol.busyQueueRefused": "dispatch-time busy refusal preserves mod state",
  "protocol.title": "Operation protocol and real Qt",
  "protocol.skipped": "SKIP: standalone PyQt6 is required",
  "protocol.expiredError": "expired error",
