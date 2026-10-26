@@ -14,6 +14,15 @@ from . import i18n
 from .base import Domain, one, safe
 
 
+def diagnostic_error(report, phase, path, error, limit):
+    """Retain bounded evidence while counting every incomplete diagnostic step."""
+    if report is None:
+        return
+    report['errorCount'] += 1
+    if len(report['errors']) < max(0, limit):
+        report['errors'].append({'phase': phase, 'path': str(path), 'error': str(error)})
+
+
 class Reader(Domain):
 
     # ================================================== state
@@ -162,6 +171,8 @@ class Reader(Domain):
             raise ValueError(i18n.t('err.needName'))
         want_conf = one(q, 'conflicts', '1') != '0'
         limit = int(one(q, 'limit', str(self.limit('analyzeLimit'))))
+        diagnostics = {'errorCount': 0, 'errors': []}
+        error_limit = self.limit()
 
         def f():
             ml = self.o.modList()
@@ -170,19 +181,28 @@ class Reader(Domain):
                 raise ValueError(i18n.t('err.noSuchMod', mod=name))
             root = m.absolutePath()
             files = []
-            for dp, _dn, fs in os.walk(root):
-                rel_dir = os.path.relpath(dp, root)
-                for x in fs:
-                    if x.lower() == 'meta.ini' and rel_dir == '.':
-                        continue
-                    files.append(x if rel_dir == '.' else os.path.join(rel_dir, x))
-            wins, loses, contested = [], [], 0
+            def inventory_error(exc):
+                diagnostic_error(diagnostics, 'inventory', getattr(exc, 'filename', root),
+                                 exc, error_limit)
+            try:
+                for dp, _dn, fs in os.walk(root, onerror=inventory_error):
+                    rel_dir = os.path.relpath(dp, root)
+                    for x in fs:
+                        if x.lower() == 'meta.ini' and rel_dir == '.':
+                            continue
+                        files.append(x if rel_dir == '.' else os.path.join(rel_dir, x))
+            except Exception as exc:
+                inventory_error(exc)
+            inventory_complete = diagnostics['errorCount'] == 0
+            wins, loses, contested, succeeded = [], [], 0, 0
             if want_conf:
                 for rel in files:
                     try:
                         org = list(self.o.getFileOrigins(rel))
-                    except Exception:
+                    except Exception as exc:
+                        diagnostic_error(diagnostics, 'origins', rel, exc, error_limit)
                         continue
+                    succeeded += 1
                     if len(org) < 2:
                         continue
                     contested += 1
@@ -190,7 +210,15 @@ class Reader(Domain):
             return {'mod': name, 'path': root, 'files': len(files),
                     'plugins': [x for x in files if x.lower().endswith(('.esp', '.esm', '.esl'))],
                     'sample': sorted(files)[:limit],
+                    'complete': diagnostics['errorCount'] == 0,
+                    'partial': diagnostics['errorCount'] != 0,
+                    'inventoryComplete': inventory_complete,
+                    'errorCount': diagnostics['errorCount'], 'errors': diagnostics['errors'],
                     'conflicts': {'checked': want_conf, 'contested': contested,
+                                  'complete': want_conf and diagnostics['errorCount'] == 0,
+                                  'attempted': len(files) if want_conf else 0,
+                                  'succeeded': succeeded,
+                                  'failed': len(files) - succeeded if want_conf else 0,
                                   'winsCount': len(wins), 'losesCount': len(loses),
                                   'wins': wins[:limit], 'loses': loses[:limit]}}
         res = self.run_main(f, timeout=self.timeout('analyze'))
@@ -200,6 +228,8 @@ class Reader(Domain):
             res['card'] = self.mod({'name': [name]})
         except Exception as exc:
             res['card'] = {'error': str(exc)}
+            diagnostic_error(diagnostics, 'card', name, exc, error_limit)
+            res.update(complete=False, partial=True, errorCount=diagnostics['errorCount'])
         return res
 
     # ================================================== the virtual Data
@@ -246,6 +276,8 @@ class Reader(Domain):
         out_dir = body.get('outDir') or os.path.join(self.o.basePath(), 'vfs-export')
         timeout = float(body.get('timeout') or self.timeout('vfsExport'))
         how = 'walk' if body.get('legacyWalk') else 'virtualFileTree'
+        diagnostics = {'errorCount': 0, 'errors': []}
+        error_limit = self.limit()
 
         def by_tree():
             rows = []
@@ -255,7 +287,8 @@ class Reader(Domain):
                     rel = (path or '') + entry.name()
                     try:
                         org = list(self.o.getFileOrigins(rel))
-                    except Exception:
+                    except Exception as exc:
+                        diagnostic_error(diagnostics, 'origins', rel, exc, error_limit)
                         org = []
                     rows.append((rel, org[0] if org else '', '', '|'.join(org)))
                 return mobase.IFileTree.WalkReturn.CONTINUE
@@ -263,13 +296,14 @@ class Reader(Domain):
             self.o.virtualFileTree().walk(visit, chr(92))
             return self.o.profile().name(), rows
 
-        walk = walk_factory(self.o, self.cfg.get('walkRoots') or [])
+        walk = walk_factory(self.o, self.cfg.get('walkRoots') or [], diagnostics, error_limit)
         if how == 'walk':
             profile, rows = self.run_main(walk, timeout=timeout)
         else:
             try:
                 profile, rows = self.run_main(by_tree, timeout=timeout)
             except Exception as exc:
+                diagnostic_error(diagnostics, 'virtualFileTree', '.', exc, error_limit)
                 how = 'walk (fallback)'
                 self.note(i18n.t('vfs.fallback', error=exc))
                 profile, rows = self.run_main(walk, timeout=timeout)
@@ -284,10 +318,13 @@ class Reader(Domain):
         return {'profile': profile, 'files': len(rows), 'how': how,
                 'fromArchive': sum(1 for r in rows if r[2]),
                 'contested': sum(1 for r in rows if '|' in r[3]),
+                'complete': diagnostics['errorCount'] == 0,
+                'partial': diagnostics['errorCount'] != 0,
+                'errorCount': diagnostics['errorCount'], 'errors': diagnostics['errors'],
                 'csv': path}
 
 
-def walk_factory(o, roots):
+def walk_factory(o, roots, diagnostics=None, error_limit=200):
     """The fallback breadth-first walk: the root is assembled from the mods' own trees."""
     def walk():
         ml = o.modList()
@@ -299,8 +336,8 @@ def walk_factory(o, roots):
                 for entry in ml.getMod(name).fileTree():
                     if entry.isDir():
                         seen_roots.add(entry.name().lower())
-            except Exception:
-                pass
+            except Exception as exc:
+                diagnostic_error(diagnostics, 'modTree', name, exc, error_limit)
         rows, queue, seen = [], ['.'] + sorted(seen_roots), set()
         while queue:
             d = queue.pop()
@@ -311,11 +348,12 @@ def walk_factory(o, roots):
             try:
                 for sub in o.listDirectories(d):
                     queue.append(sub if at_root else d + chr(92) + sub)
-            except Exception:
-                pass
+            except Exception as exc:
+                diagnostic_error(diagnostics, 'directories', d, exc, error_limit)
             try:
                 infos = o.findFileInfos(d, lambda fi: True)
-            except Exception:
+            except Exception as exc:
+                diagnostic_error(diagnostics, 'fileInfos', d, exc, error_limit)
                 continue
             for fi in infos:
                 org = list(fi.origins) if fi.origins else []

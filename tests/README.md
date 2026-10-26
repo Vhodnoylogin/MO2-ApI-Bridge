@@ -6,7 +6,7 @@
 python run.py
 ```
 
-All ten suites in a row. The suites that need MO2 are skipped with a plain word when it is not
+All seventeen suites in a row. The suites that need MO2 are skipped with a plain word when it is not
 running — a skip does not count as a failure.
 
 The wording of the checks is localised the same way the plugin's is: the catalogue lives in
@@ -111,3 +111,11 @@ health request with a deliberately undrained Qt queue, cancellation without a
 late cache lookup, cached busy evidence, ordinary write-guard lookup, and actual
 Qt logging round trips for Cyrillic, other Unicode and literal percent signs.
 It uses disposable fake organizer data, not installed MO2.
+
+
+Release2.3.4: run.py also invokes test_patch234.py (32 failure/identity checks),
+test_http_limits.py (real bounded loopback inputs), test_lifecycle.py (real Qt with
+fake native lifecycle), and the existing profileui/protocol/health suites.
+The four suites requiring PyQt6 skip explicitly when it is unavailable; release
+validation runs them using a Qt-enabled interpreter. No live manager is accessed
+by those suites. Live acceptance remains separate and requires an isolated instance.

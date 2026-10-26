@@ -139,6 +139,11 @@ class ModOps(Domain):
             self.o.refresh(True)
             out = {'applied': bool(ok), 'mod': mod, 'path': card['path'],
                    'card': card, 'archiveKept': True, 'archiveRecycled': False}
+            if not ok:
+                out.update(failed=True, partial=True, reason='removal',
+                           error=i18n.t('err.removeFailed', mod=mod),
+                           reconciliationRequired=True, undo=None)
+                return out
             if with_archive and card.get('archivePath'):
                 # The archive is the one thing the bridge deletes itself, so only to the
                 # Recycle Bin.

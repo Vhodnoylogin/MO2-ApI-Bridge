@@ -166,27 +166,52 @@ class Launcher(Domain):
 
     def windows(self, q):
         pid = int(one(q, 'pid', '0') or 0)
+        identity = None
         if not pid:
             key = one(q, 'key', '')
-            pid = self.procs.get(key, (0, 0, ''))[1]
+            with self.lock:
+                pid = self.procs.get(key, (0, 0, ''))[1]
+                identity = self.identities.get(key)
+            if pid and (identity is None or not winapi.identity_alive(identity)):
+                return {'pid': pid, 'windows': [], 'alive': False, 'key': key,
+                        'reason': 'processIdentity'}
         if not pid:
             raise ValueError(i18n.t('err.needPidOrKey'))
-        return {'pid': pid, 'windows': winapi.windows_of(pid)}
+        windows = winapi.windows_of(pid)
+        if identity is not None and not winapi.identity_alive(identity):
+            return {'pid': pid, 'windows': [], 'alive': False, 'key': key,
+                    'reason': 'processIdentity'}
+        return {'pid': pid, 'windows': windows}
 
     def window(self, body):
         hwnd = int(body.get('hwnd') or 0)
         action = body.get('action')
         if not hwnd or not winapi.is_window(hwnd):
             raise ValueError(i18n.t('err.noSuchWindow'))
+        key = body.get('key')
+        verify = None
+        if key is not None:
+            with self.lock:
+                identity = self.identities.get(key) if isinstance(key, str) else None
+            def verify(target=hwnd):
+                if (not identity or not winapi.identity_alive(identity)
+                        or winapi.window_pid(hwnd) != identity['pid']
+                        or (target != hwnd and winapi.window_pid(target) != identity['pid'])):
+                    raise ValueError(i18n.t('err.processIdentity'))
+            verify()
         title = winapi.window_text(hwnd)
         if action == 'close':
-            winapi.close(hwnd)
+            if verify is None:
+                winapi.close(hwnd)
+            else:
+                winapi.close(hwnd, before_post=verify)
             return {'hwnd': hwnd, 'title': title, 'did': 'close'}
         if action == 'click':
             caption = body.get('button') or ''
             if not caption.strip():
                 raise ValueError(i18n.t('err.needButton'))
-            hit = winapi.click_by_caption(hwnd, caption)
+            hit = (winapi.click_by_caption(hwnd, caption) if verify is None else
+                   winapi.click_by_caption(hwnd, caption, before_post=verify))
             if hit is None:
                 raise ValueError(i18n.t('err.noButton', button=caption))
             return {'hwnd': hwnd, 'title': title, 'did': 'click', 'button': hit}

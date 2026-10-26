@@ -191,9 +191,9 @@ run triggers seven or eight in a row. **Do not hunt for the cause in the bridge 
 python tests/run.py
 ```
 
-Seven offline suites run without MO2 — source hygiene, busy logic, strings, the update rules,
+Nine offline suites run without MO2 — source hygiene, busy logic, strings, the update rules,
 the full route contract on a fake `mobase`, the transport on a real loopback socket,
-and mutation failure/retry checks. Four
+mutation failure/retry checks, patch regressions and HTTP limits. Four optional Qt suites also run without MO2. Four
 acceptance
 suites need a running manager and are **skipped** with a clear message when there is none; a
 skip is not a failure.

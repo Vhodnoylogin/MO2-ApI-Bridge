@@ -23,19 +23,11 @@ import os
 from . import i18n, winapi
 
 
-class BusyGuard(object):
-    """Launch bookkeeping and the three sources of busy."""
+class LaunchState(object):
+    """MO2-lifetime evidence, with no HTTP services, runner or operation registry."""
 
-    def __init__(self, ctx):
-        self.ctx = ctx
-        self.o = ctx.o
-        self.run_main = ctx.run_main
-        self.note = ctx.note
-        # The game's executable name. Asked once and remembered: the busy check has to work
-        # even when MO2's main thread is not answering.
-        self.game_exe = None
-        # MO2's main window, found once: whether it is enabled shows the manager's own lock.
-        self._self_hwnd = None
+    def __init__(self, note):
+        self.note = note
         # What MO2 currently holds running: path -> {'n': how many times, 'mine': ours?}.
         # Filled by MO2's own callbacks, so it covers both what the bridge launched and what
         # the user launched with a button in the window.
@@ -71,6 +63,31 @@ class BusyGuard(object):
             self.launched.pop(key, None)
         self.note(i18n.t('log.mo2Finished', path=key, code=exit_code,
                          left=len(self.launched)))
+
+
+class BusyGuard(object):
+    """The three sources of busy, using host-lifetime launch bookkeeping."""
+
+    def __init__(self, ctx, launches=None):
+        self.ctx = ctx
+        self.o = ctx.o
+        self.run_main = ctx.run_main
+        self.note = ctx.note
+        self.launches = launches if launches is not None else LaunchState(self.note)
+        # Cache these per HTTP boot, without tying the retained evidence to its Context.
+        self.game_exe = None
+        self._self_hwnd = None
+
+    launched = property(lambda s: s.launches.launched,
+                        lambda s, v: setattr(s.launches, 'launched', v))
+    _starting = property(lambda s: s.launches._starting,
+                         lambda s, v: setattr(s.launches, '_starting', v))
+
+    def on_about_to_run(self, path, *rest):
+        return self.launches.on_about_to_run(path, *rest)
+
+    def on_finished_run(self, path, exit_code=0):
+        return self.launches.on_finished_run(path, exit_code)
 
     def prime(self):
         """Remember the game's executable name. Called FROM the main thread, directly."""

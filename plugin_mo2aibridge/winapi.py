@@ -65,6 +65,14 @@ def children(hwnd):
     return out
 
 
+def window_pid(hwnd):
+    """Current owner of a window; callers separately validate process identity."""
+    _require()
+    pid = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    return pid.value
+
+
 def windows_of(pid):
     """A process's top-level windows together with the captions of their buttons.
 
@@ -136,11 +144,13 @@ def is_window(hwnd):
     return bool(user32.IsWindow(hwnd))
 
 
-def close(hwnd):
+def close(hwnd, before_post=None):
+    if before_post is not None:
+        before_post(hwnd)
     user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
 
 
-def click_by_caption(hwnd, caption):
+def click_by_caption(hwnd, caption, before_post=None):
     """Press a button by its caption. Returns the caption pressed, or None.
 
     By text only and never by coordinates or order: in generator dialogs such as DynDOLOD the
@@ -152,6 +162,8 @@ def click_by_caption(hwnd, caption):
     for k in children(hwnd):
         if k['class'].lower().startswith('button') and \
                 k['text'].replace('&', '').strip().lower() == want:
+            if before_post is not None:
+                before_post(k['hwnd'])
             user32.PostMessageW(k['hwnd'], BM_CLICK, 0, 0)
             return k['text']
     return None

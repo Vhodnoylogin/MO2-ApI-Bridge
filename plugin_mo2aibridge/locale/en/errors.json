@@ -18,6 +18,8 @@
  "err.pluginPersistence": "Plugin state changed in memory, but persistence could not be verified. Inspect file and undo before retrying or launching.",
  "err.installPaths": "paths must be a list of folders inside the extracted archive",
  "err.installRefresh": "Files may have changed, but MO2 refresh could not be requested. Reconcile the installation before launching.",
+ "err.removeFailed": "MO2 did not confirm removing %(mod)s. Its archive was kept; inspect the mod before retrying.",
+ "err.processIdentity": "The recorded process no longer owns this window; no action was performed.",
  "err.no7z": "7z.exe not found",
  "err.noArchive": "archive not found: %(archive)s",
  "err.noButton": "button \"%(button)s\" not found in this window",

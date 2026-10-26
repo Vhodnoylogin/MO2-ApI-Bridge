@@ -18,6 +18,8 @@
  "err.needPath": "нужен path",
  "err.needPidOrKey": "нужен pid или key",
  "err.needSet": "нужен set: {\"плагин.esp\": true/false, ...}",
+ "err.removeFailed": "MO2 не подтвердил удаление %(mod)s. Архив сохранён; проверьте мод перед повтором.",
+ "err.processIdentity": "Записанный процесс больше не владеет этим окном; действие не выполнено.",
  "err.no7z": "не найден 7z.exe",
  "err.noArchive": "нет архива: %(archive)s",
  "err.noButton": "кнопка \"%(button)s\" в этом окне не найдена",

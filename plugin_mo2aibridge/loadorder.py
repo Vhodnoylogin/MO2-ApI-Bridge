@@ -4,9 +4,7 @@
 Both routes can preview: without apply they change nothing and work even while MO2 is busy.
 With apply they are ordinary writes, behind every lock.
 """
-import io
 import os
-import shutil
 import tempfile
 
 import mobase
@@ -22,6 +20,13 @@ class LoadOrder(Domain):
         apply_it = flag(body, 'apply')
         if not isinstance(want, dict) or not want:
             raise ValueError(i18n.t('err.needSet'))
+        # Normalize the whole batch before changing memory or touching the profile.
+        normalized = {}
+        for name, value in want.items():
+            if value is None:
+                raise ValueError(i18n.t('err.badFlag', key=name, value=value))
+            normalized[name] = flag({name: value}, name)
+        want = normalized
 
         def f():
             if apply_it:
@@ -34,8 +39,8 @@ class LoadOrder(Domain):
                     missing.append(name)
                     continue
                 now = bool(pl.state(name) & mobase.PluginState.ACTIVE)
-                if now != bool(active):
-                    plan.append({'plugin': name, 'from': now, 'to': bool(active)})
+                if now != active:
+                    plan.append({'plugin': name, 'from': now, 'to': active})
             if apply_it:
                 for p in plan:
                     pl.setState(p['plugin'], mobase.PluginState.ACTIVE if p['to']
@@ -45,7 +50,7 @@ class LoadOrder(Domain):
                 # Retry must reconcile disk even when a previous failed persistence
                 # attempt already changed memory and the new plan is empty.
                 res['file'] = self.write_plugins_txt(
-                    {name.lower(): bool(active) for name, active in want.items() if name in known})
+                    {name.lower(): active for name, active in want.items() if name in known})
                 if not res['file']['written'] or res['file'].get('notInFile'):
                     res.update(applied=False, failed=True, partial=True,
                                memoryApplied=bool(plan), persisted=False,
@@ -77,11 +82,10 @@ class LoadOrder(Domain):
         """
         path = os.path.join(self.o.profile().absolutePath(), 'plugins.txt')
         try:
-            # newline='' is mandatory: without it text mode collapses CRLF into LF, the
-            # line-ending detection below sees LF, and the file is rewritten in a foreign
-            # format.
-            raw = io.open(path, encoding='utf-8-sig', errors='replace',
-                          newline='').read()
+            # Preserve CRLF and exact recovery bytes, including a possible BOM.
+            with open(path, 'rb') as stream:
+                original = stream.read()
+            raw = original.decode('utf-8-sig', errors='replace')
         except Exception as exc:
             return {'written': False, 'error': str(exc), 'path': path}
         eol = chr(13) + chr(10) if chr(13) + chr(10) in raw else chr(10)
@@ -115,12 +119,17 @@ class LoadOrder(Domain):
         #
         # The os.replace swap rules out a torn write by itself, so the copy beside it is not
         # for that but for OUR OWN mistake: if the bridge wrote the wrong states, .bak holds
-        # what was there a moment earlier. Hence refreshing it on every write - a week-old
-        # copy would also undo everything the person changed since.
+        # what was there a moment earlier. Publish it only after the main swap succeeds:
+        # a failed attempt must preserve the preceding successful change's backup.
         backup = path + '.bak'
-        draft = None
+        draft, recovery = None, None
         try:
-            shutil.copyfile(path, backup)
+            fd, recovery = tempfile.mkstemp(prefix='.mo2aibridge-', suffix='.recovery',
+                                            dir=os.path.dirname(path))
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(original)
+                stream.flush()
+                os.fsync(stream.fileno())
             fd, draft = tempfile.mkstemp(prefix='.mo2aibridge-', suffix='.new',
                                          dir=os.path.dirname(path))
             with os.fdopen(fd, 'w', encoding='utf-8', newline='') as stream:
@@ -129,13 +138,23 @@ class LoadOrder(Domain):
                 os.fsync(stream.fileno())
             os.replace(draft, path)
         except Exception as exc:
+            if recovery and os.path.isfile(recovery):
+                safe(lambda: os.remove(recovery))
             return {'written': False, 'error': str(exc), 'path': path,
                     'backup': backup if os.path.isfile(backup) else ''}
         finally:
             if draft and os.path.isfile(draft):
                 safe(lambda: os.remove(draft))
-        return {'written': True, 'path': path, 'changed': sorted(done),
-                'backup': backup, 'notInFile': sorted(set(wanted) - done)}
+        result = {'written': True, 'path': path, 'changed': sorted(done),
+                  'backup': backup, 'notInFile': []}
+        try:
+            os.replace(recovery, backup)
+            result['backupPublished'] = True
+        except Exception as exc:
+            # Main persistence succeeded; keep exact reversal bytes under the unique
+            # path if publishing the conventional alias fails.
+            result.update(backup=recovery, backupPublished=False, backupError=str(exc))
+        return result
 
     def plugins_order(self, body):
         """The full load order, as the list LOOT produced.

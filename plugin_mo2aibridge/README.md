@@ -784,3 +784,45 @@ The native `GamePlugins.writePluginLists(organizer.pluginList())` path was separ
 qualified in isolated MO2 2.5.2 with Skyrim VR: disk state/order, native reread and
 full refresh preserved the fixture changes. It is not enabled automatically here:
 provider behavior and failures require qualification for each supported setup.
+
+
+## Failure integrity and HTTP limits (2.3.4)
+
+Stopping/restarting the HTTP bridge retains MO2-lifetime launch evidence. Native
+callbacks are registered once and continue recording launches while HTTP is stopped.
+New HTTP boots still have fresh tokens, operation IDs and process-history keys.
+A failed native mod removal returns HTTP500 with reconciliation details and keeps
+its archive, including when withArchive was requested.
+
+Every value in /plugins/state's set map is validated before any mutation, using
+the same true/false parser as /toggle. String false/0/off/no mean disabled; null,
+containers and other invalid values reject the entire batch.
+
+A failed plugins.txt swap preserves the preceding successful .bak. The next backup
+is staged separately and published after the main file swap. If only publishing
+the .bak alias fails, persistence succeeded: file.backupPublished is false,
+file.backupError explains the error and file.backup names the retained unique
+recovery file. Preserve that path with the operation outcome. This is two separate
+file publications, not a multi-file transaction or automatic crash recovery.
+
+/analyze and /vfsexport add complete, partial, errorCount and bounded errors.
+/analyze also reports inventoryComplete and conflicts.complete/attempted/succeeded/
+failed. The legacy conflicts.checked indicates that checking was requested; use
+conflicts.complete before drawing a conclusion about absent conflicts. An export
+that used a failed native-tree fallback is conservatively marked partial.
+
+/windows?key checks the recorded process identity before and after enumeration.
+/window optionally accepts key alongside hwnd to require the live recorded process
+to own that window before acting. Explicit pid and raw hwnd requests retain their
+existing semantics; callers using launch history should supply the launch key.
+
+The optional http configuration object defaults to headerTimeoutSec=15,
+bodyTimeoutSec=30, maxBodyBytes=8388608 and maxHandlers=16. Header/body deadlines
+bound the whole input phase, including slow trickles; they do not shorten native
+work or operation polling waits. Bad/duplicate lengths and Transfer-Encoding are
+400; oversized bodies are413; incomplete-input deadlines are408; saturated handler
+capacity is503. A rejected input does not dispatch an operation. Shutdown closes
+accepted client sockets without waiting for unfinished native work.
+
+For keyed window actions, identity and parent/child ownership are rechecked immediately
+before posting. Validation and Windows message dispatch are not an atomic operation.

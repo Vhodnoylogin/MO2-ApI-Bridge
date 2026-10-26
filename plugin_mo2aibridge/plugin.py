@@ -20,7 +20,7 @@ import traceback
 
 import mobase
 
-from . import i18n, journal, runtime, routes as routes_mod
+from . import busy, i18n, journal, runtime, routes as routes_mod
 from .config import Config
 from .services import Services
 
@@ -102,6 +102,9 @@ class MO2ApIBridge(mobase.IPluginTool):
         self._port = None
         self._token_file = None
         self._quit_hooked = False
+        self._runs_hooked = False
+        self._quitting = False
+        self._launches = busy.LaunchState(log)
 
     # ---- the MO2 interface -------------------------------------------------
     def init(self, organizer):
@@ -112,6 +115,9 @@ class MO2ApIBridge(mobase.IPluginTool):
         i18n.set_note(log)
         i18n.set_language(self._setting('language', 'auto'))
         log(i18n.t('init.loaded'))
+        # Observe the host even before HTTP starts and throughout a manual stop.
+        self._subscribe_runs()
+        self._hook_quit()
         try:
             organizer.onUserInterfaceInitialized(self._on_ui_ready)
         except Exception:
@@ -216,7 +222,7 @@ class MO2ApIBridge(mobase.IPluginTool):
         except Exception:
             return default
 
-    def _subscribe_runs(self, svc):
+    def _subscribe_runs(self):
         """Subscribe to programs launched through MO2.
 
         These two calls make everything the manager starts visible - both through the bridge
@@ -226,12 +232,27 @@ class MO2ApIBridge(mobase.IPluginTool):
         A failed subscription is not fatal: process enumeration remains, and it catches the
         game anyway. So we log it and carry on.
         """
-        try:
-            self._organizer.onAboutToRun(svc.on_about_to_run)
-            self._organizer.onFinishedRun(svc.on_finished_run)
-        except Exception:
-            log(i18n.t('log.hookFailed', hook='onAboutToRun/onFinishedRun',
-                       error=traceback.format_exc()), journal.WARN)
+        if self._runs_hooked:
+            return
+        # A registration can fail after native code has retained the callback. Attempt
+        # each only once; HTTP retries must never add another subscription.
+        self._runs_hooked = True
+        for hook, callback in (('onAboutToRun', self._on_about_to_run),
+                               ('onFinishedRun', self._on_finished_run)):
+            try:
+                getattr(self._organizer, hook)(callback)
+            except Exception:
+                log(i18n.t('log.hookFailed', hook=hook,
+                           error=traceback.format_exc()), journal.WARN)
+
+    def _on_about_to_run(self, path, *rest):
+        if self._quitting:
+            return True
+        return self._launches.on_about_to_run(path, *rest)
+
+    def _on_finished_run(self, path, exit_code=0):
+        if not self._quitting:
+            self._launches.on_finished_run(path, exit_code)
 
     def _on_ui_ready(self, _window=None):
         log(i18n.t('ui.ready'))
@@ -257,15 +278,14 @@ class MO2ApIBridge(mobase.IPluginTool):
             token = runtime.new_token()
             self._runner = runtime.MainThreadRunner(limit=cfg.get('mainThreadJobLimit'))
             svc = self._svc = Services(self._organizer, self._runner.call, DOCS,
-                                       note=log, cfg=cfg)
+                                       note=log, cfg=cfg, launches=self._launches)
             svc.prime()
-            self._subscribe_runs(svc)
             get, post = routes_mod.build(svc)
             # The server comes up BEFORE the token is written: if the bind fails, no file is
             # left behind, and no client gets a key to a bridge that does not exist.
             self._server, self._port = runtime.serve(
                 wanted, runtime.make_handler(token, get, post, svc.ctx.operations),
-                tries=int(cfg.get('portTries')))
+                tries=int(cfg.get('portTries')), settings=cfg)
             self._token_file = token_file(self._port, wanted)
             with open(self._token_file, 'w', encoding='utf-8') as fh:
                 fh.write(token)
@@ -294,11 +314,18 @@ class MO2ApIBridge(mobase.IPluginTool):
             from PyQt6.QtWidgets import QApplication
             app = QApplication.instance()
             if app is not None:
-                app.aboutToQuit.connect(self.stop)
+                app.aboutToQuit.connect(self._on_quit)
                 self._quit_hooked = True
         except Exception:
             log(i18n.t('log.hookFailed', hook='aboutToQuit',
                        error=traceback.format_exc()), journal.ERROR)
+
+    def _on_quit(self):
+        """Release host-lifetime evidence only when MO2 itself is leaving."""
+        self._quitting = True
+        self.stop()
+        self._launches.launched.clear()
+        self._launches._starting = False
 
     def stop(self):
         """Bring the bridge down: close the socket, let the thread finish, remove the token.
@@ -306,6 +333,7 @@ class MO2ApIBridge(mobase.IPluginTool):
         Called from three places: on MO2 exit, from the button in its own window, and after a
         failed start - so half a raised bridge is not left hanging. Each step separately and
         silently: shutting down has to run to the end whatever the previous step did.
+        Run evidence belongs to MO2's lifetime and survives this HTTP shutdown.
         """
         if self._runner is not None:
             self._runner.close()

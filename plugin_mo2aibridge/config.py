@@ -40,6 +40,14 @@ DEFAULTS = {
     # a second MO2 instance - and that is not trouble but an ordinary day: Skyrim and Fallout
     # are often both open.
     'portTries': 10,
+    # Bound incomplete client input and the number of concurrent HTTP handlers. Input
+    # deadlines end before route execution, so long native operations keep their own waits.
+    'http': {
+        'headerTimeoutSec': 15,
+        'bodyTimeoutSec': 30,
+        'maxBodyBytes': 8388608,
+        'maxHandlers': 16,
+    },
     # Seconds to wait for MO2's main thread, by kind of work. Ping is short on purpose:
     # it is the one needed when MO2 is unresponsive, and it has to answer quickly.
     'timeouts': {
@@ -98,7 +106,7 @@ DEFAULTS = {
         # itself keeps it.
         'credentialTarget': 'ModOrganizer2_APIKEY',
         'apiHost': 'https://api.nexusmods.com',
-        'appVersion': '2.3.3',
+        'appVersion': '2.3.4',
         # How many consecutive network failures count as a dead channel and stop the sweep.
         # One failure happens to anyone; five in a row mean the remaining thousand requests
         # will fail the same way, only slower - each waiting out its own timeout.

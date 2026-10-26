@@ -89,7 +89,7 @@ try:
 
     r.head(T('install.repeatWithoutModeRefuses'))
     code, res = common.call('POST', '/install', {'archive': B, 'name': PROBE})
-    r.case(T('install.refusalNotSilentOverwrite'), code, 500)
+    r.case(T('install.refusalNotSilentOverwrite'), code, 400)
     r.case(T('install.refusalNamesModes'),
            'merge' in str(res.get('error')) and 'replace' in str(res.get('error')), True)
 

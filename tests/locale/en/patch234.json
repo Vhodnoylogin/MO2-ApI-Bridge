@@ -1,0 +1,22 @@
+{
+ "patch234.title": "Release 2.3.4 failure and identity regressions",
+ "patch234.removeFailure": "failed native removal is a tracked failure",
+ "patch234.archiveKept": "failed removal never recycles the requested archive",
+ "patch234.normalizedState": "nested state matches intended boolean in memory and disk",
+ "patch234.batchValidated": "all nested values validated before any mutation",
+ "patch234.failedWriteBackup": "failed second write preserves prior successful backup",
+ "patch234.failedDraftCleanup": "failed write cleans only its unpublished drafts",
+ "patch234.backupAliasFailure": "backup alias failure retains unique reversal bytes",
+ "patch234.analysisComplete": "successful analysis reports complete evidence",
+ "patch234.originsIncomplete": "origin errors cannot masquerade as no conflicts",
+ "patch234.exportIncomplete": "VFS origin errors disclose partial export",
+ "patch234.inventoryIncomplete": "unreadable inventory is explicitly incomplete",
+ "patch234.fallbackIncomplete": "fallback traversal errors are disclosed",
+ "patch234.staleKey": "dead launch key never enumerates a reused PID",
+ "patch234.identityChanged": "identity changed during enumeration yields no windows",
+ "patch234.windowOwner": "window action refuses a different process owner",
+ "patch234.rawPidCompatible": "explicit PID lookup keeps legacy behavior",
+ "patch234.cardIncomplete": "failed card lookup marks overall analysis incomplete",
+ "patch234.beforePostIdentity": "identity is rechecked after title/child lookup before posting",
+ "patch234.childOwner": "actual child button must belong to recorded process"
+}

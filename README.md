@@ -127,8 +127,8 @@ that file, so the file has to arrive together with the plugin.
 python tests/run.py
 ```
 
-Seven standalone suites run without MO2 — source hygiene, the busy logic, the string catalogues,
-the update rules, the transport, the contract of every route against a stand-in `mobase`, and mutation failure/retry checks.
+Nine standalone suites run without MO2 — source hygiene, the busy logic, the string catalogues,
+the update rules, the transport, the contract of every route against a stand-in `mobase`, mutation failure/retry checks, patch regressions and HTTP limits. Four optional Qt suites also run without MO2.
 Four acceptance
 suites need a running manager and are skipped with a plain word when there is none; a skip does
 not count as a failure. The details are in [tests/README.md](tests/README.md).

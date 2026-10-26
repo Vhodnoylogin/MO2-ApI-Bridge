@@ -36,7 +36,7 @@ def _seven_zip():
 
 
 class Services(object):
-    def __init__(self, organizer, run_main, docs_path, note=None, cfg=None):
+    def __init__(self, organizer, run_main, docs_path, note=None, cfg=None, launches=None):
         # note - where to record launches; without it the plugin works silently.
         # cfg - settings; without them the built-in defaults are used and no file read.
         ctx = base.Context(organizer, run_main, docs_path,
@@ -47,7 +47,7 @@ class Services(object):
         self.docs = docs_path
         self.note = ctx.note
         self.cfg = ctx.cfg
-        self.guard = busy.BusyGuard(ctx)
+        self.guard = busy.BusyGuard(ctx, launches)
         self.reader = reading.Reader(ctx, self.guard)
         self.installer = install.Installer(ctx, self.guard)
         self.modops = mods.ModOps(ctx, self.guard)

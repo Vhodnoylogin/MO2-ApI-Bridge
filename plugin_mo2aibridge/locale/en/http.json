@@ -1,0 +1,12 @@
+{
+ "#": "HTTP transport input limits and request errors.",
+ "http.headerTimeout": "The request headers were not received before the input deadline.",
+ "http.bodyTimeout": "The request body was not received before the input deadline.",
+ "http.invalidRequest": "The HTTP request is malformed or unsupported.",
+ "http.transferEncoding": "Transfer-Encoding is unsupported; send a bounded Content-Length body.",
+ "http.contentLength": "Content-Length must be one non-negative decimal integer header.",
+ "http.bodyTooLarge": "The request body exceeds the configured size limit.",
+ "http.incompleteBody": "The connection ended before the complete request body arrived.",
+ "http.invalidJson": "The request body must contain valid JSON.",
+ "http.capacity": "All HTTP handlers are occupied; retry after an earlier request completes."
+}
