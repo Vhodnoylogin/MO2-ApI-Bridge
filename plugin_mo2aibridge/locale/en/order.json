@@ -1,0 +1,8 @@
+{
+ "err.orderDuplicates": "order must contain each known plugin exactly once, without duplicates.",
+ "err.orderPersistence": "The requested plugin order or preserved activation states could not be verified in both profile files and native MO2. Reconcile before launching or retrying.",
+ "err.orderCapability": "Native GamePlugins persistence or refresh completion callbacks are unavailable; plugin-order persistence cannot be confirmed.",
+ "err.orderRefreshTimeout": "MO2 refresh did not finish within the configured pluginOrderRefresh timeout. The operation remains unverified; no automatic retry or rollback was performed.",
+ "err.orderTarget": "The active profile changed during plugin-order persistence. Reconcile the original profile before continuing.",
+ "err.orderWorker": "Plugin-order persistence must run from a request worker so Qt can complete its refresh."
+}

@@ -20,7 +20,7 @@ import traceback
 
 import mobase
 
-from . import busy, i18n, journal, runtime, routes as routes_mod
+from . import busy, i18n, journal, loadorder, runtime, routes as routes_mod
 from .config import Config
 from .services import Services
 
@@ -105,6 +105,7 @@ class MO2ApIBridge(mobase.IPluginTool):
         self._runs_hooked = False
         self._quitting = False
         self._launches = busy.LaunchState(log)
+        self._order_refresh = loadorder.OrderRefresh()
 
     # ---- the MO2 interface -------------------------------------------------
     def init(self, organizer):
@@ -278,7 +279,8 @@ class MO2ApIBridge(mobase.IPluginTool):
             token = runtime.new_token()
             self._runner = runtime.MainThreadRunner(limit=cfg.get('mainThreadJobLimit'))
             svc = self._svc = Services(self._organizer, self._runner.call, DOCS,
-                                       note=log, cfg=cfg, launches=self._launches)
+                                       note=log, cfg=cfg, launches=self._launches,
+                                       order_refresh=self._order_refresh)
             svc.prime()
             get, post = routes_mod.build(svc)
             # The server comes up BEFORE the token is written: if the bind fails, no file is
@@ -326,6 +328,7 @@ class MO2ApIBridge(mobase.IPluginTool):
         self.stop()
         self._launches.launched.clear()
         self._launches._starting = False
+        self._order_refresh.cancel()
 
     def stop(self):
         """Bring the bridge down: close the socket, let the thread finish, remove the token.

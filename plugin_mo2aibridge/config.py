@@ -58,6 +58,7 @@ DEFAULTS = {
         'vfsExport': 1800,
         'runWait': 3600,
         'profileRename': 30,
+        'pluginOrderRefresh': 30,
     },
     # How many rows to return in the added/overwritten/sample lists, so a reply stays sane.
     'listLimit': 200,

@@ -25,6 +25,7 @@ import common  # noqa: E402
 SUITES = ['test_sources.py', 'test_busy_logic.py', 'test_i18n.py', 'test_policy.py',
           'test_contract_offline.py', 'test_transport_offline.py', 'test_mutation_failures.py',
           'test_patch234.py', 'test_native_adapter.py', 'test_install_accounting.py',
+          'test_order_persistence.py',
           'test_profileui.py', 'test_protocol.py',
           'test_health_logging.py', 'test_lifecycle.py', 'test_http_limits.py',
           'test_routes.py', 'test_plugins_txt.py', 'test_install_modes.py',

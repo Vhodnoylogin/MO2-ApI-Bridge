@@ -85,6 +85,17 @@ def response(client):
     return reply.status, json.loads(reply.read().decode('utf-8'))
 
 
+def closed_read(client):
+    """Windows may reset an unread partial request when the server closes it.
+
+    Both EOF and ECONNRESET prove closure; a timeout or received byte still fails.
+    """
+    try:
+        return client.recv(1)
+    except ConnectionResetError:
+        return b''
+
+
 def post_header(length=None, extra=b'', route=b'/echo'):
     header = b'POST ' + route + b' HTTP/1.1\r\nHost: localhost\r\nX-Token: ' + TOKEN.encode('ascii') + b'\r\n'
     if length is not None:
@@ -204,8 +215,8 @@ try:
         srv = None
         r.case(T('httpcheck.shutdownBounded'), time.monotonic() - start < 1.5, True)
         r.case(T('httpcheck.nativeStillRunning'), completed.is_set(), False)
-        r.case(T('httpcheck.activeClosed'), native.recv(1), b'')
-        r.case(T('httpcheck.partialClosed'), partial.recv(1), b'')
+        r.case(T('httpcheck.activeClosed'), closed_read(native), b'')
+        r.case(T('httpcheck.partialClosed'), closed_read(partial), b'')
         release.set()
         r.case(T('httpcheck.operationCompletes'), completed.wait(2), True)
     srv, port = runtime.serve(0, Handler, settings=SETTINGS)
@@ -214,7 +225,7 @@ try:
         srv.shutdown()
         srv.server_close()
         srv = None
-        r.case(T('httpcheck.partialHeadersClosed'), partial.recv(1), b'')
+        r.case(T('httpcheck.partialHeadersClosed'), closed_read(partial), b'')
 finally:
     release.set()
     if srv is not None:

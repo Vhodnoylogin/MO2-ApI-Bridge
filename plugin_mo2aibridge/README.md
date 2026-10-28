@@ -118,7 +118,7 @@ The token is supplied by the wrapper and omitted below for brevity.
 | `/install` | `archive`, `name`; legacy: `paths`, `mode`; native: `native`, `archiveSha256`, `files`, `selection` | install an explicit selection; native accounting requires the opt-in backend described below. Legacy `replace` is **irreversible** and needs the key |
 | `/toggle` | `mod`, `active` | enable or disable a mod |
 | `/plugins/state` | `set`, `apply` | enable or disable plugins in bulk |
-| `/plugins/order` | `order`, `apply` | set the whole load order |
+| `/plugins/order` | `order`, `apply` | set full priority order, persist native lists and await verified refresh |
 | `/vfsexport` | `outDir`, `timeout`, `legacyWalk` | dump the entire virtual `Data` to CSV |
 | `/run` | `binary`, `args`, `cwd`, `wait` | launch a tool **inside the VFS**; **irreversible**, see below |
 | `/window` | `hwnd`, `action`, `button` | `close`, or `click` by button caption |
@@ -132,6 +132,29 @@ The token is supplied by the wrapper and omitted below for brevity.
 
 An unknown path returns 404 together with both tables listed separately — half of all mistakes are
 a read sent as a POST, or the other way round.
+
+### Plugin order persistence (candidate 2.3.5)
+
+For `/plugins/order`, supply each known plugin exactly once. `before`, `after` and `undo`
+use full priority order, including disabled plugins; their active `loadOrder` is `-1`.
+Candidate 2.3.5 persists through native `GamePlugins`, verifies `loadorder.txt` and
+`plugins.txt` (including primary-plugin omissions), reads them back and waits off Qt for
+the directory refresh and a subsequent native plugin-list `onRefreshed` event before the
+final check. A directory callback alone can precede native constraints, including inside a
+nested Qt dialog. `applied: true` requires the requested
+priority order, unchanged activation states and persistent lists to agree after refresh.
+
+`persisted`, `memoryApplied`, `nativeRoundtripVerified`, `refreshRequested` and `refreshed`
+describe separate evidence. `filesBefore` contains exact unique `.recovery` files; existing
+`.bak` files are preserved. `filesAfter`, `after`, `statesBefore`, `statesAfter` and `undoState`
+support reconciliation. A void native return, an accepted operation or refresh request alone
+does not establish success. A partial write, constraint mismatch, unavailable capability or
+`timeouts.pluginOrderRefresh` expiry reports failure and `reconciliationRequired`; no automatic
+rollback/retry or raw-file fallback is performed. Native writer caching can also prevent a
+repair after a failed native save; reconcile that explicitly rather than trusting a new key.
+These checks are currently offline-qualified; actual MO2 acceptance remains pending.
+The native plugin-list observer is shared for the manager's lifetime; HTTP restarts and
+repeated requests do not add a new native callback for each operation.
 
 ### Reply codes
 

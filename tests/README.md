@@ -6,7 +6,7 @@
 python run.py
 ```
 
-All nineteen suites in a row. The suites that need MO2 are skipped with a plain word when it is not
+All twenty suites in a row. The suites that need MO2 are skipped with a plain word when it is not
 running — a skip does not count as a failure.
 
 Use `python run.py --offline` to skip live suites without even probing a running manager.
@@ -25,6 +25,7 @@ to be loud, not papered over.
 | `test_transport_offline.py` | no | the transport on a real loopback socket: a taken port refuses, a bad request is 400 and a broken bridge is 500, no token means 403, and the port falls silent after a stop |
 | `test_contract_offline.py` | no | the contract of all 32 routes against a stand-in `mobase` (`fake_mo2.py`): reply keys, both locks, writing `plugins.txt`, installing into a real temporary folder |
 | `test_mutation_failures.py` | no | Failed persistence, retry repair and backup preservation; partial copy, unreadable selections and uncertain inventories; dispatch-time busy checks |
+| `test_order_persistence.py` | no; some checks need PyQt6 | native-shaped disk/order persistence, primary omissions, disabled-plugin priorities, partial writes/recovery, identity/busy guards and real Qt asynchronous refresh completion |
 | `test_native_adapter.py` | no; some checks need PyQt6 | one-use native installer selection, original native tree identity, cancellation and exact Downloads source-row refresh/readback with mocked MO2 APIs |
 | `test_install_accounting.py` | no; metadata checks need PyQt6 | archive/hash/selection identity, exact file mapping and payload verification, native metadata/provenance readback, incomplete accounting and foreign-target rollback refusals over scratch files |
 | `test_routes.py` | yes | all 32 routes and both locks |
