@@ -2,11 +2,10 @@
 
 A local HTTP bridge to a running Mod Organizer 2, for scripts and AI agents.
 
-Development candidate **2.3.5** adds an opt-in selected native installer with archive provenance
-and verified Downloads accounting. It has offline coverage; acceptance in MO2 is pending.
-The published stable release remains **2.3.4**.
-The candidate also verifies native plugin-order persistence and completed refresh before
-acknowledging an order change. This behavior still requires acceptance in MO2.
+Version **2.3.5** adds opt-in selected native installation with original archive provenance
+and verified Downloads accounting in MO2 2.5.2. Plugin-order changes now require native
+persistence, completed refresh and final state verification before success is reported.
+Already locked profile lists are refused before native saving opens a Windows retry dialog.
 
 *Эта страница на русском: [README.ru.md](README.ru.md). Подробная документация плагина —
 [plugin_mo2aibridge/README.ru.md](plugin_mo2aibridge/README.ru.md).*

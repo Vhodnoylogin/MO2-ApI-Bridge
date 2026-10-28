@@ -46,7 +46,7 @@ bridge without leaving the manager is sometimes needed. On MO2 exit the bridge c
 removes its token file. Diagnostics go to `mo2aibridge.log` next to the plugin: load, start, and
 a full traceback on any failure.
 
-The 2.3.5 candidate also registers **MO2 ApI Bridge Native Installer** from the same package's
+Version 2.3.5 also registers **MO2 ApI Bridge Native Installer** from the same package's
 `createPlugins()` factory. There is no separate DLL to install. Opt-in native installation
 requires that companion to be loaded and enabled in this MO2 instance; restart MO2 after
 updating the package before attempting acceptance.
@@ -133,11 +133,11 @@ The token is supplied by the wrapper and omitted below for brevity.
 An unknown path returns 404 together with both tables listed separately — half of all mistakes are
 a read sent as a POST, or the other way round.
 
-### Plugin order persistence (candidate 2.3.5)
+### Plugin order persistence (2.3.5)
 
 For `/plugins/order`, supply each known plugin exactly once. `before`, `after` and `undo`
 use full priority order, including disabled plugins; their active `loadOrder` is `-1`.
-Candidate 2.3.5 persists through native `GamePlugins`, verifies `loadorder.txt` and
+Version 2.3.5 persists through native `GamePlugins`, verifies `loadorder.txt` and
 `plugins.txt` (including primary-plugin omissions), reads them back and waits off Qt for
 the directory refresh and a subsequent native plugin-list `onRefreshed` event before the
 final check. A directory callback alone can precede native constraints, including inside a
@@ -152,7 +152,10 @@ does not establish success. A partial write, constraint mismatch, unavailable ca
 `timeouts.pluginOrderRefresh` expiry reports failure and `reconciliationRequired`; no automatic
 rollback/retry or raw-file fallback is performed. Native writer caching can also prevent a
 repair after a failed native save; reconcile that explicitly rather than trusting a new key.
-These checks are currently offline-qualified; actual MO2 acceptance remains pending.
+Both existing profile lists are checked for write/delete access before changing priorities
+and again before native saving, so known locks fail without a Windows Shell retry dialog.
+The probe closes its handles immediately; a later external lock, permissions change or native
+save failure can still interrupt the operation. It is not a filesystem transaction.
 The native plugin-list observer is shared for the manager's lifetime; HTTP restarts and
 repeated requests do not add a new native callback for each operation.
 
@@ -363,7 +366,7 @@ name, asks "replace or merge" on a name clash, and opens the wizard for an archi
 The caller must inspect the actual archive, read its installer and choose compatible options
 before sending an install request. Merely skipping `fomod\` does not perform those choices.
 
-### Native installation and source accounting (2.3.5 candidate)
+### Native installation and source accounting (2.3.5)
 
 For a new mod, `native: true` opts into MO2's installation pipeline through the companion
 installer shipped in this Python package. It uses the **original archive directly inside this
@@ -410,9 +413,8 @@ the result and reconcile it before a deliberate new operation. Do not blindly re
 operation key or silently overwrite the target.
 
 Offline checks in `tests/test_native_adapter.py` and `tests/test_install_accounting.py` use a
-mocked native adapter/pipeline. Native installation and the Installed display have not yet
-passed acceptance in a running MO2. A native refusal or unavailable capability must remain
-visible, with no automatic fallback to the legacy copy backend.
+mocked native adapter/pipeline. A native refusal or unavailable capability remains visible,
+with no automatic fallback to the legacy copy backend.
 The current Downloads adapter is gated to the source-verified MO2 2.5.2 interface and controls.
 Preparation extracts only the selected payload and FOMOD configuration XML for verification;
 unselected installer variants are not unpacked into the verification folder.

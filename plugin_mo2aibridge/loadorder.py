@@ -12,7 +12,7 @@ import threading
 
 import mobase
 
-from . import i18n
+from . import i18n, winapi
 from .base import Domain, flag, safe, stamp
 
 
@@ -344,6 +344,18 @@ class LoadOrder(Domain):
             if os.path.normcase(os.path.realpath(self.o.profile().absolutePath())) != state['root']:
                 raise RuntimeError(i18n.t('err.orderTarget'))
 
+        def files_replaceable():
+            # Fail before native SafeWriteFile opens an interactive Shell retry
+            # dialog for an already locked/read-only list. This does not reserve
+            # the files against a later external lock.
+            for name in ('loadorder.txt', 'plugins.txt'):
+                path = os.path.join(state['root'], name)
+                try:
+                    winapi.check_file_replaceable(path)
+                except OSError as exc:
+                    raise RuntimeError(i18n.t('err.orderFileUnavailable',
+                                             path=path, reason=str(exc))) from exc
+
         def observe(final=False):
             target()
             memory = self._order_memory()
@@ -383,6 +395,8 @@ class LoadOrder(Domain):
                     or not callable(getattr(feature, 'readPluginLists', None))
                     or not callable(getattr(self.o, 'onNextRefresh', None))):
                 raise RuntimeError(i18n.t('err.orderCapability'))
+            state['phase'] = 'file-preflight'
+            files_replaceable()
             self.order_refresh.attach(self.o.pluginList())
             # Save exact reversal bytes before either native file can be changed.
             state['phase'] = 'snapshot'
@@ -411,6 +425,7 @@ class LoadOrder(Domain):
             target()
             if self.guard.refusal('op.pluginOrder'):
                 raise RuntimeError(i18n.t('err.orderPersistence'))
+            files_replaceable()
             feature.writePluginLists(self.o.pluginList())
             target()
             state['phase'] = 'disk-readback'

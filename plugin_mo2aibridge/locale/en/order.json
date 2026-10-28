@@ -4,5 +4,7 @@
  "err.orderCapability": "Native GamePlugins persistence or refresh completion callbacks are unavailable; plugin-order persistence cannot be confirmed.",
  "err.orderRefreshTimeout": "MO2 refresh did not finish within the configured pluginOrderRefresh timeout. The operation remains unverified; no automatic retry or rollback was performed.",
  "err.orderTarget": "The active profile changed during plugin-order persistence. Reconcile the original profile before continuing.",
- "err.orderWorker": "Plugin-order persistence must run from a request worker so Qt can complete its refresh."
+ "err.orderWorker": "Plugin-order persistence must run from a request worker so Qt can complete its refresh.",
+ "err.fileReplaceProbe": "Windows file replacement access cannot be checked because the native API is unavailable.",
+ "err.orderFileUnavailable": "MO2 cannot replace the profile list %(path)s: %(reason)s. Release the file or correct its permissions, inspect the operation outcome, and use a fresh request."
 }

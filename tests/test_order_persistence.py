@@ -15,6 +15,7 @@ import sys
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fake_mo2
@@ -25,6 +26,7 @@ import common
 
 services = import_module(common.NAME + '.services')
 config = import_module(common.NAME + '.config')
+winapi = import_module(common.NAME + '.winapi')
 
 
 class Dispatch:
@@ -259,6 +261,70 @@ class OrderHarness:
 
 
 class OrderPersistence(OrderHarness, unittest.TestCase):
+    def test_unreplaceable_lists_refuse_before_memory_or_native_write(self):
+        with patch.object(winapi, 'check_file_replaceable', side_effect=PermissionError('held')):
+            result = self.apply()
+        self.assert_failure(result)
+        self.assertEqual(result['phase'], 'file-preflight')
+        self.assertFalse(result['partial'])
+        self.assertEqual(self.pl.set_calls, 0)
+        self.assertEqual(self.files.writes, [])
+        self.assertEqual(self.disk(), self.initial)
+
+    def test_lock_acquired_during_native_setter_is_checked_before_writer(self):
+        def check(path):
+            if self.pl.set_calls:
+                raise PermissionError('lock arrived during setter')
+        with patch.object(winapi, 'check_file_replaceable', side_effect=check):
+            result = self.apply()
+        self.assert_failure(result)
+        self.assertEqual(result['phase'], 'native-write')
+        self.assertTrue(result['partial'])
+        self.assertEqual(self.pl.order, self.wanted)
+        self.assertEqual(self.files.writes, [])
+        self.assertEqual(self.disk(), self.initial)
+
+    @unittest.skipIf(winapi.kernel32 is None, 'Windows sharing API required')
+    def test_actual_windows_delete_and_write_sharing_locks_are_refused_without_effects(self):
+        import ctypes
+        # A READ|WRITE-shared handle still forbids DELETE; a write-only probe
+        # would miss this exact native SafeWriteFile/Shell dialog regression.
+        for path in self.files.paths():
+            before = os.stat(path).st_mtime_ns
+            for sharing in (1, 1 | 2):
+                handle = winapi.kernel32.CreateFileW(path, 0x80000000, sharing, None, 3, 0x80, None)
+                self.assertNotEqual(handle, ctypes.c_void_p(-1).value)
+                try:
+                    result = self.apply()
+                    self.assert_failure(result)
+                    self.assertEqual(result['phase'], 'file-preflight')
+                    self.assertEqual(self.pl.set_calls, 0)
+                    self.assertEqual(self.files.writes, [])
+                    self.assertEqual(self.disk(), self.initial)
+                finally:
+                    winapi.kernel32.CloseHandle(handle)
+            # Ordinary compatible readers do not block the probe.
+            handle = winapi.kernel32.CreateFileW(path, 0x80000000, 7, None, 3, 0x80, None)
+            self.assertNotEqual(handle, ctypes.c_void_p(-1).value)
+            try:
+                winapi.check_file_replaceable(path)
+            finally:
+                winapi.kernel32.CloseHandle(handle)
+            # An exclusive read now succeeds only if all probe handles closed.
+            handle = winapi.kernel32.CreateFileW(path, 0x80000000, 0, None, 3, 0x80, None)
+            self.assertNotEqual(handle, ctypes.c_void_p(-1).value)
+            winapi.kernel32.CloseHandle(handle)
+            self.assertEqual(os.stat(path).st_mtime_ns, before)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows API availability regression')
+    def test_unavailable_windows_replacement_probe_fails_closed(self):
+        with patch.object(winapi, 'kernel32', None):
+            result = self.apply()
+        self.assert_failure(result)
+        self.assertEqual(result['phase'], 'file-preflight')
+        self.assertEqual(self.pl.set_calls, 0)
+        self.assertEqual(self.disk(), self.initial)
+
     def test_native_priority_persists_across_actual_disk_reload_and_preserves_states(self):
         result = self.apply()
         self.assertTrue(result['applied'], result)

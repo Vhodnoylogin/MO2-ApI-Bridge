@@ -208,6 +208,8 @@ if wintypes is not None:
                 (kernel32, 'Process32FirstW', (H, ctypes.c_void_p), B),
                 (kernel32, 'Process32NextW', (H, ctypes.c_void_p), B),
                 (kernel32, 'CloseHandle', (H,), B),
+                (kernel32, 'CreateFileW', (wintypes.LPCWSTR, D, D, ctypes.c_void_p,
+                                          D, D, H), H),
                 (kernel32, 'GetCurrentProcess', (), H),
                 (kernel32, 'DuplicateHandle', (H, H, H, ctypes.POINTER(H), D, B, D), B),
                 (kernel32, 'WaitForSingleObject', (H, D), D),
@@ -226,6 +228,27 @@ if wintypes is not None:
             fn.restype = ret
 
     _declare()
+
+
+def check_file_replaceable(path):
+    """Probe existing-file write/delete access without changing bytes or timestamps.
+
+    Native MO2 SafeWriteFile uses a Shell deletion before renaming its draft.
+    A known sharing/access failure must be refused before entering that UI path.
+    The handle is closed immediately: this is not a reservation and another
+    writer may still win the race after the check.
+    """
+    if kernel32 is None:
+        if os.name == 'nt':
+            raise OSError(i18n.t('err.fileReplaceProbe'))
+        descriptor = os.open(path, os.O_RDWR)
+        os.close(descriptor)
+        return
+    handle = kernel32.CreateFileW(os.fspath(path), 0x40000000 | 0x00010000,
+                                  1 | 2 | 4, None, 3, 0x80, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    kernel32.CloseHandle(handle)
 
 
 # ---------------------------------------------------------------- processes

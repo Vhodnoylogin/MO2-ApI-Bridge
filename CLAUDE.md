@@ -205,8 +205,8 @@ suites need a running manager and are **skipped** with a clear message when ther
 skip is not a failure.
 
 Use `python tests/run.py --offline` for source-only work: it never probes live MO2.
-Candidate 2.3.5 adds native installer/accounting checks over mocked APIs and scratch files.
-The native backend is opt-in (`native: true`), new-mod only, and still needs real MO2 acceptance.
+Version 2.3.5 adds native installer/accounting checks over mocked APIs and scratch files.
+The native backend is opt-in (`native: true`), new-mod only, and targets MO2 2.5.2.
 Its registered companion is created by `createPlugins`; do not restore `createPlugin`, which
 MO2 prioritizes over the multiple-plugin factory. The native source archive must remain the
 original download, with explicit selected file mappings and hash-pinned provenance. FOMOD
