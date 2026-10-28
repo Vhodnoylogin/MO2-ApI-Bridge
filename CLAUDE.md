@@ -183,6 +183,11 @@ run triggers seven or eight in a row. **Do not hunt for the cause in the bridge 
 - **Never edit, rename, hide or delete files inside other people's mods.** The bridge changes
   a setup by enabling, disabling and reordering. `/install` and `/mods/remove` write only
   within the mod folder they were asked about, and deletions go to the Recycle Bin.
+- **Install independent mods and dependencies separately, preserving each source identity.**
+  A shared asset fixture does not replace actual CBBE/3BA/HIMBO or other third-party
+  installations. Genuine generated BodySlide outputs and our compatibility patches have
+  separate output/patch mods alongside their original prerequisites. Multiple archives
+  belonging to one author's mod do not automatically become independent mods.
 
 ---
 

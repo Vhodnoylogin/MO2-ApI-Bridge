@@ -405,6 +405,15 @@ copying alone must not be reported as a completed MO2 installation.
 The bridge executes a supplied selection; the caller owns this procedure for the requested mod
 and every dependency installed along the way:
 
+Install each independent mod and each required dependency as its own source-accounted MO2
+mod. Preserve the author's mod identity when its installation requires several archives.
+Keep real CBBE, 3BA, HIMBO and other third-party installations separate; a shared folder of
+selected assets is not a substitute for those installations or their dependency records.
+Put genuinely generated BodySlide files in a separate output mod and our compatibility
+patches in separate patch mods, retaining the original source mods. Generated outputs and
+patches do not replace their required source installations. Apply this rule to every node
+of the dependency graph below, retaining all source archives, their IDs and selected options.
+
 1. **Identify the target.** Record the exact game edition and executable runtime, script extender
    and relevant framework versions. Record the original downloaded archive's filename, source
    page/file identity, version and SHA-256. Inspect that file's contents, rather than assuming
