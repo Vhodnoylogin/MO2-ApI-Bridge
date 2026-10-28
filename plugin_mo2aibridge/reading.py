@@ -7,6 +7,7 @@ the lists of mods, profiles and plugins, the files of the virtual Data and who p
 them, and a full VFS export.
 """
 import os
+import json
 
 import mobase
 
@@ -153,6 +154,8 @@ class Reader(Domain):
                     'newestVersion': safe(lambda: m.newestVersion().displayString(), ''),
                     'ignoredVersion': safe(lambda: m.ignoredVersion().displayString(), ''),
                     'installationFile': safe(m.installationFile, ''),
+                    'installProvenance': safe(lambda: json.loads(m.pluginSetting(
+                        'mo2aibridge', 'installProvenance', 'null')), None),
                     'categories': list(safe(m.categories, []) or []),
                     'primaryCategory': safe(m.primaryCategory, 0),
                     'notes': safe(m.notes, ''), 'comments': safe(m.comments, ''),

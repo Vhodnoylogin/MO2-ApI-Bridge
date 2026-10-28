@@ -59,6 +59,7 @@ MO2-ApI-Bridge/              repository root
 │   ├── profileui.py         native Qt profile manager adapter
 │   ├── loadorder.py          plugin states and load order, plugins.txt writes
 │   ├── install.py            install from archive, merge and replace modes
+│   ├── nativeinstall.py      one-use selected native installer and Downloads readback
 │   ├── launch.py             launching programs through MO2, window actions
 │   ├── updates.py            update checking against the Nexus API: request and allowance
 │   ├── updatepolicy.py       the update rules alone: no network, no MO2, no disk
@@ -191,12 +192,20 @@ run triggers seven or eight in a row. **Do not hunt for the cause in the bridge 
 python tests/run.py
 ```
 
-Nine offline suites run without MO2 — source hygiene, busy logic, strings, the update rules,
+Offline suites run without MO2 — source hygiene, busy logic, strings, the update rules,
 the full route contract on a fake `mobase`, the transport on a real loopback socket,
 mutation failure/retry checks, patch regressions and HTTP limits. Four optional Qt suites also run without MO2. Four
 acceptance
 suites need a running manager and are **skipped** with a clear message when there is none; a
 skip is not a failure.
+
+Use `python tests/run.py --offline` for source-only work: it never probes live MO2.
+Candidate 2.3.5 adds native installer/accounting checks over mocked APIs and scratch files.
+The native backend is opt-in (`native: true`), new-mod only, and still needs real MO2 acceptance.
+Its registered companion is created by `createPlugins`; do not restore `createPlugin`, which
+MO2 prioritizes over the multiple-plugin factory. The native source archive must remain the
+original download, with explicit selected file mappings and hash-pinned provenance. FOMOD
+choices and recursive dependency compatibility are the caller's responsibility.
 
 Run them after every step, not at the end. They have already caught defects introduced while
 fixing other defects.

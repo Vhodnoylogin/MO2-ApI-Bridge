@@ -1,0 +1,10 @@
+{
+ "err.installFiles": "files must be a nonempty list of safe, unique archive source and mod destination filenames. Root meta.ini, FOMOD payload and INI Tweaks destinations are refused.",
+ "err.installSelection": "selection must record the chosen installer options; a nonempty object is required for a FOMOD archive.",
+ "err.archiveHash": "archiveSha256 must match the actual original archive; installation was not verified.",
+ "err.nativeNewOnly": "native installation supports a new unique mod name and explicit files only; mode and paths are not supported.",
+ "err.nativeDownloads": "Native accounting requires the original archive directly inside this MO2 instance's downloads folder.",
+ "err.nativeInstall": "Native selected installation did not complete: %(reason)s. Inspect the operation receipt before retrying.",
+ "plugin.nativeInstallerName": "MO2 ApI Bridge selected installer",
+ "plugin.nativeInstallerDescription": "Installs only a one-use Bridge selection through MO2's native archive pipeline. Other installations are not handled."
+}

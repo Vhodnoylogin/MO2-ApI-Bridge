@@ -63,6 +63,7 @@ DEFAULTS = {
     'listLimit': 200,
     # Native profile dialog polling interval, in milliseconds.
     'profileDialogPollMs': 20,
+    'nativeInstallPollMs': 25,
     # HTTP waits are bounded independently of native operation completion.
     'operationWaitSec': 120,
     'operationLimit': 4096,
@@ -106,7 +107,7 @@ DEFAULTS = {
         # itself keeps it.
         'credentialTarget': 'ModOrganizer2_APIKEY',
         'apiHost': 'https://api.nexusmods.com',
-        'appVersion': '2.3.4',
+        'appVersion': '2.3.5',
         # How many consecutive network failures count as a dead channel and stop the sweep.
         # One failure happens to anyone; five in a row mean the remaining thousand requests
         # will fail the same way, only slower - each waiting out its own timeout.

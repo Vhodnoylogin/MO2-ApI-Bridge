@@ -2,6 +2,10 @@
 
 A local HTTP bridge to a running Mod Organizer 2, for scripts and AI agents.
 
+Development candidate **2.3.5** adds an opt-in selected native installer with archive provenance
+and verified Downloads accounting. It has offline coverage; acceptance in MO2 is pending.
+The published stable release remains **2.3.4**.
+
 *Эта страница на русском: [README.ru.md](README.ru.md). Подробная документация плагина —
 [plugin_mo2aibridge/README.ru.md](plugin_mo2aibridge/README.ru.md).*
 
@@ -127,8 +131,8 @@ that file, so the file has to arrive together with the plugin.
 python tests/run.py
 ```
 
-Nine standalone suites run without MO2 — source hygiene, the busy logic, the string catalogues,
-the update rules, the transport, the contract of every route against a stand-in `mobase`, mutation failure/retry checks, patch regressions and HTTP limits. Four optional Qt suites also run without MO2.
+Standalone suites run without MO2 — source hygiene, the busy logic, the string catalogues,
+the update rules, the transport, the contract of every route against a stand-in `mobase`, mutation failure/retry checks, patch regressions, HTTP limits and native installation/accounting. Optional Qt checks also run without MO2.
 Four acceptance
 suites need a running manager and are skipped with a plain word when there is none; a skip does
 not count as a failure. The details are in [tests/README.md](tests/README.md).

@@ -46,6 +46,11 @@ bridge without leaving the manager is sometimes needed. On MO2 exit the bridge c
 removes its token file. Diagnostics go to `mo2aibridge.log` next to the plugin: load, start, and
 a full traceback on any failure.
 
+The 2.3.5 candidate also registers **MO2 ApI Bridge Native Installer** from the same package's
+`createPlugins()` factory. There is no separate DLL to install. Opt-in native installation
+requires that companion to be loaded and enabled in this MO2 instance; restart MO2 after
+updating the package before attempting acceptance.
+
 **Two MO2 instances at once** is an ordinary day: Skyrim and Fallout both open. The second
 bridge cannot take the same port, so it takes the next free one (up to ten in a row) and writes
 its token to a file naming that port — `mo2aibridge-token-8931.txt`. With a single instance the
@@ -110,7 +115,7 @@ The token is supplied by the wrapper and omitted below for brevity.
 | Route | Body | Effect |
 |---|---|---|
 | `/refresh` | — | re-read `mods\` and the profile |
-| `/install` | `archive`, `name`, `paths`, `mode` | install without dialogs; `mode` is `merge` or `replace` when the folder is taken. `replace` is **irreversible** and needs the key, see below |
+| `/install` | `archive`, `name`; legacy: `paths`, `mode`; native: `native`, `archiveSha256`, `files`, `selection` | install an explicit selection; native accounting requires the opt-in backend described below. Legacy `replace` is **irreversible** and needs the key |
 | `/toggle` | `mod`, `active` | enable or disable a mod |
 | `/plugins/state` | `set`, `apply` | enable or disable plugins in bulk |
 | `/plugins/order` | `order`, `apply` | set the whole load order |
@@ -216,6 +221,10 @@ The `url` field is built from `nexusId` whenever it is known. `m.url()` cannot b
 mods it returns a bare domain with no `/mods/<id>`, producing a link to nowhere. What MO2 said is
 kept separately as `urlFromMO2`.
 
+`installProvenance`, when present, is the native install receipt described below: original
+archive/hash, explicit file mapping and caller selection. It records installation evidence;
+it does not certify runtime compatibility.
+
 ---
 
 ## One-call analysis — `/analyze?name=…&conflicts=1&limit=80`
@@ -306,7 +315,8 @@ plugin's memory, is never returned by any route and never logged. Without the en
 ## Installing a mod without closing MO2
 
 MO2 keeps its lists in memory and rewrites profile files while running, which is why editing the
-setup traditionally requires closing it. That limitation goes away entirely.
+setup traditionally requires closing it. The bridge can register a mod and copy its selected files
+while the manager stays open.
 
 **The normal path — `POST /install`:**
 
@@ -317,21 +327,131 @@ setup traditionally requires closing it. That limitation goes away entirely.
 ```
 
 The mod is registered through `createMod`, the archive is extracted by the bridge itself, and
-exactly the listed subfolders are copied in; `fomod\` and a root `meta.ini` are skipped. The reply
-says how many files were copied and whether a `fomod` folder was skipped.
+the contents of each listed subfolder are copied into the mod root, in list order. The selected
+folder's own path is omitted; matching destination files from a later selection overwrite
+earlier ones. `paths` selects folders, not individual files or arbitrary source/destination
+mappings. Omitting `paths` (or passing an empty list) selects the whole archive. A `fomod\` tree
+and a root `meta.ini` within each selection are skipped. The reply says how many files were
+copied and whether a `fomod` folder was skipped.
 
-`installMod` is deliberately not used: it opens MO2's own installer, which **always** asks for a
+The legacy copy backend deliberately does not call `installMod`: MO2's ordinary installer asks for a
 name, asks "replace or merge" on a name clash, and opens the wizard for an archive containing
-`fomod/ModuleConfig.xml`. Those windows cannot be automated — MO2 is Qt and has no native buttons.
-For FOMOD the manual path is the only correct one anyway: options are resolved by reading
-`ModuleConfig.xml`, not by clicking.
+`fomod/ModuleConfig.xml`. The bridge does not drive that Qt wizard or interpret FOMOD rules.
+The caller must inspect the actual archive, read its installer and choose compatible options
+before sending an install request. Merely skipping `fomod\` does not perform those choices.
 
-If a mod with that name already exists, the route refuses. There is no merge and no replace: a
-modified file goes into a **separate** mod that overrides the original.
+### Native installation and source accounting (2.3.5 candidate)
+
+For a new mod, `native: true` opts into MO2's installation pipeline through the companion
+installer shipped in this Python package. It uses the **original archive directly inside this
+organizer's downloads directory**, checks its required `archiveSha256` (64 hexadecimal digits), and applies an explicit
+list of individual file mappings. It does not infer the selection from FOMOD. Replace the
+illustrative paths, digest and complete file list below with values inspected from the archive:
+
+```json
+{"native": true,
+ "archive": "D:\\...\\downloads\\SomeMod-1.2.7z",
+ "archiveSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+ "name": "Some Mod",
+ "files": [
+   {"source": "00 Core/SKSE/Plugins/SomeMod.dll", "destination": "SKSE/Plugins/SomeMod.dll"},
+   {"source": "10 Textures 2K/textures/somemod.dds", "destination": "textures/somemod.dds"}
+ ],
+ "selection": {"installer": "fomod/ModuleConfig.xml", "options": ["Core", "Textures 2K"],
+               "runtime": "Skyrim VR 1.4.15"}}
+```
+
+`files` describes the complete chosen destination tree, not folders to flatten. Only those files
+are installed as payload, alongside MO2's own metadata. `selection` records caller decisions and
+option identities; it must be a nonempty object when FOMOD is detected. Recording a runtime or an
+option does not validate compatibility.
+
+Every mapping needs an existing source file and an unambiguous relative destination; absolute
+paths, traversal, duplicate destinations and file/directory collisions are refused. FOMOD,
+`meta.ini` and MO2 INI Tweaks are not payload destinations.
+
+The original archive, its hash, the mapping and the selection are retained in the install
+receipt, readable as `installProvenance` on `/mod`. A repacked selection must not be presented
+as the original download.
+
+The native backend refuses an existing target, merge/replace modes, `paths` and destinations for MO2 INI
+Tweaks before changing the mod. It supports new installations only. MO2 performs its own source
+metadata and download accounting; the bridge does not patch a download's `.meta` to manufacture
+an Installed state. The result identifies `backend: "native"`; `installationComplete` requires
+`filesVerified`, `archiveInstalled` (download sidecar readback), `provenanceSaved`, preserved
+source metadata and `downloadStatusVerified` (the exact native Downloads row after its own refresh). Retain the
+receipt and still confirm the manager's **Installed** display as described in the checklist.
+Unexpected native prompts are cancelled and reported as a failure. A failed native call can
+leave a partial target; retain its receipt, `reconciliationRequired` and reversal data, inspect
+the result and reconcile it before a deliberate new operation. Do not blindly retry with a new
+operation key or silently overwrite the target.
+
+Offline checks in `tests/test_native_adapter.py` and `tests/test_install_accounting.py` use a
+mocked native adapter/pipeline. Native installation and the Installed display have not yet
+passed acceptance in a running MO2. A native refusal or unavailable capability must remain
+visible, with no automatic fallback to the legacy copy backend.
+The current Downloads adapter is gated to the source-verified MO2 2.5.2 interface and controls.
+Preparation extracts only the selected payload and FOMOD configuration XML for verification;
+unselected installer variants are not unpacked into the verification folder.
+
+Without `native: true`, existing callers retain the copy backend and its `paths`/`mode`
+semantics. Its result has `backend: "copy"`, `installationComplete: false`,
+`archiveInstalled: false` and `accountingRequired: true`. Here `archiveInstalled: false` means
+source accounting is unverified, not proof that MO2 considers the archive uninstalled. Successful
+copying alone must not be reported as a completed MO2 installation.
+
+### Agent checklist: archive, dependencies, selection, verification
+
+The bridge executes a supplied selection; the caller owns this procedure for the requested mod
+and every dependency installed along the way:
+
+1. **Identify the target.** Record the exact game edition and executable runtime, script extender
+   and relevant framework versions. Record the original downloaded archive's filename, source
+   page/file identity, version and SHA-256. Inspect that file's contents, rather than assuming
+   that a mod page or a similarly named archive describes its layout.
+2. **Read the installer.** Locate `fomod/ModuleConfig.xml`, including inside a wrapper folder and
+   with different letter case. If present, read it and the bundled instructions: required files,
+   option groups, flags, conditions, destination paths and overwrite priorities all affect the
+   result. Choose options supported by evidence for the exact target runtime and installed
+   setup. Preserve the chosen option identities and the reason for each conditional choice.
+   If no FOMOD is present, inspect the layout and bundled instructions anyway.
+3. **Audit the complete dependency graph.** Read requirements for the selected release and options,
+   including the source page, bundled documentation, FOMOD conditions and plugin masters. For
+   each required dependency, resolve its exact compatible release and repeat this audit for its
+   own requirements until all transitive requirements are covered. Track visited release/runtime
+   identities and cycles; a cycle is not evidence that its requirements are satisfied. Record
+   each graph edge, its evidence, and whether the required release is verified installed, missing,
+   incompatible or unknown. A downloaded archive or a matching mod name is not installed-version
+   evidence. Unknown compatibility or an unresolved required edge blocks a claim of readiness;
+   resolve it before installing the affected selection. Optional requirements apply when the
+   chosen options make them required. The bridge does not solve this graph or infer compatibility.
+4. **Build the exact file selection.** Produce a source-to-destination manifest from the installer
+   choices, including required files and the effective winner of overlapping destinations.
+   For native installation, pass that exact individual-file mapping as `files` with the original
+   archive and preserve the choices as `selection`. For legacy copying, use `paths` only when
+   its folder flattening reproduces the manifest exactly. More complex legacy mappings need a
+   prepared archive containing only the resolved destination tree and a durable record linking
+   it to the original archive and choices; this does not complete native source accounting.
+   Installing the whole FOMOD archive is not a substitute for resolving its options.
+5. **Install and verify.** Preserve the request, terminal operation result and reversal data.
+   HTTP 202 means accepted/pending: poll the same operation, and investigate refusals, failures
+   and partial results before continuing. After MO2 has completed its refresh, compare the
+   installed files and hashes with the manifest, then read `/mods` and `/mod` to verify the
+   registered mod and its source identity. Verify that the corresponding source download is
+   shown as **Installed** in MO2. A download, accepted operation, copy counter or
+   `refreshRequested: true` alone does not prove installation. Record the verified result for
+   every successfully installed dependency as well as the requested mod. Enabling the mod and
+   checking its priority/plugin state are separate steps before declaring the setup ready.
+
+This is an agent workflow, not an automatic FOMOD interpreter, dependency solver or guarantee
+of game compatibility. An unrepresentable selection or unavailable verification remains a
+reported limitation; it must not be silently replaced with a whole-archive install or a success
+claim.
 
 ### When the folder is taken: merge or replace
 
-MO2's installer asks with a dialog here; the bridge asks with the `mode` field, and without it
+These modes belong to the legacy copy backend. Native installation refuses an existing target.
+MO2's installer asks with a dialog here; the copy backend asks with the `mode` field, and without it
 it **refuses** — nothing is written over someone's work silently.
 
 | `mode` | What it does | Key needed | What is lost |
@@ -366,6 +486,10 @@ at two hundred names; the counters are not.
 2. `POST /refresh` — MO2 picks up the new folder and registers the mod;
 3. `POST /toggle` — enable it;
 4. `POST /mods/priority` — put it where it belongs.
+
+This registers and enables a folder; it does not establish original-archive provenance or the
+source download's Installed state. Apply the same file, source and status verification before
+reporting a completed installation.
 
 Verified: a folder created by hand was invisible to `/mods`; after `/refresh` the mod appeared with
 priority 1006; `/toggle` enabled it and `modlist.txt` on disk changed from `-` to `+`. Deleting the
@@ -618,6 +742,7 @@ The defaults contain no machine-specific paths: the `7z.exe` candidates are asse
 | `busy.py` | domain | MO2 busy state: run bookkeeping and the three lock sources |
 | `reading.py` | domain | reading state and the virtual Data |
 | `install.py` | domain | installing a mod: fresh, merge, replace |
+| `nativeinstall.py` | MO2 installer | one-use explicit selection through MO2's original-archive installation pipeline |
 | `mods.py` | domain | enable, disable, refresh; priority, rename, remove |
 | `profiles.py` | domain | profile rename, names, conflict checks and both locks |
 | `profileui.py` | MO2 UI | native Qt profile manager, without manually renaming its folders |

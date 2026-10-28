@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """Run every check in turn.
 
-Nine suites run without MO2: source hygiene, the busy logic, the strings, the update rules,
+Offline suites run without MO2: source hygiene, the busy logic, the strings, the update rules,
 the contract of every route against a fake mobase, the transport on a real loopback
-socket, mutation failure/retry contracts, patch regressions and HTTP limits. Four optional Qt suites
+socket, mutation failure/retry contracts, patch regressions, HTTP limits and native archive
+installation/accounting. Four additional optional Qt suites
 also run without MO2. The other four need a running manager and are skipped when the bridge does not
 answer: a skip is not a failure but an honest "there was nothing to check against".
 
@@ -16,11 +17,15 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+if '--offline' in sys.argv[1:]:
+    # Never even probe the owner's manager when source-only verification is intended.
+    os.environ['MO2AIBRIDGE_OFFLINE'] = '1'
 sys.path.insert(0, HERE)
 import common  # noqa: E402
 SUITES = ['test_sources.py', 'test_busy_logic.py', 'test_i18n.py', 'test_policy.py',
           'test_contract_offline.py', 'test_transport_offline.py', 'test_mutation_failures.py',
-          'test_patch234.py', 'test_profileui.py', 'test_protocol.py',
+          'test_patch234.py', 'test_native_adapter.py', 'test_install_accounting.py',
+          'test_profileui.py', 'test_protocol.py',
           'test_health_logging.py', 'test_lifecycle.py', 'test_http_limits.py',
           'test_routes.py', 'test_plugins_txt.py', 'test_install_modes.py',
           'test_busy_live.py']

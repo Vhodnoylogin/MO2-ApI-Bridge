@@ -70,7 +70,7 @@ def alive():
 
 def need_live():
     """Stop with a clear word when MO2 is not running."""
-    if not alive():
+    if os.environ.get('MO2AIBRIDGE_OFFLINE') == '1' or not alive():
         print(T('report.skipped', base=BASE))
         raise SystemExit(77)
 

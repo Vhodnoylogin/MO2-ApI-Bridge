@@ -30,7 +30,7 @@ on their own.
 Documentation: README.md and README.ru.md next to this file.
 """
 
-__version__ = '2.3.4'
+__version__ = '2.3.5'
 
 # The name MO2 knows this plugin by: the folder in its plugins\ is called this, and so is
 # the package when imported from there. The repository folder name deliberately differs -
@@ -39,6 +39,7 @@ __version__ = '2.3.4'
 PLUGIN_ID = 'mo2aibridge'
 
 
-def createPlugin():
+def createPlugins():
     from .plugin import MO2ApIBridge
-    return MO2ApIBridge()
+    from .nativeinstall import create_installer
+    return [MO2ApIBridge(), create_installer()]
