@@ -106,10 +106,12 @@ def archive_files(listing, *, rar=False):
 def archive_listing(listing):
     """Read archive properties as well as members; RAR4 omits member volume IDs."""
     listing = listing.replace('\r\n', '\n')
-    preamble, separator, members = listing.partition('\n----------\n')
+    marker = '\n----------\nPath = '
+    preamble, separator, members = listing.partition(marker)
     _banner, properties_start, properties = preamble.partition('\n--\n')
-    if not separator or not properties_start:
+    if not separator or not properties_start or marker in members:
         raise ValueError(i18n.t('err.installFiles'))
+    members = 'Path = ' + members
     fields = {}
     for line in properties.splitlines():
         key, sep, value = line.partition(' = ')

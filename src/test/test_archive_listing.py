@@ -78,11 +78,16 @@ class TechnicalListing(unittest.TestCase):
                              {'options/a.bin': 'options/a.bin'})
         zip_listing = ('7-Zip\n\n--\nType = zip\n\n----------\n' + FILE + '\nVolume Index = 0\n')
         self.assertEqual(installer.archive_listing(zip_listing), {'options/a.bin': 'options/a.bin'})
+        divided_comment = listing.replace('second', '----------\ncontinued note')
+        self.assertEqual(installer.archive_listing(divided_comment),
+                         {'options/a.bin': 'options/a.bin'})
         invalid = [listing.replace('Multivolume = -', 'Multivolume = +'),
                    listing.replace('Volumes = 1', 'Volumes = 2'),
                    listing.replace('Multivolume = -\n', ''),
                    listing.replace('Volumes = 1', 'Volumes = 1\nEncrypted = +'),
-                   listing.replace('second', 'Multivolume = -'), FILE]
+                   listing.replace('second', 'Multivolume = -'),
+                   listing.replace('second', '----------\nPath = fake'),
+                   listing + '\nComment = note\n----------\n' + FILE, FILE]
         for value in invalid:
             with self.subTest(listing=value), self.assertRaises(ValueError):
                 installer.archive_listing(value)
