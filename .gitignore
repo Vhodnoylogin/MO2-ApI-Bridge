@@ -1,6 +1,7 @@
 ﻿# Продукты сборки и окружения в репозиторий не попадают.
 build/
 dist/
+target/
 .venv/
 models/
 __pycache__/

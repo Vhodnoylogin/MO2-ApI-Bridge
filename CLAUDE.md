@@ -40,51 +40,22 @@ open it again — slow, lossy, and blind to the virtual `Data`.
 
 ## 2. Layout
 
-```
-MO2-ApI-Bridge/              repository root
-├── AGENTS.md                repository instructions for Codex
-├── CLAUDE.md                 this file
-├── README.md                 repository readme: layout, install, packaging
-├── pack.py                   builds the release archive
-├── plugin_mo2aibridge/       THE PLUGIN — only this ships to MO2
-│   ├── __init__.py           factory, PLUGIN_ID, __version__
-│   ├── plugin.py             MO2 plugin lifecycle
-│   ├── routes.py             path -> operation table
-│   ├── services.py           facade: assembles the domain classes
-│   ├── base.py               shared base for domain classes
-│   ├── busy.py               the "MO2 is busy" lock
-│   ├── reading.py            reads of the setup state
-│   ├── mods.py               mod list: toggle, priority, rename, remove
-│   ├── profiles.py          profile name changes through MO2
-│   ├── profileui.py         native Qt profile manager adapter
-│   ├── loadorder.py          plugin states and load order, plugins.txt writes
-│   ├── install.py            install from archive, merge and replace modes
-│   ├── nativeinstall.py      one-use selected native installer and Downloads readback
-│   ├── launch.py             launching programs through MO2, window actions
-│   ├── updates.py            update checking against the Nexus API: request and allowance
-│   ├── updatepolicy.py       the update rules alone: no network, no MO2, no disk
-│   ├── operations.py         boot-scoped outcomes and retry deduplication
-│   ├── runtime.py            Qt main thread, HTTP server, token
-│   ├── winapi.py             windows, processes, Recycle Bin, credential store
-│   ├── config.py             settings from JSON, defaults built in
-│   ├── journal.py            levels and sinks: what is written and where
-│   ├── i18n.py               user-facing strings, RU and EN
-│   ├── README.md             plugin documentation, English
-│   ├── README.ru.md          plugin documentation, Russian
-│   └── LICENSE               MIT
-└── tests/                    CHECKS — never ship to MO2
-```
+Production code, locale, runtime user documentation and licence live in
+`src/main/plugin_mo2aibridge/`. Packaging source is `src/main/pack.py`.
+All tests/fixtures and their instructions live in `src/test/`; generated artifacts
+belong in ignored `target/` or an explicit external build directory. Root READMEs
+describe build/install commands; runtime READMEs document every module/API contract.
 
-The repository root contains the documentation, `pack.py`, `tests/`, and the
-`plugin_mo2aibridge/` source package. There is no enclosing module directory.
-Only the plugin package is installed into MO2.
+Only runtime package files ship. The installed directory in MO2 must be
+`plugins/mo2aibridge/`, because Python takes the package name from that directory.
+`PLUGIN_ID` remains a literal string in `__init__.py`; never derive it from the
+source directory. The packer writes the correct installed package name.
 
-MO2 takes the **package name from the folder name** in its `plugins\`, so the folder there
-must be called `mo2aibridge` even though the repository calls it `plugin_mo2aibridge`. In
-development this is a junction; for release, `pack.py` puts the right name in the archive.
-
-`PLUGIN_ID` is a **string** in `__init__.py`, not derived from the folder. The token, log and
-config filenames come from it.
+`main` holds the released source; one `develop` branch holds unfinished work.
+Candidate 2.3.6 is not released or live-qualified. Stable/public 2.3.5 is unchanged.
+Historical receipt existence is not current installation proof: `/mod` preserves
+`installProvenance` and adds metadata-only `installProvenanceStatus`. Matching
+metadata never certifies present archive/payload bytes or FOMOD compatibility.
 
 ---
 
@@ -152,7 +123,7 @@ Every line here is a past failure. The reason is given so nobody is tempted to s
 | `isActive()` | a lenient check instead of `is True` | the "Enabled" checkbox in MO2 2.5 is the manager's own switch, not a setting named `enabled`: `pluginSetting` returns `None` for it, so a strict comparison never passed |
 | `__init__.py` | `mobase` imported lazily, inside the factory | otherwise `from mo2aibridge import i18n` stops working outside MO2, and every offline check depends on that |
 | `runtime.Server` | `allow_reuse_address = False` | `HTTPServer` sets it to 1, and on Windows that allows binding to an already-listening address: a second bridge started silently and received nothing |
-| `tests/` | sits **outside** the package and finds it by `__init__.py` | it must not search by name — the names differ on purpose |
+| `src/test/` | sits **outside** the package and finds it by `__init__.py` | it must not search by name — the names differ on purpose |
 | stuck-launch reset | menu item only, no route | a route would let one request bypass the busy lock |
 | `log()` | writes to both MO2's log and its own file | MO2's default log level drops plugin warnings, and the reason for a refusal was lost entirely. Both sinks live in `journal.py`; a sink that fails is announced through the other one, never swallowed |
 
@@ -194,7 +165,7 @@ run triggers seven or eight in a row. **Do not hunt for the cause in the bridge 
 ## 7. How to check your work
 
 ```
-python tests/run.py
+python src/test/run.py
 ```
 
 Offline suites run without MO2 — source hygiene, busy logic, strings, the update rules,
@@ -204,7 +175,7 @@ acceptance
 suites need a running manager and are **skipped** with a clear message when there is none; a
 skip is not a failure.
 
-Use `python tests/run.py --offline` for source-only work: it never probes live MO2.
+Use `python src/test/run.py --offline` for source-only work: it never probes live MO2.
 Version 2.3.5 adds native installer/accounting checks over mocked APIs and scratch files.
 The native backend is opt-in (`native: true`), new-mod only, and targets MO2 2.5.2.
 Its registered companion is created by `createPlugins`; do not restore `createPlugin`, which
@@ -227,7 +198,7 @@ Do not close these in passing.
 | Question | State |
 |---|---|
 | Graded danger levels | The owner ranked the operations: enable/disable/reorder/rename are cheap and reversible; install is more involved; removal is worse; **launching programs is the most dangerous of all**. Today there is one key for all of them. A graded model has not been agreed |
-| Nexus page and release | Name, presentation and the release archive are the owner's call. `pack.py` builds the archive; nothing is published automatically |
+| Nexus page and release | Name, presentation and the release archive are the owner's call. `src/main/pack.py` builds the archive; nothing is published automatically |
 
 Version 2.3.0: read the reliable-request and profile-capability sections in the plugin README.
 Never retry an uncertain launch with a new key. HTTP 202 is pollable; 504 means queued work was cancelled.

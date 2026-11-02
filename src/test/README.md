@@ -6,7 +6,7 @@
 python run.py
 ```
 
-All twenty suites in a row. The suites that need MO2 are skipped with a plain word when it is not
+All twenty-two suites in a row. The suites that need MO2 are skipped with a plain word when it is not
 running — a skip does not count as a failure.
 
 Use `python run.py --offline` to skip live suites without even probing a running manager.
@@ -124,3 +124,12 @@ fake native lifecycle), and the existing profileui/protocol/health suites.
 The four suites requiring PyQt6 skip explicitly when it is unavailable; release
 validation runs them using a Qt-enabled interpreter. No live manager is accessed
 by those suites. Live acceptance remains separate and requires an isolated instance.
+
+## Installation regressions in candidate 2.3.6
+
+`test_archive_listing.py` preserves final empty 7-Zip fields across LF/CRLF and
+refuses malformed/unsafe/encrypted/duplicate records before extraction side effects.
+`test_provenance.py` checks historical raw receipt retention, stale/current/unknown
+native metadata, bounded unavailable evidence and the absence of hash certification.
+Native adapter/accounting tests cover one source at two unique destinations. These
+use synthetic scratch fixtures and are not live MO2 acceptance.

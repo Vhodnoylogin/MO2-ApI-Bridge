@@ -2,12 +2,12 @@
 """Shared ground for the checks: where the plugin is, how to reach it, how to report.
 
 Not one machine-specific path lives here. The repository root is derived from this file's
-location, the plugin folder is found beside it by the presence of __init__.py, the token
+location, the plugin folder is found in src/main by the presence of __init__.py, the token
 file name comes from that folder's own name, and the port comes from the environment. So
 the checks travel with the mod and work for whoever cloned it.
 
 The checks carry no phrases of their own: their wording lives in
-tests\\locale\\<language>\\<section>.json and is read through T().
+src/test/locale\\<language>\\<section>.json and is read through T().
 """
 
 import io
@@ -18,17 +18,18 @@ import types
 import urllib.error
 import urllib.request
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SOURCE_ROOT = os.path.join(ROOT, 'src', 'main')
 
 
 def _find_package():
-    """The plugin's own folder - the neighbour of tests, the one holding __init__.py.
+    """The runtime package in src/main, identified by __init__.py.
 
     We search rather than assemble the name: the repository root and the package have separate names, and the checks must not depend on conventions."""
-    for name in sorted(os.listdir(ROOT)):
-        if os.path.isfile(os.path.join(ROOT, name, '__init__.py')):
-            return os.path.join(ROOT, name)
-    raise SystemExit('no folder with an __init__.py beside tests - where is the plugin?')
+    for name in sorted(os.listdir(SOURCE_ROOT)):
+        if os.path.isfile(os.path.join(SOURCE_ROOT, name, '__init__.py')):
+            return os.path.join(SOURCE_ROOT, name)
+    raise SystemExit('no folder with an __init__.py in src/main - where is the plugin?')
 
 
 PKG = _find_package()
@@ -90,8 +91,8 @@ def import_package(with_mobase=False):
     """
     if not with_mobase and 'mobase' not in sys.modules:
         sys.modules['mobase'] = types.ModuleType('mobase')
-    if ROOT not in sys.path:
-        sys.path.insert(0, ROOT)
+    if SOURCE_ROOT not in sys.path:
+        sys.path.insert(0, SOURCE_ROOT)
     return __import__(NAME, fromlist=['services', 'i18n', 'winapi'])
 
 
@@ -102,7 +103,7 @@ TOKEN_FILE = os.environ.get('MO2AIBRIDGE_TOKEN_FILE') or os.path.join(PKG, PLUGI
 
 # ---------------------------------------------------------------- what the checks say
 # The checks carry no phrases of their own either. Their wording lives in
-# tests\locale\<language>\<section>.json and is read by the very Catalog the plugin uses -
+# src/test/locale\<language>\<section>.json and is read by the very Catalog the plugin uses -
 # one mechanism, two catalogues. Without this, a repository whose code is English printed
 # its check results in Russian, and whoever cloned it could not read what had failed.
 LOCALE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'locale')

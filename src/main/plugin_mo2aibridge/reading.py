@@ -8,6 +8,7 @@ them, and a full VFS export.
 """
 import os
 import json
+import ntpath
 
 import mobase
 
@@ -22,6 +23,143 @@ def diagnostic_error(report, phase, path, error, limit):
     report['errorCount'] += 1
     if len(report['errors']) < max(0, limit):
         report['errors'].append({'phase': phase, 'path': str(path), 'error': str(error)})
+
+
+def installed_file_metadata(path, limit):
+    """Read only the bounded native source-ID array; never inspect payload or downloads."""
+    if not path or not os.path.isfile(os.path.join(path, 'meta.ini')):
+        return None, 'native-metadata-unavailable'
+    try:
+        from PyQt6.QtCore import QSettings
+        metadata = QSettings(os.path.join(path, 'meta.ini'), QSettings.Format.IniFormat)
+        metadata.setFallbacksEnabled(False)
+        if metadata.status() != QSettings.Status.NoError:
+            return None, 'native-metadata-unreadable'
+        if not metadata.contains('installedFiles/size'):
+            return None, 'installed-files-unavailable'
+        declared = metadata.value('installedFiles/size')
+        if isinstance(declared, bool) or not isinstance(declared, (int, str)):
+            return None, 'installed-files-invalid'
+        declared = int(declared)
+        if declared < 0 or declared > max(0, limit):
+            return None, 'installed-files-limit'
+        count = metadata.beginReadArray('installedFiles')
+        try:
+            if count != declared:
+                return None, 'installed-files-invalid'
+            rows = []
+            for index in range(count):
+                metadata.setArrayIndex(index)
+                rows.append({'modId': metadata.value('modid'),
+                             'fileId': metadata.value('fileid')})
+        finally:
+            metadata.endArray()
+        if metadata.status() != QSettings.Status.NoError:
+            return None, 'native-metadata-unreadable'
+        return rows, None
+    except Exception:
+        return None, 'native-metadata-unavailable'
+
+
+def provenance_status(record, current, installed_files=None, metadata_error=None, limit=200):
+    """Compare historical metadata only, without certifying the installed selection/bytes.
+
+    Schema 1 receipts predating nativeMetadata cannot prove a current binding. Their
+    archive name can still contradict the current native association after Replace.
+    No manifest walk, archive access, payload read, hashing or write belongs here.
+    """
+    status = {'state': 'unknown', 'scope': 'native-metadata',
+              'archiveHashVerified': False, 'payloadHashesVerified': False,
+              'checks': [], 'reasons': []}
+    if record is None:
+        status.update(state='absent')
+        return status
+    if not isinstance(record, dict):
+        status.update(state='malformed', reasons=['record-not-object'])
+        return status
+    if type(record.get('schemaVersion')) is not int or record['schemaVersion'] != 1:
+        status['reasons'].append('unsupported-schema')
+        return status
+
+    def archive_name(value):
+        return ntpath.basename(value).casefold() if isinstance(value, str) and value else None
+
+    def text(value):
+        return value if isinstance(value, str) and value else None
+
+    def identity(value):
+        if isinstance(value, bool) or not isinstance(value, (int, str)):
+            return None
+        try:
+            number = int(value)
+            return number if number >= 0 else None
+        except ValueError:
+            return None
+
+    def pairs(value):
+        if not isinstance(value, list) or len(value) > max(0, limit):
+            return None
+        result = []
+        for row in value:
+            if not isinstance(row, dict):
+                return None
+            mod_id, file_id = identity(row.get('modId')), identity(row.get('fileId'))
+            if mod_id is None or file_id is None or mod_id <= 0 or file_id <= 0:
+                return None
+            result.append((mod_id, file_id))
+        return sorted(result)
+
+    def check(field, recorded, actual, normalize):
+        before, now = normalize(recorded), normalize(actual)
+        state = ('unknown' if before is None or now is None else
+                 'match' if before == now else 'mismatch')
+        status['checks'].append({'field': field, 'state': state,
+                                 'recorded': recorded, 'current': actual})
+
+    check('archive', record.get('archive'), current.get('installationFile'), archive_name)
+    snapshot = record.get('nativeMetadata')
+    if not isinstance(snapshot, dict):
+        status['reasons'].append('missing-native-metadata')
+    else:
+        for field, normalize in (('installationFile', archive_name), ('version', text),
+                                  ('nexusId', identity), ('gameName', text)):
+            check(field, snapshot.get(field), current.get(field), normalize)
+        recorded_files = snapshot.get('installedFiles')
+        if pairs(recorded_files) is None or pairs(installed_files) is None:
+            # Keep reply evidence bounded even for an oversized or malformed receipt.
+            status['checks'].append({'field': 'installedFiles', 'state': 'unknown'})
+            status['reasons'].append(metadata_error or 'installed-files-unavailable')
+        else:
+            check('installedFiles', recorded_files, installed_files, pairs)
+    states = [row['state'] for row in status['checks']]
+    if 'mismatch' in states:
+        status['state'] = 'stale'
+    elif not status['reasons'] and states and 'unknown' not in states:
+        status['state'] = 'metadata-match'
+    elif not status['reasons']:
+        status['reasons'].append('metadata-incomplete')
+    return status
+
+
+def read_provenance(raw, current, path, limit, unavailable=False):
+    """Keep the existing decoded record while adding an explicitly limited assessment."""
+    if unavailable:
+        record, record_error = None, 'setting-unavailable'
+    elif raw is None:
+        record, record_error = None, None
+    else:
+        try:
+            record, record_error = json.loads(raw), None
+        except Exception:
+            record, record_error = None, 'invalid-json'
+    installed_files, metadata_error = None, None
+    snapshot = record.get('nativeMetadata') if isinstance(record, dict) else None
+    if isinstance(snapshot, dict):
+        installed_files, metadata_error = installed_file_metadata(path, limit)
+    status = provenance_status(record, current, installed_files, metadata_error, limit)
+    if record_error:
+        status.update(state='unknown' if unavailable else 'malformed', reasons=[record_error])
+    return record, status
 
 
 class Reader(Domain):
@@ -135,11 +273,19 @@ class Reader(Domain):
             if m is None:
                 raise ValueError(i18n.t('err.noSuchMod', mod=name))
             st = ml.state(name)
-            nid = safe(m.nexusId, 0)
-            game = safe(m.gameName, '') or ''
+            current = {'nexusId': safe(lambda: m.nexusId()),
+                       'gameName': safe(lambda: m.gameName()),
+                       'version': safe(lambda: m.version().displayString()),
+                       'installationFile': safe(lambda: m.installationFile())}
+            nid = current['nexusId'] if current['nexusId'] is not None else 0
+            game = current['gameName'] or ''
             own_url = safe(m.url, '') or ''
             url = self.nexus_url(game, nid) or own_url
-            return {'mod': name,
+            try:
+                raw, unavailable = m.pluginSetting('mo2aibridge', 'installProvenance', 'null'), False
+            except Exception:
+                raw, unavailable = None, True
+            card = {'mod': name,
                     'displayName': safe(lambda: ml.displayName(name), name),
                     'path': safe(m.absolutePath, ''),
                     'active': bool(st & mobase.ModState.ACTIVE),
@@ -150,18 +296,22 @@ class Reader(Domain):
                     'isBackup': safe(m.isBackup, False),
                     'isOverwrite': safe(m.isOverwrite, False),
                     'nexusId': nid, 'url': url, 'urlFromMO2': own_url, 'gameName': game,
-                    'version': safe(lambda: m.version().displayString(), ''),
+                    'version': current['version'] or '',
                     'newestVersion': safe(lambda: m.newestVersion().displayString(), ''),
                     'ignoredVersion': safe(lambda: m.ignoredVersion().displayString(), ''),
-                    'installationFile': safe(m.installationFile, ''),
-                    'installProvenance': safe(lambda: json.loads(m.pluginSetting(
-                        'mo2aibridge', 'installProvenance', 'null')), None),
+                    'installationFile': current['installationFile'] or '',
                     'categories': list(safe(m.categories, []) or []),
                     'primaryCategory': safe(m.primaryCategory, 0),
                     'notes': safe(m.notes, ''), 'comments': safe(m.comments, ''),
                     'endorsed': str(safe(m.endorsedState, '')),
                     'tracked': str(safe(m.trackedState, ''))}
-        return self.run_main(f)
+            return card, raw, current, unavailable
+        card, raw, current, unavailable = self.run_main(f)
+        # The Qt job only snapshots native getters. JSON parsing and bounded INI
+        # evidence stay outside it, and neither can certify the archive or payload.
+        card['installProvenance'], card['installProvenanceStatus'] = read_provenance(
+            raw, current, card['path'], self.limit(), unavailable)
+        return card
 
     def analyze(self, q):
         """A mod analysed in one call: the card, the files, the plugins and who contests what.

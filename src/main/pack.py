@@ -16,9 +16,9 @@ The folder inside the archive is named after the name MO2 knows the plugin by (P
 after what it is called in the repository: Python takes the package name from the folder name,
 and `plugin_mo2aibridge` would yield a package MO2 does not look for.
 
-    python pack.py [where]
+    python src/main/pack.py [where]
 
-With no argument the archive lands in `dist\` in the repository root. There are no machine-specific
+With no argument the archive lands in `target/release/` in the repository root. There are no machine-specific
 paths here: the root is derived from this file's location, and the version and name come from
 the plugin itself.
 """
@@ -28,7 +28,8 @@ import shutil
 import sys
 import zipfile
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+SOURCE_ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(SOURCE_ROOT))
 
 # What ships. Everything else does not, however useful it may look.
 SHIP_SUFFIX = ('.py',)
@@ -42,10 +43,10 @@ def find_package():
     """The plugin's own folder - the neighbour holding __init__.py. We search rather than
     assemble the name: the repository root and the package have separate names, and
     the checks must not depend on conventions."""
-    for name in sorted(os.listdir(ROOT)):
-        if os.path.isfile(os.path.join(ROOT, name, '__init__.py')):
-            return os.path.join(ROOT, name)
-    raise SystemExit('no folder with an __init__.py beside pack.py - where is the plugin?')
+    for name in sorted(os.listdir(SOURCE_ROOT)):
+        if os.path.isfile(os.path.join(SOURCE_ROOT, name, '__init__.py')):
+            return os.path.join(SOURCE_ROOT, name)
+    raise SystemExit('no folder with an __init__.py in src/main - where is the plugin?')
 
 
 def plugin_id_and_version(pkg):
@@ -126,7 +127,7 @@ def main(out_dir):
 
 
 if __name__ == '__main__':
-    target = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'dist')
+    target = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'target', 'release')
     target = os.path.abspath(target)
     os.makedirs(target, exist_ok=True)
     raise SystemExit(main(target))

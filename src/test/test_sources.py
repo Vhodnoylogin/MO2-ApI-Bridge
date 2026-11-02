@@ -71,7 +71,7 @@ r.head(T('sources.archiveComplete'))
 # per language, the walk in pack.py stayed one level deep, and zero translations went into
 # the archive - the plugin would have spoken in bare labels. Invisible until release day, so
 # we ask pack.py itself what it is going to take.
-sys.path.insert(0, common.ROOT)
+sys.path.insert(0, common.SOURCE_ROOT)
 pack = __import__('pack')
 taken, _left = pack.collect(common.PKG)
 r.case(T('sources.stringsShip'), sorted(x for x in taken if x.startswith('locale')) != [], True)

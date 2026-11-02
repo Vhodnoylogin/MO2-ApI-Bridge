@@ -63,6 +63,38 @@ def archive_member(value):
     return '/'.join(parts)
 
 
+def archive_files(listing):
+    """Validate a 7-Zip technical listing without trimming empty field values.
+
+    A final directory may end in ``Block = ``. Whitespace is part of the field
+    delimiter, so stripping the output changes a valid record into malformed input.
+    Only empty lines delimit records; LF and CRLF retain exactly the same values.
+    """
+    members, seen, fields = {}, set(), {}
+    for line in listing.splitlines() + ['']:
+        if line:
+            key, sep, value = line.partition(' = ')
+            if not sep or not key or key in fields:
+                raise ValueError(i18n.t('err.installFiles'))
+            fields[key] = value
+            continue
+        if not fields:
+            continue
+        directory = fields.get('Folder') == '+' or fields.get('Attributes', '').startswith('D')
+        path = fields.get('Path')
+        if directory and isinstance(path, str):
+            path = path.rstrip('/\\')
+        path = archive_member(path)
+        key = path.lower()
+        if key in seen or fields.get('Encrypted') == '+':
+            raise ValueError(i18n.t('err.installFiles'))
+        seen.add(key)
+        if not directory:
+            members[key] = path
+        fields = {}
+    return members
+
+
 class Installer(Domain):
 
     def install(self, body):
@@ -239,16 +271,10 @@ class Installer(Domain):
                 installed_from = mod.installationFile()
                 if not installed_from or os.path.basename(installed_from.replace('\\', '/')) != os.path.basename(arc):
                     raise RuntimeError(i18n.t('err.nativeInstall', reason='archive-association'))
-                encoded = json.dumps(provenance, ensure_ascii=False, sort_keys=True)
-                if not mod.setPluginSetting(PLUGIN_ID, 'installProvenance', encoded):
-                    raise RuntimeError(i18n.t('err.nativeInstall', reason='provenance-write'))
                 from PyQt6.QtCore import QSettings
                 metadata = QSettings(os.path.join(target, 'meta.ini'), QSettings.Format.IniFormat)
-                if (mod.pluginSetting(PLUGIN_ID, 'installProvenance', '') != encoded or
-                        metadata.value('Plugins/' + PLUGIN_ID + '/installProvenance', '') != encoded or
-                        metadata.status() != QSettings.Status.NoError):
-                    raise RuntimeError(i18n.t('err.nativeInstall', reason='provenance-readback'))
-                res['provenanceSaved'] = True
+                if metadata.status() != QSettings.Status.NoError:
+                    raise RuntimeError(i18n.t('err.nativeInstall', reason='metadata-unreadable'))
                 mod_id = original_download.get('modID', 0)
                 file_id = original_download.get('fileID', 0)
                 try:
@@ -263,13 +289,18 @@ class Installer(Domain):
                     raise RuntimeError(i18n.t('err.nativeInstall', reason='game-readback'))
                 if version and mod.version().displayString() != mobase.VersionInfo(str(version)).displayString():
                     raise RuntimeError(i18n.t('err.nativeInstall', reason='version-readback'))
-                if mod_id > 0 and file_id > 0:
-                    installed_pairs = []
-                    for index in range(metadata.beginReadArray('installedFiles')):
+                installed_pairs = []
+                count = metadata.beginReadArray('installedFiles')
+                try:
+                    if count > self.limit():
+                        raise RuntimeError(i18n.t('err.nativeInstall', reason='installed-file-limit'))
+                    for index in range(count):
                         metadata.setArrayIndex(index)
                         installed_pairs.append((int(metadata.value('modid', 0)),
                                                 int(metadata.value('fileid', 0))))
+                finally:
                     metadata.endArray()
+                if mod_id > 0 and file_id > 0:
                     if (mod_id, file_id) not in installed_pairs:
                         raise RuntimeError(i18n.t('err.nativeInstall', reason='installed-file-identity'))
                 download = QSettings(arc + '.meta', QSettings.Format.IniFormat)
@@ -292,6 +323,22 @@ class Installer(Domain):
                 self.ctx.expected(body)
                 if self.guard.refusal('op.refresh'):
                     raise RuntimeError(i18n.t('err.installRefresh'))
+                # A historical receipt is not proof of a later ordinary Replace.
+                # Bind new receipts to native metadata without promising a future
+                # payload/hash check merely because this snapshot still matches.
+                provenance['nativeMetadata'] = {
+                    'installationFile': mod.installationFile(),
+                    'version': mod.version().displayString(), 'nexusId': mod.nexusId(),
+                    'gameName': mod.gameName(),
+                    'installedFiles': [{'modId': m, 'fileId': f} for m, f in installed_pairs]}
+                encoded = json.dumps(provenance, ensure_ascii=False, sort_keys=True)
+                if not mod.setPluginSetting(PLUGIN_ID, 'installProvenance', encoded):
+                    raise RuntimeError(i18n.t('err.nativeInstall', reason='provenance-write'))
+                if (mod.pluginSetting(PLUGIN_ID, 'installProvenance', '') != encoded or
+                        metadata.value('Plugins/' + PLUGIN_ID + '/installProvenance', '') != encoded or
+                        metadata.status() != QSettings.Status.NoError):
+                    raise RuntimeError(i18n.t('err.nativeInstall', reason='provenance-readback'))
+                res['provenanceSaved'] = True
                 self.o.refresh(True)
                 res['refreshRequested'] = True
             self.run_main(finish)
@@ -489,21 +536,7 @@ class Installer(Domain):
             capture_output=True, text=True, encoding='utf-8', timeout=self.timeout('unpack'))
         if result.returncode != 0:
             raise RuntimeError(i18n.t('err.nativeInstall', reason='archive-listing-failed'))
-        members = {}
-        for block in result.stdout.strip().split('\n\n'):
-            fields = {}
-            for line in block.splitlines():
-                key, sep, value = line.partition(' = ')
-                if not sep or key in fields:
-                    raise ValueError(i18n.t('err.installFiles'))
-                fields[key] = value
-            if fields.get('Folder') == '+' or fields.get('Attributes', '').startswith('D'):
-                continue
-            path = archive_member(fields.get('Path'))
-            key = path.lower()
-            if key in members or fields.get('Encrypted') == '+':
-                raise ValueError(i18n.t('err.installFiles'))
-            members[key] = path
+        members = archive_files(result.stdout)
         selected = []
         for source in sources:
             if source.lower() not in members:

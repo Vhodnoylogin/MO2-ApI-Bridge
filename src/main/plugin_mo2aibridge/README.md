@@ -248,8 +248,16 @@ mods it returns a bare domain with no `/mods/<id>`, producing a link to nowhere.
 kept separately as `urlFromMO2`.
 
 `installProvenance`, when present, is the native install receipt described below: original
-archive/hash, explicit file mapping and caller selection. It records installation evidence;
-it does not certify runtime compatibility.
+archive/hash, explicit file mapping and caller selection. It is historical evidence and may
+survive an ordinary MO2 Replace. The additive `installProvenanceStatus` reports `absent`,
+`malformed`, `unknown`, `stale` or `metadata-match`, with comparison evidence. New receipts
+include a `nativeMetadata` snapshot of archive association, version, Nexus/game identity and
+installed file IDs. Old receipts without this snapshot remain `unknown` unless a stale
+archive association is demonstrable. `metadata-match` compares native metadata only:
+`archiveHashVerified` and `payloadHashesVerified` are false. No archive/payload hashing or
+compatibility check is performed by this read, and no stored history is erased or repaired.
+The native getter snapshot and disk metadata read are not atomic. Replacing payload or
+installer choices while keeping the same metadata cannot be detected by this status.
 
 ---
 
@@ -395,6 +403,11 @@ option does not validate compatibility.
 Every mapping needs an existing source file and an unambiguous relative destination; absolute
 paths, traversal, duplicate destinations and file/directory collisions are refused. FOMOD,
 `meta.ini` and MO2 INI Tweaks are not payload destinations.
+One source may map to several distinct destinations, as in a FOMOD which uses the same mesh
+for both weight variants. Each destination is verified independently. Technical archive
+listings preserve empty directory fields, including a final empty `Block` value; malformed
+records, duplicate member paths, encrypted entries and unsafe paths are still refused before
+extraction/native installation.
 
 The original archive, its hash, the mapping and the selection are retained in the install
 receipt, readable as `installProvenance` on `/mod`. A repacked selection must not be presented

@@ -1,169 +1,61 @@
 # MO2 ApI Bridge
 
-A local HTTP bridge to a running Mod Organizer 2, for scripts and AI agents.
+A local HTTP API inside a running Mod Organizer 2, for scripts and AI agents.
 
-Version **2.3.5** adds opt-in selected native installation with original archive provenance
-and verified Downloads accounting in MO2 2.5.2. Plugin-order changes now require native
-persistence, completed refresh and final state verification before success is reported.
-Already locked profile lists are refused before native saving opens a Windows retry dialog.
+**Development candidate 2.3.6; not released.** The stable release on `main` is
+[2.3.5](https://github.com/Vhodnoylogin/MO2-ApI-Bridge/releases/tag/v2.3.5).
+This candidate fixes selected extraction of valid archives ending in empty directory
+fields and distinguishes historical installation receipts from current native metadata.
+No new live MO2 acceptance is claimed for this candidate.
 
-*Эта страница на русском: [README.ru.md](README.ru.md). Подробная документация плагина —
-[plugin_mo2aibridge/README.ru.md](plugin_mo2aibridge/README.ru.md).*
+[Русская версия](README.ru.md) · [API documentation](src/main/plugin_mo2aibridge/README.md)
+· [Checks](src/test/README.md)
 
-**Looking for the detailed documentation?** It is one level down, inside the plugin package:
-[plugin_mo2aibridge/README.md](plugin_mo2aibridge/README.md) — every route, both locks, the
-reply contract, how updates are decided, and why each awkward-looking decision is there. This
-page answers only the questions of the repository: what the folders are, how to install, how
-to build the release archive, how to run the checks.
+The opt-in native installation backend targets MO2 2.5.2. The caller chooses FOMOD
+options and verifies recursive requirements/runtime compatibility; the Bridge executes
+the explicit selection and verifies original-archive accounting. Independent mods and
+their dependencies remain separate installations. Generated outputs use separate mods.
 
-This repository contains one plugin: **MO2 ApI Bridge**. Its source package is
-`plugin_mo2aibridge/`; `tests/`, `pack.py`, and the documentation live directly in
-the repository root. Only the plugin package is installed into MO2.
+## Source and release layout
 
-The name MO2 knows the plugin by is `mo2aibridge`, and it is set as a **string** in `PLUGIN_ID`
-in `__init__.py` rather than derived from the folder name. The names of the token file and of
-the log come from it too.
-
-```
-MO2-ApI-Bridge/             repository root
-├── README.md              this file
-├── README.ru.md           this file in Russian
-├── AGENTS.md              repository instructions for Codex
-├── CLAUDE.md              the manifest for an AI assistant that gets this folder
-├── pack.py                builds the release archive
-├── plugin_mo2aibridge\     THE PLUGIN - only this reaches MO2
-│   ├── __init__.py       the factory; mobase is imported lazily
-│   ├── plugin.py         the MO2 plugin life cycle
-│   ├── routes.py         the "path -> operation" table
-│   ├── services.py       the facade of the domain layer: the same 32 methods
-│   ├── base.py           the domain context and the shared recipe for a change
-│   ├── busy.py           whether MO2 is busy
-│   ├── reading.py        reading state and the virtual Data
-│   ├── install.py        installing a mod
-│   ├── mods.py           the mod list and the irreversible operations
-│   ├── profiles.py        profile name changes through MO2
-│   ├── profileui.py       native Qt profile manager adapter
-│   ├── loadorder.py      plugin order and plugins.txt
-│   ├── launch.py         starting programs and driving windows
-│   ├── updates.py        updates against the live Nexus: request and allowance
-│   ├── updatepolicy.py   the update rules alone: no network, no MO2, no disk
-│   ├── operations.py      boot-scoped outcomes and retry deduplication
-│   ├── runtime.py        the Qt main thread, sockets, JSON, the token
-│   ├── winapi.py         Windows windows and processes
-│   ├── config.py         the configurable values
-│   ├── i18n.py           the catalogue loader
-│   ├── journal.py        levels and sinks for everything written
-│   ├── locale\en\*.json  every string the plugin can say, English
-│   ├── locale\ru\*.json  the same, Russian
-│   ├── README.md         the plugin documentation, en
-│   ├── README.ru.md      the plugin documentation, ru
-│   └── LICENSE           MIT
-└── tests\                CHECKS - these never reach MO2
-    ├── common.py         where the plugin is, how to reach it, how to report
-    ├── run.py            run every suite in a row
-    ├── fake_mo2.py       a stand-in mobase and IOrganizer over a temporary folder
-    ├── locale\en\*.json  the wording of the checks, English
-    ├── locale\ru\*.json  the same, Russian
-    ├── test_sources.py            no MO2: source hygiene
-    ├── test_busy_logic.py         no MO2: the busy logic
-    ├── test_i18n.py               no MO2: the catalogues agree and every key is used
-    ├── test_policy.py             no MO2: the update rules against a table of pages
-    ├── test_transport_offline.py  no MO2: the socket, the token, the reply codes
-    ├── test_contract_offline.py   no MO2: all 32 routes against a stand-in mobase
-    ├── test_mutation_failures.py  no MO2: failed writes, partial installs and retry repair
-    ├── test_routes.py             acceptance: all 32 routes
-    ├── test_plugins_txt.py        acceptance: plugin state reaches the file
-    ├── test_install_modes.py      acceptance: install, merge and replace in a sandbox
-    ├── test_busy_live.py          acceptance: the lock against a running program
-    ├── test_profileui.py          optional PyQt6: native dialog event loops
-    ├── README.md         what each suite checks and what it has already caught
-    └── README.ru.md      the same in Russian
+```text
+src/main/plugin_mo2aibridge/  runtime Python package, locale, user documentation, MIT licence
+src/main/pack.py             release packaging source
+src/test/                   offline/live test source and synthetic fixtures
+target/                     ignored generated output
 ```
 
-## Installing
+Released source and tests belong on `main`; unfinished work uses the single `develop`
+branch. End-user ZIPs contain only the runtime package, required user instructions and
+licence. Build instructions, test fixtures and developer tools stay in this repository.
+The original `Skyrim-Mods/mo2aibridge` history remains preserved.
 
-MO2 loads a plugin from `<MO2>\plugins\<folder with __init__.py>` and **takes the package name
-from that folder's name**. So the folder in `plugins\` must be called `mo2aibridge`, even though
-in the repository it is called `plugin_mo2aibridge`:
+## Installation
 
-```
-xcopy /E /I plugin_mo2aibridge "<MO2>\plugins\mo2aibridge"
-```
+Extract the release archive into `<MO2>/plugins/`, producing
+`<MO2>/plugins/mo2aibridge/__init__.py`. MO2 derives the Python package name from the
+installed directory, so it must be `mo2aibridge`. Copying the repository wholesale does
+not install the plugin. For development, copy `src/main/plugin_mo2aibridge/` or create a
+junction to it at that installed path. Restart MO2 to load changed code.
 
-For development a junction is more convenient: edits are visible without copying, and the name
-of the junction is what gives MO2 the package name it needs.
+## Build and verify
 
-```
-mklink /J "<MO2>\plugins\mo2aibridge" "<repository root>\plugin_mo2aibridge"
-```
+From the repository root:
 
-**For a release this means one thing:** inside the archive the folder must be called
-`mo2aibridge`, not what it is called in the repository. Copying the repository wholesale does
-not give a working plugin — Python imports a package by its folder name, and
-`plugin_mo2aibridge` would yield a package of that same name, while MO2 looks for
-`mo2aibridge`.
-
-## Building the release archive
-
-```
-python pack.py
+```text
+python src/test/run.py --offline
+python src/main/pack.py
 ```
 
-Writes `dist\mo2aibridge-<version>.zip` with a `mo2aibridge\` folder inside. **The archive must
-not be built with the `xcopy` above**, and this is not pedantry: beside the code live the token
-file, the log and the settings the plugin creates on every start, plus a `__pycache__` from
-every import. Recursive copying does not tell them apart, and into the archive would go somebody
-else's token, somebody else's log full of the author's machine paths, and frozen settings —
-including paths to 7-Zip that another person may not have. `.gitignore` is no protection here:
-it governs git, not copying.
+The packer writes `target/release/mo2aibridge-<version>.zip`; an explicit output directory
+may be passed as its argument. Its allowlist includes runtime `.py` files, both user
+READMEs, `LICENSE` and the complete locale tree. Credentials, tokens, config, logs, tests
+and bytecode must not be committed or shipped.
 
-So `pack.py` lists what **ships**, not what is excluded: `*.py`, both READMEs, the `locale\`
-tree and `LICENSE`. A forgotten file then means "did not make it into the archive" rather than
-"somebody else's file did" — the first mistake costs a bug report, the second a leak. What was
-taken and what was left behind the script prints as a list.
+Offline checks never probe the owner's manager. Optional Qt tests require PyQt6. Run
+`python src/test/run.py` only when the intended live test manager is available; live
+suites may change its disposable fixtures. A skipped suite is not runtime acceptance.
+`MO2AIBRIDGE_LANG=ru` selects Russian check output.
 
-The plugin's own documentation is `plugin_mo2aibridge\README.md` and `README.ru.md`. It lives
-inside the package deliberately: the lock on irreversible operations answers with the path to
-that file, so the file has to arrive together with the plugin.
-
-## Checks
-
-```
-python tests/run.py
-```
-
-Standalone suites run without MO2 — source hygiene, the busy logic, the string catalogues,
-the update rules, the transport, the contract of every route against a stand-in `mobase`, mutation failure/retry checks, patch regressions, HTTP limits and native installation/accounting. Optional Qt checks also run without MO2.
-Four acceptance
-suites need a running manager and are skipped with a plain word when there is none; a skip does
-not count as a failure. The details are in [tests/README.md](tests/README.md).
-
-The wording of the checks is localised as well. `MO2AIBRIDGE_LANG=ru` runs the same suites in
-Russian; the default is English.
-
-The checks are not imported by the plugin and are invisible to MO2: they live outside the
-package and find it themselves — by the neighbouring folder holding an `__init__.py`, not by a
-coincidence of names.
-
-## What is not versioned
-
-The token and the log are created beside the plugin on every MO2 start, the settings file
-`mo2aibridge-config.json` on the first one, and `__pycache__` on every import. All of it is in
-`.gitignore`: the token and the log in the shared one, the settings in the `.gitignore` inside
-the package.
-
-## Repository and history
-
-Repository: [MO2 ApI Bridge](https://github.com/Vhodnoylogin/MO2-ApI-Bridge), default branch `main`.
-The complete original `Skyrim-Mods/mo2aibridge` history is preserved in this repository.
-
-Optional standalone PyQt6 regression checks (no installed MO2 is accessed):
-
-```
-python tests/test_profileui.py
-python tests/test_protocol.py
-```
-
-## Development assistance
-
+Repository: [Vhodnoylogin/MO2-ApI-Bridge](https://github.com/Vhodnoylogin/MO2-ApI-Bridge).
 Developed with assistance from [Codex (OpenAI)](https://github.com/codex).

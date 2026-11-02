@@ -157,6 +157,18 @@ class NativeAdapterTests(unittest.TestCase):
         self.assertEqual(self.controller.select(Name(), self.tree(), '', 0)[0], Result.SUCCESS)
         self.assertEqual(self.controller.select(Name(), self.tree(), '', 0), Result.CANCELED)
 
+    def test_source_reuse_keeps_native_member_index_for_each_unique_destination(self):
+        mappings = native._mappings([
+            {'source': 'option/a.esp', 'destination': 'meshes/body_0.nif'},
+            {'source': 'option/a.esp', 'destination': 'meshes/body_1.nif'}])
+        plan, original = self.plan(mappings), self.tree()
+        self.controller.start(self.arc, False, None)
+        result = self.controller.select(Name(), original, '1.2', 45)
+        self.assertEqual(result[0], Result.SUCCESS)
+        self.assertEqual(set(original.files), {'meshes/body_0.nif', 'meshes/body_1.nif'})
+        self.assertEqual([entry.index for entry in original.files.values()], [17, 17])
+        self.assertEqual(plan['receipt']['selectedFiles'], 2)
+
     def test_missing_and_directory_members_cancel_before_tree_mutation(self):
         for source in ('absent.esp', 'directory'):
             with self.subTest(source=source):

@@ -183,8 +183,23 @@ class Accounting(unittest.TestCase):
         self.assertEqual(provenance['selection'], self.body['selection'])
         self.assertEqual(len(provenance['fomod']), 1)
         self.assertEqual(provenance['files'][0]['source'], '00 Core/payload.esp')
+        self.assertEqual(provenance['nativeMetadata'], {
+            'installationFile': os.path.basename(self.archive), 'version': '1.0',
+            'nexusId': 101, 'gameName': 'SkyrimVR',
+            'installedFiles': [{'modId': 101, 'fileId': 123}]})
         self.assertEqual(self.svc.mod({'name': ['Native Selection']})['installProvenance'], provenance)
         self.assertNotIn('signedURL', json.dumps(result))
+
+    def test_one_archive_source_can_fill_two_distinct_destinations(self):
+        self.body['files'].append({'source': '00 Core/payload.esp',
+                                   'destination': 'other/payload.esp'})
+        result = self.svc.install(self.body)
+        self.assertTrue(result['installationComplete'])
+        self.assertEqual(result['files'], 2)
+        rows = result['installProvenance']['files']
+        self.assertEqual(rows[0]['sha256'], rows[1]['sha256'])
+        self.assertEqual({row['destination'] for row in rows},
+                         {'payload.esp', 'other/payload.esp'})
 
     def test_unicode_filename_inventory_uses_consistent_normalization(self):
         self.body['files'][0]['destination'] = 'Straße.esp'
