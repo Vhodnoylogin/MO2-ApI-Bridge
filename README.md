@@ -17,6 +17,12 @@ options and verifies recursive requirements/runtime compatibility; the Bridge ex
 the explicit selection and verifies original-archive accounting. Independent mods and
 their dependencies remain separate installations. Generated outputs use separate mods.
 
+The architecture review separates pure archive/selection and provenance rules from
+MO2 orchestration, gives 7-Zip scratch resources one owner, and preserves profile
+bytes when changing plugin markers. Launch validation precedes process creation;
+update decisions are isolated by Nexus game and reuse each successful page within
+a sweep. No performance percentage or new native acceptance is implied.
+
 ## Source and release layout
 
 ```text

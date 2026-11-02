@@ -18,21 +18,14 @@ The logic itself is split by area, each in its own file:
 
 `Services` only assembles them and exposes the same methods under the same names: the names
 are a contract, referred to by routes.py, plugin.py and the checks. The bookkeeping
-attributes (`launched`, `game_exe`, `_self_hwnd`, `procs`) stay here too - the busy-logic
-checks set them directly.
+properties retain legacy test seeding; launch evidence is owned by LaunchState,
+not by the facade or an HTTP service instance.
 """
 
 import os
 
 from . import base, busy, config, install, launch, loadorder, mods, profiles, reading, updates
-from .base import DANGER_KEY, DANGER_VALUE, one as _one, safe as _safe  # noqa: F401
-from .install import tree_files as _tree_files  # noqa: F401
-from .reading import walk_factory as _walk_factory  # noqa: F401
-
-
-def _seven_zip():
-    """Old name kept: the path to 7z.exe from the default settings."""
-    return config.Config().seven_zip()
+from .base import DANGER_KEY, DANGER_VALUE, one as _one  # noqa: F401
 
 
 class Services(object):
@@ -80,12 +73,8 @@ class Services(object):
     def _window_locked(self):
         return self.guard.window_locked()
 
-    def _game_binary(self):
-        return self.guard.game_binary()
-
-    # The bookkeeping lives in the guard but is visible outside under the old names:
-    # plugin.py reads and resets `launched`, and the busy-logic checks set `game_exe`
-    # and `_self_hwnd` directly.
+    # Compatibility snapshots/seeding for existing offline callers. Production launch
+    # bookkeeping is changed only through the host-lifetime LaunchState owner.
     launched = property(lambda s: s.guard.launched,
                         lambda s, v: setattr(s.guard, 'launched', v))
     game_exe = property(lambda s: s.guard.game_exe,
@@ -185,11 +174,6 @@ class Services(object):
         return self.loadorder.write_plugins_txt(wanted)
 
     # ================================================== irreversible
-    def _danger(self, body, what_key):
-        # The old signature took a whole i18n key ('op.remove'); the new one takes the
-        # operation name.
-        return self.modops.danger(body, what_key[3:] if what_key.startswith('op.') else what_key)
-
     def mods_priority(self, body):
         return self.modops.mods_priority(body)
 
@@ -198,9 +182,6 @@ class Services(object):
 
     def mods_remove(self, body):
         return self.modops.mods_remove(body)
-
-    def _removal_card(self, m, ml):
-        return self.modops.removal_card(m, ml)
 
     # ================================================== processes and windows
     def run(self, body):

@@ -24,7 +24,7 @@ import fake_mo2
 fake_mo2.install()
 import common
 
-installer = importlib.import_module(common.NAME + '.install')
+installer = importlib.import_module(common.NAME + '.archives')
 native = importlib.import_module(common.NAME + '.nativeinstall')
 services = importlib.import_module(common.NAME + '.services')
 

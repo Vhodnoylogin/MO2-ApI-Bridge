@@ -1,0 +1,3 @@
+{
+ "err.runTimeout": "Run timeout must be finite and fit the Windows process-wait limit."
+}

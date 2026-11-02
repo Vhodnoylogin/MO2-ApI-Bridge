@@ -7,11 +7,34 @@ behind the irreversible key as well. The window work exists for WinAPI tools (th
 and TexGen dialogs): closing them through the bridge is what releases the busy state.
 """
 import os
+import math
 import threading
 import subprocess
 
 from . import i18n, winapi
 from .base import Domain, flag, one, safe
+
+
+def parse_run_request(body, default_timeout):
+    """Normalize launch input without starting or inspecting a process."""
+    if not body.get('binary'):
+        raise ValueError(i18n.t('err.needBinary'))
+    wait = flag(body, 'wait')
+    timeout = None
+    if wait:
+        try:
+            timeout = float(body.get('timeout') or default_timeout)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(i18n.t('err.runTimeout')) from None
+        # WaitForSingleObject takes DWORD milliseconds; 0xffffffff means infinite.
+        if not math.isfinite(timeout) or timeout > ((1 << 32) - 2) / 1000:
+            raise ValueError(i18n.t('err.runTimeout'))
+        timeout = max(0.0, timeout)
+    request = {'binary': body['binary'], 'args': Launcher.arguments(body),
+               'cwd': body.get('cwd') or '', 'wait': wait, 'timeout': timeout}
+    if 'argv' in body:
+        request['argv'] = list(body['argv'])
+    return request
 
 
 class Launcher(Domain):
@@ -50,11 +73,14 @@ class Launcher(Domain):
         binary is the executable's name AS REGISTERED in MO2, not a path: given a full path,
         startApplication silently creates no process at all.
         """
+        request = None
         def prepare():
+            nonlocal request
             if not body.get('binary'):
                 raise ValueError(i18n.t('err.needBinary'))
-            flag(body, 'wait')
-            self.arguments(body)
+            default_timeout = (self.timeout('runWait')
+                               if flag(body, 'wait') and not body.get('timeout') else None)
+            request = parse_run_request(body, default_timeout)
             # Launching is the bridge's most dangerous operation: a foreign process comes up
             # under MO2 with the virtual Data, and what it does to the setup is beyond the
             # bridge's control. So on top of the busy lock there is the irreversible key,
@@ -64,13 +90,10 @@ class Launcher(Domain):
                 stop.update({'binary': body.get('binary'), 'args': body.get('args') or []})
             return stop
 
-        return self.change('run', lambda: self._run(body), on_main=False, prepare=prepare)
+        return self.change('run', lambda: self._run(body, request), on_main=False, prepare=prepare)
 
-    def _run(self, body):
-        binary = body.get('binary')
-        args = self.arguments(body)
-        cwd = body.get('cwd') or ''
-        wait = flag(body, 'wait')
+    def _run(self, body, request):
+        binary, args, cwd = request['binary'], request['args'], request['cwd']
 
         def start():
             # The flag lives inside a single main-thread job: MO2 calls onAboutToRun
@@ -113,14 +136,13 @@ class Launcher(Domain):
                'processHandleOwned': bool(handle),
                'process': identity, 'gameChildren': [],
                'gameAlive': winapi.identity_alive(identity) if identity and identity['role'] == 'game' else None}
-        if 'argv' in body:
-            res['argv'] = list(body['argv'])
-        if wait and started:
+        if 'argv' in request:
+            res['argv'] = request['argv']
+        if request['wait'] and started:
             # We wait ourselves rather than through waitForApplication: that one never
             # releases the GIL and stalls the whole interpreter along with the server - the
             # bridge goes silent entirely.
-            res['exit'] = winapi.wait_process(
-                handle, float(body.get('timeout') or self.timeout('runWait'))) if handle else None
+            res['exit'] = winapi.wait_process(handle, request['timeout']) if handle else None
             res['waitedBy'] = 'WaitForSingleObject' if handle else 'unavailable'
         return res
 
@@ -161,7 +183,7 @@ class Launcher(Domain):
                         else any(c['alive'] for c in game) if game else None})
         return {'procs': out,
                 'running': sum(1 for x in out if x['alive']),
-                'launchedByMO2': sorted(self.guard.launched),
+                'launchedByMO2': sorted(self.guard.launches.snapshot()),
                 'busy': self.guard.busy(), 'serverBootId': self.ctx.boot_id}
 
     def windows(self, q):

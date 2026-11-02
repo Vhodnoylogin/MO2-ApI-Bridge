@@ -800,6 +800,8 @@ The defaults contain no machine-specific paths: the `7z.exe` candidates are asse
 | `busy.py` | domain | MO2 busy state: run bookkeeping and the three lock sources |
 | `reading.py` | domain | reading state and the virtual Data |
 | `install.py` | domain | installing a mod: fresh, merge, replace |
+| `archives.py` | archive boundary | pure path/listing/selection plans; `ArchiveExtractor` owns 7-Zip and scratch cleanup |
+| `provenance.py` | pure policy | historical receipt comparison, without IO or current-byte certification |
 | `nativeinstall.py` | MO2 installer | one-use explicit selection through MO2's original-archive installation pipeline |
 | `mods.py` | domain | enable, disable, refresh; priority, rename, remove |
 | `profiles.py` | domain | profile rename, names, conflict checks and both locks |
@@ -1009,3 +1011,9 @@ accepted client sockets without waiting for unfinished native work.
 
 For keyed window actions, identity and parent/child ownership are rechecked immediately
 before posting. Validation and Windows message dispatch are not an atomic operation.
+
+Unknown explicit foreign games are refused before contacting Nexus unless mapped in
+`nexusDomains` or covered by an intentionally configured `nexusDomainDefault`.
+Legacy download sidecars without `gameName` retain the managed-game assumption.
+A mixed own/foreign launch of the same executable keeps the conservative busy lock
+until native completion or the existing manual reset; no completion is guessed.

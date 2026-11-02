@@ -19,6 +19,7 @@ Busy is decided by three independent sources, and that is not redundancy:
 Busy is declared if any one of the three fires.
 """
 import os
+import threading
 
 from . import i18n, winapi
 
@@ -28,13 +29,61 @@ class LaunchState(object):
 
     def __init__(self, note):
         self.note = note
+        self._lock = threading.RLock()
+        self._revision = 0
         # What MO2 currently holds running: path -> {'n': how many times, 'mine': ours?}.
         # Filled by MO2's own callbacks, so it covers both what the bridge launched and what
         # the user launched with a button in the window.
-        self.launched = {}
+        self._records = {}
         # Raised for the duration of our own startApplication, to tell our launch from a
         # foreign one.
-        self._starting = False
+        self._own_start = False
+
+    def observe(self):
+        """A revision and detached records, safe to inspect without holding a lock."""
+        with self._lock:
+            return self._revision, {key: dict(record) for key, record in self._records.items()}
+
+    def snapshot(self):
+        return self.observe()[1]
+
+    def replace(self, records):
+        """Compatibility for callers which seed bookkeeping in offline checks."""
+        copied = {key: dict(record) for key, record in records.items()}
+        with self._lock:
+            self._records = copied
+            self._revision += 1
+
+    def set_starting(self, value):
+        with self._lock:
+            previous, self._own_start = self._own_start, bool(value)
+            return previous
+
+    def is_starting(self):
+        with self._lock:
+            return self._own_start
+
+    def reset(self):
+        """Explicit local UI/host shutdown reset; never exposed as an API route."""
+        with self._lock:
+            self._records.clear()
+            self._revision += 1
+
+    def remove_observed(self, revision, keys):
+        """Retire own records only when process evidence still describes this revision."""
+        with self._lock:
+            removed = []
+            if revision == self._revision:
+                for key in keys:
+                    if self._records.get(key, {}).get('mine'):
+                        del self._records[key]
+                        removed.append(key)
+                if removed:
+                    self._revision += 1
+            return removed
+
+    launched = property(snapshot, replace)
+    _starting = property(is_starting, set_starting)
 
     # ================================================== MO2 callbacks
     def on_about_to_run(self, path, *rest):
@@ -46,23 +95,35 @@ class LaunchState(object):
         version.
         """
         key = str(path)
-        rec = self.launched.setdefault(key, {'n': 0, 'mine': False})
-        rec['n'] += 1
-        rec['mine'] = rec['mine'] or self._starting
+        with self._lock:
+            starting = self._own_start
+            rec = self._records.get(key)
+            if rec is None:
+                self._records[key] = {'n': 1, 'mine': starting}
+            else:
+                rec['n'] += 1
+                # A path can represent both native and bridge launches. Once a
+                # foreign launch contributes evidence, only native finish/reset
+                # may release it; finish callbacks cannot identify which run ended.
+                rec['mine'] = rec['mine'] and starting
+            self._revision += 1
         self.note(i18n.t('log.mo2Starting', path=key,
-                         mine=i18n.t('log.oursSuffix') if self._starting else ''))
+                         mine=i18n.t('log.oursSuffix') if starting else ''))
         return True
 
     def on_finished_run(self, path, exit_code=0):
         """The program finished - drop it from the bookkeeping."""
         key = str(path)
-        rec = self.launched.get(key)
-        if rec and rec['n'] > 1:
-            rec['n'] -= 1
-        else:
-            self.launched.pop(key, None)
+        with self._lock:
+            rec = self._records.get(key)
+            if rec and rec['n'] > 1:
+                rec['n'] -= 1
+            else:
+                self._records.pop(key, None)
+            self._revision += 1
+            left = len(self._records)
         self.note(i18n.t('log.mo2Finished', path=key, code=exit_code,
-                         left=len(self.launched)))
+                         left=left))
 
 
 class BusyGuard(object):
@@ -116,11 +177,11 @@ class BusyGuard(object):
             self.guard = guard
 
         def __enter__(self):
-            self.guard._starting = True
+            self.previous = self.guard.launches.set_starting(True)
             return self
 
         def __exit__(self, *_exc):
-            self.guard._starting = False
+            self.guard.launches.set_starting(self.previous)
             return False
 
     def starting(self):
@@ -149,21 +210,23 @@ class BusyGuard(object):
         # Health reads must never queue an additional native lookup ahead of their
         # own main-thread deadline. Setup writes retain the normal cold-cache lookup.
         game = self.game_binary() if refresh_game else (self.game_exe or '')
-        names = {os.path.basename(k).lower() for k in self.launched}
+        revision, launched = self.launches.observe()
+        names = {os.path.basename(k).lower() for k in launched}
         if game:
             names.add(game)
         alive = winapi.pids_by_exe(names) if names else {}
         # Our own launches we retire ourselves: MO2 does not wait for them and never reports
         # their completion, so the record would hang forever. Foreign ones are held until MO2
         # says otherwise - they are the whole protection.
-        gone = [k for k, r in self.launched.items()
-                if r.get('mine') and os.path.basename(k).lower() not in
-                {v.lower() for v in alive.values()}]
+        alive_names = {value.lower() for value in alive.values()}
+        missing = [key for key, record in launched.items()
+                   if record.get('mine') and os.path.basename(key).lower() not in alive_names]
+        gone = self.launches.remove_observed(revision, missing)
         for k in gone:
-            self.launched.pop(k, None)
             self.note(i18n.t('log.ownRunEnded', path=k))
         locked = self.window_locked()
-        if not alive and not self.launched and not locked:
+        launched = self.launches.snapshot()
+        if not alive and not launched and not locked:
             return None
         exe = sorted(alive.values())[0] if alive else ''
         # viaMO2 answers "does MO2 currently consider a launch active", not "was this exact
@@ -174,14 +237,14 @@ class BusyGuard(object):
         return {'app': exe or None,
                 'pids': sorted(alive),
                 'isGame': bool(exe) and exe.lower() == game,
-                'viaMO2': bool(self.launched),
-                'mo2Run': sorted(self.launched),
+                'viaMO2': bool(launched),
+                'mo2Run': sorted(launched),
                 'windowLocked': locked,
                 # MO2 never reported the launch finished and no familiar process is alive:
                 # the lock is held by something it never spoke about. That is how a service
                 # started by another plugin FROM INSIDE the game hangs around - MO2 did not
                 # launch it, but holds it in its job object.
-                'heldByUnknown': not alive and (bool(self.launched) or locked)}
+                'heldByUnknown': not alive and (bool(launched) or locked)}
 
     def window_locked(self):
         """Is MO2's main window disabled. A direct sign of its own lock.

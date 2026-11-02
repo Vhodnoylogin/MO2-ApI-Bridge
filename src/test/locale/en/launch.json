@@ -1,0 +1,13 @@
+{
+ "launch.title": "Launch validation (fake MO2 only)",
+ "launch.invalidBeforeStart": "invalid wait timeout fails before any native launch",
+ "launch.busyFirst": "busy refusal precedes timeout validation",
+ "launch.dangerBeforeStart": "missing acknowledgement cannot start a process",
+ "launch.expectedBeforeStart": "expected profile mismatch cannot start a process",
+ "launch.dequeueBusy": "launch rechecks busy at native execution",
+ "launch.waitSemantics": "configured defaults and finite wait values retain their behavior",
+ "launch.noWaitIgnored": "nonwaiting launches ignore unused timeout input",
+ "launch.retrySingleStart": "retry retains the original outcome without another launch",
+ "launch.argvPreserved": "argv and native argument fragments remain available",
+ "launch.handleOwned": "the launcher releases its owned handle"
+}

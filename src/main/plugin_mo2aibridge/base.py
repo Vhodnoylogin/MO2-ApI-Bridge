@@ -104,6 +104,23 @@ def stamp(res, op, applied=True):
     return res
 
 
+def resolve_nexus_domain(game, domains, managed_game='', managed_domain='', fallback=''):
+    """Resolve explicit configuration or the requested managed game's own section.
+
+    The host's domain describes only its managed game. A different game must
+    have an explicit mapping or a configured fallback; matching mod IDs alone
+    never establish that the two Nexus pages are the same.
+    """
+    key = (game or '').strip().casefold()
+    override = next((value for name, value in domains.items()
+                     if name.casefold() == key and value), '')
+    if override:
+        return override.strip()
+    if not key or key == (managed_game or '').strip().casefold():
+        return (managed_domain or fallback or '').strip()
+    return (fallback or '').strip()
+
+
 class Context(object):
     """Everything any area needs: MO2, the main thread, the log, the docs, the settings."""
 
@@ -204,10 +221,9 @@ class Domain(object):
     def nexus_domain(self, game):
         """The Nexus section for a game, or an empty string when it cannot be determined.
 
-        Ask MO2 itself: gameNexusName() returns exactly the name the game lives under on
-        Nexus, and it is right for every game the manager can run at all. The table in the
-        settings is only an override for cases like Skyrim VR, which has no section of its
-        own and takes its mods from the SSE one.
+        Ask MO2 itself only for its managed game: gameNexusName() describes
+        that game, not an arbitrary game named in a mod's metadata. The table
+        in settings supplies explicit mappings, including Skyrim VR's SSE section.
 
         There must be no blind default here. While there was one, a mod of an unknown game
         was looked up in the Skyrim SE section, Nexus honestly returned the page of a
@@ -215,16 +231,21 @@ class Domain(object):
         someone else's files. A false answer is worse than a refusal: a refusal at least
         shows that there is no answer.
         """
-        key = game or ''
+        key = (game or '').strip().casefold()
         if key in self._domains:
             return self._domains[key]
         domains = self.cfg.get('nexusDomains') or {}
-        dom = domains.get(key) or ''
+        dom = resolve_nexus_domain(key, domains)
         if not dom:
-            dom = (safe(lambda: self.run_main(
-                lambda: self.o.managedGame().gameNexusName()), '') or '').strip()
-        if not dom:
-            dom = (self.cfg.get('nexusDomainDefault') or '').strip()
+            def managed_identity():
+                managed = self.o.managedGame()
+                name = safe(managed.gameShortName, '') or ''
+                domain = (safe(managed.gameNexusName, '') or '') if (
+                    not key or key == name.strip().casefold()) else ''
+                return name, domain
+            name, domain = safe(lambda: self.run_main(managed_identity), ('', ''))
+            dom = resolve_nexus_domain(key, domains, name, domain,
+                                      self.cfg.get('nexusDomainDefault'))
         self._domains[key] = dom
         return dom
 

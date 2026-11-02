@@ -188,13 +188,14 @@ class MO2ApIBridge(mobase.IPluginTool):
                 return
         # Stuck launch bookkeeping is visible only here and reset only from here: there is
         # deliberately no route for it, or one request would bypass the busy lock.
-        if self._svc is not None and self._svc.launched:
+        launched = self._launches.snapshot()
+        if self._svc is not None and launched:
             btn = QMessageBox.question(
                 self._parent, i18n.t('plugin.displayName'),
-                i18n.t('dialog.stuck', run=chr(10).join(sorted(self._svc.launched))),
+                i18n.t('dialog.stuck', run=chr(10).join(sorted(launched))),
                 QMessageBox.StandardButton.Reset | QMessageBox.StandardButton.Cancel)
             if btn == QMessageBox.StandardButton.Reset:
-                self._svc.launched.clear()
+                self._launches.reset()
                 log(i18n.t('log.stuckReset'))
         # The port shown is the one the bridge actually bound, not the one the setting asked
         # for: when the requested port was taken they differ, and a person reading this
@@ -326,8 +327,8 @@ class MO2ApIBridge(mobase.IPluginTool):
         """Release host-lifetime evidence only when MO2 itself is leaving."""
         self._quitting = True
         self.stop()
-        self._launches.launched.clear()
-        self._launches._starting = False
+        self._launches.reset()
+        self._launches.set_starting(False)
         self._order_refresh.cancel()
 
     def stop(self):

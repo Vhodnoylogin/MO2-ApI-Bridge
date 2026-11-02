@@ -12,7 +12,7 @@ import fake_mo2
 fake_mo2.install()
 import common
 
-installer = importlib.import_module(common.NAME + '.install')
+installer = importlib.import_module(common.NAME + '.archives')
 services = importlib.import_module(common.NAME + '.services')
 
 FILE = 'Path = options/a.bin\nSize = 3\nAttributes = A\nEncrypted = -\nBlock = 0'

@@ -8,128 +8,22 @@ explicitly disclose unverified archive accounting. The caller reads FOMOD and
 resolves compatibility/dependencies; neither backend chooses options for it.
 """
 import os
-import hashlib
 import json
-import ntpath
 import shutil
-import subprocess
-import tempfile
 
 import mobase
 
 from . import PLUGIN_ID, i18n, winapi
 from .base import Domain, flag, folder_name, inside, safe
+from .archives import (ArchiveExtractor, archive_member, selection_mappings,
+                       file_sha256, tree_files, walk_error)
 
-
-def walk_error(error):
-    raise error
-
-
-def tree_files(root):
-    """Paths of every file in a folder, relative to it, lower-cased.
-
-    Needed for an honest "before and after": the difference shows what was added, the
-    intersection what was overwritten. Case is dropped because Windows does not distinguish
-    it while archives carry both spellings.
-    """
-    out = set()
-    for dp, _dn, fs in os.walk(root, onerror=walk_error):
-        rel = os.path.relpath(dp, root)
-        for f in fs:
-            out.add((f if rel == '.' else os.path.join(rel, f)).lower())
-    return out
-
-
-def file_sha256(path):
-    digest = hashlib.sha256()
-    with open(path, 'rb') as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b''):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def archive_member(value):
-    """A portable, unambiguous relative Windows filename, never an ADS or alias."""
-    if not isinstance(value, str) or not value or '\x00' in value:
-        raise ValueError(i18n.t('err.installFiles'))
-    parts = value.replace('\\', '/').split('/')
-    reserved = {'CON', 'PRN', 'AUX', 'NUL'} | {
-        prefix + str(n) for prefix in ('COM', 'LPT') for n in range(1, 10)}
-    if ntpath.isabs(value) or any(
-            p in ('', '.', '..') or p != p.rstrip(' .') or
-            any(c in p for c in ':<>"|?*') or any(ord(c) < 32 for c in p) or
-            p.split('.')[0].upper() in reserved for p in parts):
-        raise ValueError(i18n.t('err.installFiles'))
-    return '/'.join(parts)
-
-
-def archive_files(listing, *, rar=False):
-    """Validate a 7-Zip technical listing without trimming empty field values.
-
-    A final directory may end in ``Block = ``. Whitespace is part of the field
-    delimiter, so stripping the output changes a valid record into malformed input.
-    Only empty lines delimit records; LF and CRLF retain exactly the same values.
-    """
-    members, seen, fields = {}, set(), {}
-    for line in listing.splitlines() + ['']:
-        if line:
-            key, sep, value = line.partition(' = ')
-            if not sep or not key or key in fields:
-                raise ValueError(i18n.t('err.installFiles'))
-            fields[key] = value
-            continue
-        if not fields:
-            continue
-        directory = fields.get('Folder') == '+' or fields.get('Attributes', '').startswith('D')
-        path = fields.get('Path')
-        if directory and isinstance(path, str):
-            path = path.rstrip('/\\')
-        path = archive_member(path)
-        key = path.lower()
-        if key in seen:
-            raise ValueError(i18n.t('err.installFiles'))
-        if (any(fields.get(name) == '+' for name in
-                ('Encrypted', 'Split Before', 'Split After', 'Alternate Stream'))
-                or (rar and fields.get('Volume Index', '') != '')
-                or any(fields.get(name, '') for name in
-                       ('Symbolic Link', 'Hard Link', 'Copy Link'))):
-            # The receipt pins one original archive and independent regular files.
-            # Never silently consume another volume or materialize link/ADS entries.
-            raise ValueError(i18n.t('err.archiveUnsupported'))
-        seen.add(key)
-        if not directory:
-            members[key] = path
-        fields = {}
-    return members
-
-
-def archive_listing(listing):
-    """Read archive properties as well as members; RAR4 omits member volume IDs."""
-    listing = listing.replace('\r\n', '\n')
-    marker = '\n----------\nPath = '
-    preamble, separator, members = listing.partition(marker)
-    _banner, properties_start, properties = preamble.partition('\n--\n')
-    if not separator or not properties_start or marker in members:
-        raise ValueError(i18n.t('err.installFiles'))
-    members = 'Path = ' + members
-    fields = {}
-    for line in properties.splitlines():
-        key, sep, value = line.partition(' = ')
-        # Other properties (notably archive comments) can contain multiline text.
-        # Never let a comment override an observed security property.
-        if key not in ('Type', 'Multivolume', 'Volumes', 'Encrypted'):
-            continue
-        if not sep or key in fields:
-            raise ValueError(i18n.t('err.installFiles'))
-        fields[key] = value
-    if ((fields.get('Type') in ('Rar', 'Rar5') and fields.get('Multivolume') != '-')
-            or fields.get('Multivolume') == '+' or fields.get('Volumes', '1') != '1'
-            or fields.get('Encrypted') == '+'):
-        raise ValueError(i18n.t('err.archiveUnsupported'))
-    return archive_files(members, rar=fields.get('Type') in ('Rar', 'Rar5'))
 
 
 class Installer(Domain):
+    def __init__(self, ctx, guard):
+        super().__init__(ctx, guard)
+        self.archives = ArchiveExtractor(ctx.cfg)
 
     def install(self, body):
         """body: {archive, name, paths: ["subfolder in the archive", ...], mode}
@@ -188,24 +82,7 @@ class Installer(Domain):
             raise ValueError(i18n.t('err.archiveHash'))
         if file_sha256(arc) != expected.lower():
             raise ValueError(i18n.t('err.archiveHash'))
-        mappings = body.get('files')
-        if not isinstance(mappings, list) or not mappings:
-            raise ValueError(i18n.t('err.installFiles'))
-        files, destinations = [], set()
-        for row in mappings:
-            if not isinstance(row, dict) or set(row) != {'source', 'destination'}:
-                raise ValueError(i18n.t('err.installFiles'))
-            src, dst = archive_member(row['source']), archive_member(row['destination'])
-            key = dst.casefold()
-            if (key in destinations or dst.split('/')[0].casefold() in ('fomod', 'ini tweaks')
-                    or key == 'meta.ini' or src.split('/')[0].casefold() == 'fomod'
-                    or src.casefold() == 'meta.ini'):
-                raise ValueError(i18n.t('err.installFiles'))
-            destinations.add(key)
-            files.append({'source': src, 'destination': dst})
-        if any('/'.join(p.split('/')[:n]).casefold() in destinations
-               for p in destinations for n in range(1, len(p.split('/')))):
-            raise ValueError(i18n.t('err.installFiles'))
+        files = selection_mappings(body.get('files'))
         selection = body.get('selection', {})
         if not isinstance(selection, dict):
             raise ValueError(i18n.t('err.installSelection'))
@@ -541,66 +418,10 @@ class Installer(Domain):
         return removed
 
     def _unpack(self, arc):
-        """Unpack the archive into a temporary folder of its own. Each call gets its own:
-        two installs in a row must not overwrite each other."""
-        seven = self.cfg.seven_zip()
-        if not seven:
-            raise RuntimeError(i18n.t('err.no7z'))
-        tmp = tempfile.mkdtemp(prefix=self.cfg.get('unpackDirName') + '-')
-        r = subprocess.run([seven, 'x', arc, '-o' + tmp, '-y'],
-                           capture_output=True, text=True, stdin=subprocess.DEVNULL,
-                           timeout=self.timeout('unpack'))
-        if r.returncode != 0:
-            shutil.rmtree(tmp, ignore_errors=True)
-            tail = int(self.cfg.get('unpackErrorTail') or 300)
-            raise RuntimeError(i18n.t('err.unpack', detail=(r.stdout or r.stderr)[-tail:]))
-        return tmp
+        return self.archives.unpack(arc)
 
     def _unpack_selected(self, arc, sources):
-        """Inspect the original archive, extracting only chosen files and FOMOD XML.
-
-        Do not unpack every mutually exclusive runtime/installer variant simply
-        to verify a selection. 7-Zip's UTF-8 list file avoids Windows argv limits;
-        literal-path mode prevents archive names from becoming wildcard patterns.
-        Ambiguous technical listings are refused before native installation.
-        """
-        seven = self.cfg.seven_zip()
-        if not seven:
-            raise RuntimeError(i18n.t('err.no7z'))
-        result = subprocess.run([seven, 'l', '-slt', '-sccUTF-8', '--', arc],
-            capture_output=True, text=True, encoding='utf-8', stdin=subprocess.DEVNULL,
-            timeout=self.timeout('unpack'))
-        if result.returncode != 0:
-            raise RuntimeError(i18n.t('err.nativeInstall', reason='archive-listing-failed'))
-        members = archive_listing(result.stdout)
-        selected = []
-        for source in sources:
-            if source.lower() not in members:
-                raise ValueError(i18n.t('err.noPathInArchive', path=source))
-            selected.append(members[source.lower()])
-        selected.extend(path for path in members.values() if
-                        path.lower() == 'fomod/moduleconfig.xml' or
-                        path.lower().endswith('/fomod/moduleconfig.xml'))
-        tmp = tempfile.mkdtemp(prefix=self.cfg.get('unpackDirName') + '-')
-        descriptor, listing = tempfile.mkstemp(prefix=self.cfg.get('unpackDirName') + '-', suffix='.txt')
-        try:
-            with os.fdopen(descriptor, 'w', encoding='utf-8', newline='\n') as output:
-                for path in sorted(set(selected)):
-                    output.write('"' + path + '"\n')
-            result = subprocess.run([seven, 'x', '-spd', '-scsUTF-8', '-sccUTF-8',
-                '-o' + tmp, '-y', '-i@' + listing, '--', arc], capture_output=True,
-                text=True, encoding='utf-8', stdin=subprocess.DEVNULL,
-                timeout=self.timeout('unpack'))
-            if result.returncode != 0:
-                raise RuntimeError(i18n.t('err.nativeInstall', reason='selected-extraction-failed'))
-            if tree_files(tmp) != {p.replace('/', os.sep).lower() for p in selected}:
-                raise RuntimeError(i18n.t('err.nativeInstall', reason='selected-extraction-inventory'))
-            return tmp
-        except Exception:
-            shutil.rmtree(tmp, ignore_errors=True)
-            raise
-        finally:
-            os.remove(listing)
+        return self.archives.unpack_selected(arc, sources)
 
     @staticmethod
     def _copy(tmp, paths, target, progress=None):

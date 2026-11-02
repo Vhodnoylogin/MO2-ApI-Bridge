@@ -21,6 +21,7 @@ fake_mo2.install()
 import common
 
 installer = importlib.import_module(common.NAME + '.install')
+archives = importlib.import_module(common.NAME + '.archives')
 native = importlib.import_module(common.NAME + '.nativeinstall')
 services = importlib.import_module(common.NAME + '.services')
 try:
@@ -39,8 +40,8 @@ class PathContract(unittest.TestCase):
                      'CON', 'x/LPT1.txt', 'x. ', 'a:stream', 'a\x00b', 'x/aux',
                      'x*', 'x?y', 'x\ny'):
             with self.subTest(path=path), self.assertRaises(ValueError):
-                installer.archive_member(path)
-        self.assertEqual(installer.archive_member('00 Core\\SKSE\\x.dll'),
+                archives.archive_member(path)
+        self.assertEqual(archives.archive_member('00 Core\\SKSE\\x.dll'),
                          '00 Core/SKSE/x.dll')
 
     def test_real_archive_extracts_only_selection_and_fomod_metadata(self):

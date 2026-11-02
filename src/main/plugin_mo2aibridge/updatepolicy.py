@@ -133,6 +133,7 @@ def decide(files, got_ids, got_names, installed_time, limit=3, disk_time=None):
     """
     if disk_time is None:
         disk_time = installed_time
+    files = [dict(f) for f in files]
     for f in files:
         f['got'] = f['fileId'] in got_ids or (f['fileName'] or '') in got_names
     live_main = sorted([f for f in files if f['category'] in ('main', 'update')],

@@ -17,10 +17,10 @@ markInstalled method. Restructuring the original native archive tree lets MO2
 perform both operations itself. The companion must be registered by the package's
 createPlugins factory; merely constructing a Python object does not register it.
 """
-import ntpath
 import os
 
 from . import __version__, i18n
+from .archives import selection_mappings
 
 
 INSTALLER_NAME = 'MO2 ApI Bridge Native Installer'
@@ -48,32 +48,11 @@ def _host(organizer):
             _canonical(organizer.profile().absolutePath()))
 
 
-def _relative(value):
-    if not isinstance(value, str) or not value or '\x00' in value:
-        raise NativeInstallError('invalid-mapping')
-    path = value.replace('\\', '/')
-    if ntpath.isabs(path) or ':' in path or any(
-            part in ('', '.', '..') for part in path.split('/')):
-        raise NativeInstallError('invalid-mapping')
-    return path
-
-
 def _mappings(values):
-    if not isinstance(values, list) or not values:
-        raise NativeInstallError('empty-selection')
-    result, destinations = [], set()
-    for value in values:
-        if not isinstance(value, dict):
-            raise NativeInstallError('invalid-mapping')
-        source, destination = _relative(value.get('source')), _relative(value.get('destination'))
-        lower = destination.casefold()
-        components = lower.split('/')
-        if (lower in destinations or 'meta.ini' in components or 'fomod' in components
-                or components[0] == 'ini tweaks'):
-            raise NativeInstallError('invalid-destination')
-        destinations.add(lower)
-        result.append({'source': source, 'destination': destination})
-    return result
+    try:
+        return selection_mappings(values)
+    except ValueError:
+        raise NativeInstallError('empty-selection' if not values else 'invalid-mapping') from None
 
 
 def _new_target(organizer, name):

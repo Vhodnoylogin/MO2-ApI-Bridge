@@ -79,6 +79,15 @@ Adding a route means adding a line to `routes.py`. Method names on the facade ar
 
 ---
 
+Pure domain decisions belong in functions with explicit inputs: `archives.py`
+validates paths/listings/mappings, `provenance.py` compares metadata, and
+`updatepolicy.py` calculates update verdicts without modifying inputs. Launch
+normalization and plugin-marker transformation are also pure. Keep organizer,
+filesystem, process and network access in adapters; do not add stateful classes
+for calculations. `ArchiveExtractor` owns process/scratch lifecycle; `Installer`
+coordinates native/copy installation; `Reader` snapshots host state and attaches
+metadata evidence. Retain the Services facade and existing HTTP contracts.
+
 ## 4. The two locks
 
 **Busy lock.** While a game or tool runs under MO2, the virtual `Data` is mounted into another

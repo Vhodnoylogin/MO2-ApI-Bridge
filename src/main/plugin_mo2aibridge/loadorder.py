@@ -16,6 +16,40 @@ from . import i18n, winapi
 from .base import Domain, flag, safe, stamp
 
 
+def plugin_state_bytes(original, wanted, decode):
+    """Change only ASCII activation markers, retaining all other source bytes.
+
+    The host supplies its filename decoder. Even unrelated names which cannot be
+    decoded must survive untouched, together with BOM, mixed EOLs and blank lines.
+    """
+    output, done, matches = [], set(), True
+    if original.startswith(b'\xef\xbb\xbf'):
+        # QTextStream detects a BOM before applying its configured System codec.
+        # Retain that file-wide choice for every line, including the first name.
+        decode = lambda raw: raw.decode('utf-8-sig')
+    raw_lines = original.split(b'\n')
+    try:
+        decoded = decode(original).split('\n')
+    except UnicodeError:
+        decoded = [None] * len(raw_lines)
+    for index, line in enumerate(raw_lines):
+        prefix = b'\xef\xbb\xbf' if index == 0 and line.startswith(b'\xef\xbb\xbf') else b''
+        line = line[len(prefix):]
+        try:
+            name = decoded[index] if decoded[index] is not None else decode(line)
+            key = (name[1:] if name.startswith('*') else name).strip().lower()
+        except UnicodeError:
+            key = None
+        if key in wanted and key:
+            active = line.startswith(b'*')
+            matches = matches and active == wanted[key]
+            if active != wanted[key]:
+                line = line[1:] if active else b'*' + line
+            done.add(key)
+        output.append(prefix + line)
+    return b'\n'.join(output), done, sorted(set(wanted) - done), matches
+
+
 class OrderRefresh:
     """One host-lifetime native hook, routing only live order verification waits.
 
@@ -139,25 +173,10 @@ class LoadOrder(Domain):
             # Preserve CRLF and exact recovery bytes, including a possible BOM.
             with open(path, 'rb') as stream:
                 original = stream.read()
-            raw = original.decode('utf-8-sig', errors='replace')
+            contents, done, missing, matches = plugin_state_bytes(
+                original, wanted, lambda raw: self._order_text(raw, system=True))
         except Exception as exc:
             return {'written': False, 'error': str(exc), 'path': path}
-        eol = chr(13) + chr(10) if chr(13) + chr(10) in raw else chr(10)
-        out, done, matches = [], set(), True
-        for line in raw.split(chr(10)):
-            bare = line.rstrip(chr(13))
-            name = bare[1:] if bare.startswith('*') else bare
-            key = name.strip().lower()
-            if key in wanted and name.strip():
-                matches = matches and bare.startswith('*') == wanted[key]
-                out.append(('*' if wanted[key] else '') + name)
-                done.add(key)
-            else:
-                out.append(bare)
-        while out and not out[-1]:
-            out.pop()
-        text = eol.join(out) + eol
-        missing = sorted(set(wanted) - done)
         if missing or matches:
             # A converged retry must preserve the reversal bytes of the last actual
             # change. Missing entries are a validation failure, not a reason to save
@@ -186,8 +205,8 @@ class LoadOrder(Domain):
                 os.fsync(stream.fileno())
             fd, draft = tempfile.mkstemp(prefix='.mo2aibridge-', suffix='.new',
                                          dir=os.path.dirname(path))
-            with os.fdopen(fd, 'w', encoding='utf-8', newline='') as stream:
-                stream.write(text)
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(contents)
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(draft, path)
@@ -296,28 +315,29 @@ class LoadOrder(Domain):
             rows = [(names[n.lstrip('*').lower()], n.startswith('*'))
                     for n in lines['plugins.txt']]
             listed = [name for name, _active in rows]
+            listed_set = set(listed)
             non_primary = [n for n in order if n.lower() not in primary]
             active_non_primary = [n for n in non_primary if states[n]]
             has_markers = any(active for _name, active in rows)
             if has_markers:
                 states_match = all(states[name] == active for name, active in rows)
-                members_match = set(non_primary) <= set(listed)
+                members_match = set(non_primary) <= listed_set
                 style = 'starred'
             else:
                 # Gamebryo uses active-only plain names; Creation also retains inactive
                 # names, but then every non-primary state must be inactive to omit '*'.
                 style = 'plain'
-                members_match = ((set(listed) - {n for n in order if n.lower() in primary})
+                members_match = ((listed_set - {n for n in order if n.lower() in primary})
                                  == set(active_non_primary))
                 states_match = all(states[n] for n in listed)
-                if set(non_primary) <= set(listed) and not any(states[n] for n in non_primary):
+                if set(non_primary) <= listed_set and not any(states[n] for n in non_primary):
                     members_match = True
                     states_match = all(not states[n] for n in listed if n.lower() not in primary)
                     style = 'starred-inactive'
             result.update(order=disk_order, plugins=listed, format=style,
                           statesVerified=states_match)
-            result['verified'] = (disk_order == order and len(listed) == len(set(listed))
-                and listed == [n for n in order if n in set(listed)]
+            result['verified'] = (disk_order == order and len(listed) == len(listed_set)
+                and listed == [n for n in order if n in listed_set]
                 and members_match and states_match)
         except Exception as exc:
             result['error'] = str(exc)
@@ -368,9 +388,10 @@ class LoadOrder(Domain):
                          and sorted(memory['priorities'].values()) == list(range(len(order))))
             result['memoryApplied'] = memory_ok
             if final:
-                active = [n for n in order if result['statesBefore'][n]]
-                memory_ok = memory_ok and all(memory['loadOrders'][n] == (
-                    active.index(n) if n in active else -1) for n in order)
+                active_indexes = {name: index for index, name in enumerate(
+                    n for n in order if result['statesBefore'][n])}
+                memory_ok = memory_ok and all(memory['loadOrders'][n] ==
+                    active_indexes.get(n, -1) for n in order)
             if not memory_ok or not disk['verified']:
                 raise RuntimeError(i18n.t('err.orderPersistence'))
 

@@ -1078,13 +1078,16 @@ r.head(T('contract.hDomain'))
 fx_d = make()[0]
 svc_d = services.Services(fx_d.organizer, run_main=lambda fn, timeout=None: fn(),
                           docs_path='README.md')
-# The override table is empty, but MO2 knows the name of its own section: it is the one to ask.
+# The override table is empty, but MO2 knows the section of its managed game.
 svc_d.cfg.values['nexusDomains'] = {}
 svc_d.cfg.values['nexusDomainDefault'] = ''
 fx_d.organizer.managedGame().nexus_name = 'fallout4'
-r.case(T('contract.domainAskedOfMo2'), svc_d.updater.nexus_domain('ForeignGame'), 'fallout4')
+r.case(T('contract.domainAskedOfMo2'), svc_d.updater.nexus_domain('SkyrimVR'), 'fallout4')
 r.case(T('contract.domainUrlBuiltFromIt'),
-       svc_d.updater.nexus_url('ForeignGame', 7).endswith('fallout4/mods/7'), True)
+        svc_d.updater.nexus_url('SkyrimVR', 7).endswith('fallout4/mods/7'), True)
+# A foreign game cannot borrow that section merely because its mod ID exists there.
+r.case(T('contract.domainNoNameNoDomain'), svc_d.updater.nexus_domain('ForeignGame'), '')
+r.case(T('contract.domainNoUrlWithoutDomain'), svc_d.updater.nexus_url('ForeignGame', 7), '')
 # MO2 is silent and there is no override - an honest refusal, rather than a foreign section with
 # the same mod number.
 svc_e = services.Services(make()[0].organizer, run_main=lambda fn, timeout=None: fn(),

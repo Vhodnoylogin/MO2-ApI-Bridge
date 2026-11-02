@@ -24,13 +24,31 @@ import urllib.error
 import urllib.request
 
 from . import i18n, winapi
-from .base import Domain, one, safe
+from .base import Domain, one, resolve_nexus_domain, safe
 from .updatepolicy import arc_time, decide, stamp
 
 # Nexus file sections by category number, as the API reports them. The number is transport -
 # it is what the reply carries; the rules downstream speak only in the words.
 CATEGORY = {1: 'main', 2: 'update', 3: 'optional', 4: 'old', 5: 'miscellaneous',
             6: 'deleted', 7: 'archived'}
+
+
+def _page_key(game, mod_id, domains):
+    """A Nexus page identity, preserving game boundaries and configured aliases."""
+    game = (game or '').strip().casefold()
+    domain = resolve_nexus_domain(game, domains)
+    return (domain or game).casefold(), int(mod_id)
+
+
+def _download_identity(lines):
+    """Read the source identity without depending on metadata field order."""
+    fields = {}
+    for line in lines:
+        key, _, value = line.strip().partition('=')
+        if key in ('modID', 'fileID', 'gameName'):
+            fields[key] = value
+    return (fields.get('gameName', ''), int(fields.get('modID') or 0),
+            int(fields.get('fileID') or 0))
 
 
 class SweepStop(Exception):
@@ -145,13 +163,13 @@ class Updates(Domain):
         return left <= int(self.cfg.get('updates', {}).get('quotaReserve') or 50)
 
     def _api_files(self, game, mod_id, timeout):
+        domain = self.nexus_domain(game)
+        if not domain:
+            return None, i18n.t('upd.noDomain', game=game or '?')
         key = self._key()
         if not key:
             raise SweepStop('upd.noApiKey')
         upd = self.cfg.get('updates', {})
-        domain = self.nexus_domain(game)
-        if not domain:
-            return None, i18n.t('upd.noDomain', game=game or '?')
         url = '%s/v1/games/%s/mods/%d/files.json' % (
             (upd.get('apiHost') or 'https://api.nexusmods.com').rstrip('/'), domain, int(mod_id))
         headers = {'apikey': key, 'Accept': 'application/json',
@@ -200,15 +218,21 @@ class Updates(Domain):
         return out, ''
 
     def _take(self, user_data, game=None, mod_id=None):
+        page = self._page_key(game, mod_id) if mod_id is not None else None
         with self._lock:
-            slot = self._pending.pop(str(user_data), None)
-            if slot is None and mod_id is not None:
-                # The token did not match - look up by the game/mod pair: it is the same
-                # reply
-                for key, cand in list(self._pending.items()):
-                    if cand['modId'] == int(mod_id):
-                        return self._pending.pop(key)
-            return slot
+            token = str(user_data)
+            slot = self._pending.get(token)
+            if slot is not None:
+                if page is not None and slot['page'] != page:
+                    return None
+                return self._pending.pop(token)
+            if page is not None:
+                # Some builds lose userData. Only a unique game/mod match can
+                # identify its reply; an unrelated page or parallel wait cannot.
+                matches = [key for key, cand in self._pending.items() if cand['page'] == page]
+                if len(matches) == 1:
+                    return self._pending.pop(matches[0])
+            return None
 
     def _on_files(self, game, mod_id, user_data, files):
         slot = self._take(user_data, game, mod_id)
@@ -235,6 +259,8 @@ class Updates(Domain):
         thread waits on an event; directly it is plain HTTP from the server thread. There is a
         pause between requests either way: the Nexus API has a daily allowance.
         """
+        if not self.nexus_domain(game):
+            return None, i18n.t('upd.noDomain', game=game or '?')
         delay = float(self.cfg.get('updates', {}).get('delaySec') or 0)
         wait_for = self._last_request + delay - time.time()
         if wait_for > 0:
@@ -242,10 +268,11 @@ class Updates(Domain):
         self._last_request = time.time()
         if self._choose_mode(timeout) == 'api':
             return self._api_files(game, mod_id, timeout)
-        self._seq += 1
-        token = 'upd%d' % self._seq
-        slot = {'event': threading.Event(), 'files': None, 'error': '', 'modId': int(mod_id)}
+        slot = {'event': threading.Event(), 'files': None, 'error': '',
+                'page': self._page_key(game, mod_id)}
         with self._lock:
+            self._seq += 1
+            token = 'upd%d' % self._seq
             self._pending[token] = slot
         try:
             self.run_main(lambda: self._ensure_bridge().requestFiles(game, int(mod_id), token),
@@ -261,10 +288,15 @@ class Updates(Domain):
         return slot['files'], slot['error']
 
     # ---- local facts -------------------------------------------------------
+    def _page_key(self, game, mod_id):
+        return _page_key(game, mod_id, self.cfg.get('nexusDomains') or {})
+
     def _downloads_meta(self):
         """What we downloaded, from the .meta files beside the archives.
-        modID -> {fileID: archive name}."""
-        root = safe(self.o.downloadsPath, '') or ''
+        (Nexus game, modID) -> {fileID: archive name}."""
+        root, managed_game = self.run_main(lambda: (
+            safe(self.o.downloadsPath, '') or '',
+            safe(lambda: self.o.managedGame().gameShortName(), '') or ''))
         got = {}
         try:
             names = os.listdir(root)
@@ -273,21 +305,18 @@ class Updates(Domain):
         for name in names:
             if not name.lower().endswith('.meta'):
                 continue
-            mod_id = file_id = None
+            archive = name[:-5]
+            if not os.path.isfile(os.path.join(root, archive)):
+                continue
             try:
                 with io.open(os.path.join(root, name), encoding='utf-8', errors='replace') as fh:
-                    for line in fh:
-                        k, _, v = line.strip().partition('=')
-                        if k == 'modID':
-                            mod_id = int(v or 0)
-                        elif k == 'fileID':
-                            file_id = int(v or 0)
-                        if mod_id is not None and file_id is not None:
-                            break
+                    game, mod_id, file_id = _download_identity(fh)
             except Exception:
                 continue
             if mod_id:
-                got.setdefault(mod_id, {})[file_id or 0] = name[:-5]
+                # Older sidecars omit gameName and belong to the managed game.
+                page = self._page_key(game or managed_game, mod_id)
+                got.setdefault(page, {})[file_id] = archive
         return got, root
 
     def _installed_time(self, arc, root):
@@ -305,6 +334,7 @@ class Updates(Domain):
         """The mod cards to check. Called ON the main thread."""
         ml = self.o.modList()
         everyone = list(ml.allModsByProfilePriority())
+        managed_game = safe(lambda: self.o.managedGame().gameShortName(), '') or ''
         # Page -> the archives ALL of its mods were built from: the "downloaded but not
         # installed" decision is made per page rather than per mod, so the page neighbours are
         # needed even when a single mod was asked about.
@@ -314,7 +344,8 @@ class Updates(Domain):
             nid = int(safe(m.nexusId, 0) or 0) if m is not None else 0
             arc = (safe(m.installationFile, '') or '') if m is not None else ''
             if nid and arc:
-                pages.setdefault(nid, []).append(arc)
+                game = safe(m.gameName, '') or managed_game
+                pages.setdefault(self._page_key(game, nid), []).append(arc)
         if want_all:
             names = everyone
         out, total = [], 0
@@ -330,8 +361,7 @@ class Updates(Domain):
                 continue
             out.append({'mod': n,
                         'nexusId': int(safe(m.nexusId, 0) or 0),
-                        'game': safe(m.gameName, '') or safe(
-                            lambda: self.o.managedGame().gameShortName(), ''),
+                        'game': safe(m.gameName, '') or managed_game,
                         'installationFile': safe(m.installationFile, '') or '',
                         'version': safe(lambda: m.version().displayString(), ''),
                         'mo2NewestVersion': safe(lambda: m.newestVersion().displayString(), ''),
@@ -360,6 +390,7 @@ class Updates(Domain):
             lambda: self._targets(names, want_all, offset, limit))
         got_all, dl_root = self._downloads_meta()
         rows, stopped = [], ''
+        file_cache = {}
         for t in targets:
             # The daily-allowance reserve is checked BEFORE the request, not after: the key
             # here is shared with MO2 itself, and eating it down to zero leaves the person
@@ -368,7 +399,7 @@ class Updates(Domain):
                 stopped = i18n.t('upd.quotaLow', left=self._quota.get('daily-remaining'))
                 break
             try:
-                rows.append(self._check_one(t, got_all, dl_root, timeout, pages))
+                rows.append(self._check_one(t, got_all, dl_root, timeout, pages, file_cache))
             except SweepStop as exc:
                 stopped = str(exc)
                 # The mod the sweep stumbled on still goes into the answer. Otherwise the
@@ -393,7 +424,7 @@ class Updates(Domain):
                        more=offset + len(rows) < total)
         return res
 
-    def _check_one(self, t, got_all, dl_root, timeout, pages=None):
+    def _check_one(self, t, got_all, dl_root, timeout, pages=None, file_cache=None):
         row = dict(t)
         row['checked'] = False
         if t.get('missing'):
@@ -402,18 +433,26 @@ class Updates(Domain):
         if not t['nexusId']:
             row.update(verdict='NO-NEXUS-ID', why=i18n.t('upd.noNexusId'))
             return row
-        files, error = self._fetch(t['game'], t['nexusId'], timeout)
+        page = self._page_key(t['game'], t['nexusId'])
+        if file_cache is not None and page in file_cache:
+            files, error = file_cache[page], ''
+        else:
+            files, error = self._fetch(t['game'], t['nexusId'], timeout)
+            if files is not None and file_cache is not None:
+                file_cache[page] = files
         if files is None:
             row.update(verdict='ERROR', why=i18n.t('upd.failed', error=error), error=error)
             return row
-        got = got_all.get(t['nexusId'], {})
+        # Keep accepting the older unscoped snapshots supplied to this helper;
+        # route snapshots above always use the qualified page identity.
+        got = got_all.get(page, got_all.get(t['nexusId'], {}))
         got_names = set(got.values())
         inst_time = self._installed_time(t['installationFile'], dl_root)
         inst_id = next((fid for fid, arc in got.items() if arc == t['installationFile']), 0)
         # The install moment is taken per page: the latest among the archives all of its mods
         # were built from. A patch built from an old archive does not mean the page's newest
         # file is not installed - it stands as a neighbouring mod.
-        mates = list((pages or {}).get(t['nexusId'], [])) + [t['installationFile']]
+        mates = list((pages or {}).get(page, (pages or {}).get(t['nexusId'], []))) + [t['installationFile']]
         page_time = max([self._installed_time(a, dl_root) or 0 for a in mates] or [0]) or None
         disk_time = max([page_time or 0] +
                         [self._installed_time(a, dl_root) or 0 for a in got_names]) or None

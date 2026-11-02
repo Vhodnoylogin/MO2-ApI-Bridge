@@ -6,7 +6,7 @@
 python run.py
 ```
 
-All twenty-three suites in a row. The suites that need MO2 are skipped with a plain word when it is not
+All twenty-eight suites in a row. The suites that need MO2 are skipped with a plain word when it is not
 running — a skip does not count as a failure.
 
 Use `python run.py --offline` to skip live suites without even probing a running manager.
@@ -20,6 +20,11 @@ to be loud, not papered over.
 |---|---|---|
 | `test_sources.py` | no | source hygiene: no control characters and no paths to one machine, everything compiles, every module is described in both READMEs, and the release archive really carries the translations |
 | `test_busy_logic.py` | no | the busy logic against a stand-in `IOrganizer` |
+| `test_archive_resources.py` | no | scratch cleanup after timeout/spawn/list allocation failure; full/selected guards and shared mapping contract |
+| `test_plugin_state_bytes.py` | no | exact BOM/codec/EOL preservation and recovery bytes while changing only activation markers |
+| `test_launch_validation.py` | no | malformed/nonfinite/oversized waits refused before process creation |
+| `test_update_targets.py` | no | pure update verdicts, game-scoped identities, absent downloads and per-sweep page reuse |
+| `test_busy_state.py` | no | deterministic concurrent callbacks, stale observations, mixed launch ownership and detached snapshots |
 | `test_i18n.py` | no | that the languages agree on keys and substitutions, that every key is used, and that `t()` keeps `key` positional |
 | `test_policy.py` | no | the update rules against a table of made-up Nexus pages: the verdict and the reason for each, and that the rules import nothing of the network, MO2 or the disk |
 | `test_transport_offline.py` | no | the transport on a real loopback socket: a taken port refuses, a bad request is 400 and a broken bridge is 500, no token means 403, and the port falls silent after a stop |
