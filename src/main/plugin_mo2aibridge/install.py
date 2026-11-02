@@ -63,7 +63,7 @@ def archive_member(value):
     return '/'.join(parts)
 
 
-def archive_files(listing):
+def archive_files(listing, *, rar=False):
     """Validate a 7-Zip technical listing without trimming empty field values.
 
     A final directory may end in ``Block = ``. Whitespace is part of the field
@@ -86,13 +86,45 @@ def archive_files(listing):
             path = path.rstrip('/\\')
         path = archive_member(path)
         key = path.lower()
-        if key in seen or fields.get('Encrypted') == '+':
+        if key in seen:
             raise ValueError(i18n.t('err.installFiles'))
+        if (any(fields.get(name) == '+' for name in
+                ('Encrypted', 'Split Before', 'Split After', 'Alternate Stream'))
+                or (rar and fields.get('Volume Index', '') != '')
+                or any(fields.get(name, '') for name in
+                       ('Symbolic Link', 'Hard Link', 'Copy Link'))):
+            # The receipt pins one original archive and independent regular files.
+            # Never silently consume another volume or materialize link/ADS entries.
+            raise ValueError(i18n.t('err.archiveUnsupported'))
         seen.add(key)
         if not directory:
             members[key] = path
         fields = {}
     return members
+
+
+def archive_listing(listing):
+    """Read archive properties as well as members; RAR4 omits member volume IDs."""
+    listing = listing.replace('\r\n', '\n')
+    preamble, separator, members = listing.partition('\n----------\n')
+    _banner, properties_start, properties = preamble.partition('\n--\n')
+    if not separator or not properties_start:
+        raise ValueError(i18n.t('err.installFiles'))
+    fields = {}
+    for line in properties.splitlines():
+        key, sep, value = line.partition(' = ')
+        # Other properties (notably archive comments) can contain multiline text.
+        # Never let a comment override an observed security property.
+        if key not in ('Type', 'Multivolume', 'Volumes', 'Encrypted'):
+            continue
+        if not sep or key in fields:
+            raise ValueError(i18n.t('err.installFiles'))
+        fields[key] = value
+    if ((fields.get('Type') in ('Rar', 'Rar5') and fields.get('Multivolume') != '-')
+            or fields.get('Multivolume') == '+' or fields.get('Volumes', '1') != '1'
+            or fields.get('Encrypted') == '+'):
+        raise ValueError(i18n.t('err.archiveUnsupported'))
+    return archive_files(members, rar=fields.get('Type') in ('Rar', 'Rar5'))
 
 
 class Installer(Domain):
@@ -514,7 +546,8 @@ class Installer(Domain):
             raise RuntimeError(i18n.t('err.no7z'))
         tmp = tempfile.mkdtemp(prefix=self.cfg.get('unpackDirName') + '-')
         r = subprocess.run([seven, 'x', arc, '-o' + tmp, '-y'],
-                           capture_output=True, text=True, timeout=self.timeout('unpack'))
+                           capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                           timeout=self.timeout('unpack'))
         if r.returncode != 0:
             shutil.rmtree(tmp, ignore_errors=True)
             tail = int(self.cfg.get('unpackErrorTail') or 300)
@@ -532,11 +565,12 @@ class Installer(Domain):
         seven = self.cfg.seven_zip()
         if not seven:
             raise RuntimeError(i18n.t('err.no7z'))
-        result = subprocess.run([seven, 'l', '-slt', '-ba', '-sccUTF-8', '--', arc],
-            capture_output=True, text=True, encoding='utf-8', timeout=self.timeout('unpack'))
+        result = subprocess.run([seven, 'l', '-slt', '-sccUTF-8', '--', arc],
+            capture_output=True, text=True, encoding='utf-8', stdin=subprocess.DEVNULL,
+            timeout=self.timeout('unpack'))
         if result.returncode != 0:
             raise RuntimeError(i18n.t('err.nativeInstall', reason='archive-listing-failed'))
-        members = archive_files(result.stdout)
+        members = archive_listing(result.stdout)
         selected = []
         for source in sources:
             if source.lower() not in members:
@@ -553,7 +587,8 @@ class Installer(Domain):
                     output.write('"' + path + '"\n')
             result = subprocess.run([seven, 'x', '-spd', '-scsUTF-8', '-sccUTF-8',
                 '-o' + tmp, '-y', '-i@' + listing, '--', arc], capture_output=True,
-                text=True, encoding='utf-8', timeout=self.timeout('unpack'))
+                text=True, encoding='utf-8', stdin=subprocess.DEVNULL,
+                timeout=self.timeout('unpack'))
             if result.returncode != 0:
                 raise RuntimeError(i18n.t('err.nativeInstall', reason='selected-extraction-failed'))
             if tree_files(tmp) != {p.replace('/', os.sep).lower() for p in selected}:

@@ -6,7 +6,7 @@
 python run.py
 ```
 
-All twenty-two suites in a row. The suites that need MO2 are skipped with a plain word when it is not
+All twenty-three suites in a row. The suites that need MO2 are skipped with a plain word when it is not
 running — a skip does not count as a failure.
 
 Use `python run.py --offline` to skip live suites without even probing a running manager.
@@ -133,3 +133,5 @@ refuses malformed/unsafe/encrypted/duplicate records before extraction side effe
 native metadata, bounded unavailable evidence and the absence of hash certification.
 Native adapter/accounting tests cover one source at two unique destinations. These
 use synthetic scratch fixtures and are not live MO2 acceptance.
+
+RAR4/RAR5 checks in test_rar_archives.py generate self-authored STORE fixtures, verify them with real 7-Zip, and cover full/selected extraction, source reuse, closed stdin and volume refusal. Compressed author archives are external evidence; fixtures contain no third-party payload.

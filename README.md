@@ -6,6 +6,7 @@ A local HTTP API inside a running Mod Organizer 2, for scripts and AI agents.
 [2.3.5](https://github.com/Vhodnoylogin/MO2-ApI-Bridge/releases/tag/v2.3.5).
 This candidate fixes selected extraction of valid archives ending in empty directory
 fields and distinguishes historical installation receipts from current native metadata.
+RAR4/RAR5 archive handling has dedicated regressions alongside ZIP and 7z.
 No new live MO2 acceptance is claimed for this candidate.
 
 [Русская версия](README.ru.md) · [API documentation](src/main/plugin_mo2aibridge/README.md)

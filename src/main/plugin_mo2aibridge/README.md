@@ -354,6 +354,17 @@ while the manager stays open.
 
 **The normal path — `POST /install`:**
 
+ZIP, 7z and **RAR (RAR4/RAR5)** use the same `archive` parameter. Supply the original
+archive without repacking; 7-Zip detects its format. Both folder extraction and native
+selected-file preparation handle single-volume, unencrypted RAR. Native installation
+also requires the host MO2 archive reader to support that format. Solid archives may
+need predecessor data decompressed even when only selected files are emitted.
+Native selections refuse volumes/split files, encryption, links and alternate streams;
+the receipt pins one original archive, not a set of neighboring volumes. Password prompts
+are never answered: extraction runs with closed stdin and the configured timeout.
+RAR4/5 framing and original compressed-archive extraction have offline coverage; live
+native RAR installation/accounting is pending qualification for candidate 2.3.6.
+
 ```json
 {"archive": "D:\\...\\downloads\\SomeMod-1.2.7z",
  "name": "Some Mod",

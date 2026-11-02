@@ -59,6 +59,34 @@ class TechnicalListing(unittest.TestCase):
             with self.assertRaises(ValueError):
                 installer.archive_files(FILE + '\n\n' + second)
 
+    def test_rar_regular_empty_fields_allowed_and_special_members_refused(self):
+        fields = ('Volume Index', 'Symbolic Link', 'Hard Link', 'Copy Link')
+        regular = FILE + ''.join('\n' + field + ' = ' for field in fields)
+        self.assertEqual(installer.archive_files(regular), {'options/a.bin': 'options/a.bin'})
+        for field, value in (('Volume Index', '0'), ('Volume Index', '1'),
+                             ('Split Before', '+'), ('Split After', '+'),
+                             ('Symbolic Link', '../outside'), ('Hard Link', 'other'),
+                             ('Copy Link', 'other'), ('Alternate Stream', '+')):
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                installer.archive_files(FILE + '\n' + field + ' = ' + value, rar=True)
+
+    def test_archive_level_volume_security_and_multiline_comments(self):
+        header = '7-Zip\n\n--\nType = Rar\nMultivolume = -\nVolumes = 1\nComment = first\nsecond\n'
+        listing = header + '\n----------\n' + FILE + '\n\n' + DIRECTORY
+        for ending in ('\n', '\r\n'):
+            self.assertEqual(installer.archive_listing(listing.replace('\n', ending)),
+                             {'options/a.bin': 'options/a.bin'})
+        zip_listing = ('7-Zip\n\n--\nType = zip\n\n----------\n' + FILE + '\nVolume Index = 0\n')
+        self.assertEqual(installer.archive_listing(zip_listing), {'options/a.bin': 'options/a.bin'})
+        invalid = [listing.replace('Multivolume = -', 'Multivolume = +'),
+                   listing.replace('Volumes = 1', 'Volumes = 2'),
+                   listing.replace('Multivolume = -\n', ''),
+                   listing.replace('Volumes = 1', 'Volumes = 1\nEncrypted = +'),
+                   listing.replace('second', 'Multivolume = -'), FILE]
+        for value in invalid:
+            with self.subTest(listing=value), self.assertRaises(ValueError):
+                installer.archive_listing(value)
+
     def test_refusal_before_extraction_or_temporary_output(self):
         fx = fake_mo2.Fixture()
         try:
