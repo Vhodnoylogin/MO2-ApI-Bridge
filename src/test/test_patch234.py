@@ -23,6 +23,8 @@ def check(label, actual, expected=True):
 def make():
     fx = fake_mo2.Fixture()
     svc = services.Services(fx.organizer, lambda fn, timeout=None: fn(), 'README.md')
+    svc.modops.remove_native = fake_mo2.remove_via_model
+    svc.modops.plugin_snapshot = lambda: fake_mo2.plugin_snapshot(svc)
     svc.guard.refusal = lambda *_: None
     return fx, svc
 

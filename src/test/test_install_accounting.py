@@ -95,6 +95,7 @@ class Accounting(unittest.TestCase):
                      'files': [{'source': '00 Core/payload.esp', 'destination': 'payload.esp'}],
                      'selection': {'runtime': 'fixture', 'options': ['core']}}
         self.calls = []
+        self.saved_settings = []
         self.behavior = ''
         self.stack.enter_context(patch.object(native, 'check_available', return_value=True))
         self.stack.enter_context(patch.object(native, 'install', side_effect=self.native_install))
@@ -134,9 +135,10 @@ class Accounting(unittest.TestCase):
         metadata.setValue('installationFile', os.path.basename(arc))
         metadata.setValue('modid', 101)
         metadata.setValue('version', '1.0')
-        metadata.setValue('installedFiles/size', 0 if self.behavior == 'missing-file-id' else 1)
+        metadata.setValue('installedFiles/size', 0 if self.behavior in
+                          ('missing-file-id', 'dirty-model-ids') else 1)
         metadata.setValue('installedFiles/1/modid', 101)
-        metadata.setValue('installedFiles/1/fileid', 123)
+        metadata.setValue('installedFiles/1/fileid', 999 if self.behavior == 'wrong-file-id' else 123)
         metadata.sync()
         download = settings(arc + '.meta')
         if self.behavior != 'not-marked':
@@ -150,9 +152,19 @@ class Accounting(unittest.TestCase):
                 return settings(metadata_path).value('installationFile', '')
 
             def setPluginSetting(self, plugin, key, value):
-                if self_behavior == 'provenance-held':
+                saved_settings.append(key)
+                if ((self_behavior == 'provenance-held' and key == 'installProvenance')
+                        or (self_behavior == 'checkpoint-held' and key == 'installCheckpoint')):
                     return False
+                if self_behavior == 'checkpoint-not-saved' and key == 'installCheckpoint':
+                    return True  # Native setters can report true after a save failure.
+                if self_behavior == 'provenance-not-saved' and key == 'installProvenance':
+                    return True
                 metadata = settings(metadata_path)
+                # MO2 addInstalledFile() dirties its model only. setPluginSetting()
+                # calls saveMeta(), which finally writes the native ID array too.
+                if self_behavior == 'dirty-model-ids':
+                    metadata.setValue('installedFiles/size', 1)
                 metadata.setValue('Plugins/' + plugin + '/' + key, value)
                 metadata.sync()
                 return True
@@ -161,6 +173,7 @@ class Accounting(unittest.TestCase):
                 return settings(metadata_path).value('Plugins/' + plugin + '/' + key, default)
 
         self_behavior = self.behavior
+        saved_settings = self.saved_settings
         native_mod = NativeMod(organizer, name)
         original_get = organizer.modList().getMod
         self.stack.enter_context(patch.object(organizer.modList(), 'getMod', side_effect=
@@ -201,6 +214,33 @@ class Accounting(unittest.TestCase):
         self.assertEqual(rows[0]['sha256'], rows[1]['sha256'])
         self.assertEqual({row['destination'] for row in rows},
                          {'payload.esp', 'other/payload.esp'})
+
+    def test_dirty_native_ids_are_saved_before_strict_readback_and_final_receipt(self):
+        self.behavior = 'dirty-model-ids'
+        result = self.svc.install(self.body)
+        self.assertTrue(result['installationComplete'], result)
+        self.assertTrue(result['nativeMetadataSaved'])
+        self.assertEqual(self.saved_settings, ['installCheckpoint', 'installProvenance'])
+        checkpoint = json.loads(settings(self.fx.mod_path('Native Selection') + '/meta.ini')
+                                .value('Plugins/mo2aibridge/installCheckpoint'))
+        self.assertFalse(checkpoint['installationComplete'])
+        self.assertEqual(checkpoint['stage'], 'payload-verified')
+        self.assertEqual(result['installProvenance']['nativeMetadata']['installedFiles'],
+                         [{'modId': 101, 'fileId': 123}])
+
+    def test_wrong_positive_file_id_and_failed_checkpoint_never_save_final_provenance(self):
+        for behavior in ('wrong-file-id', 'checkpoint-held', 'checkpoint-not-saved'):
+            with self.subTest(behavior=behavior):
+                self.behavior = behavior
+                self.saved_settings.clear()
+                body = dict(self.body, name='Rejected ' + behavior)
+                code, result = self.svc.ctx.operations.invoke('/install', body, self.svc.install)
+                self.assertEqual(code, 500)
+                self.assertFalse(result['installationComplete'])
+                self.assertTrue(result['reconciliationRequired'])
+                self.assertNotIn('installProvenance', self.saved_settings)
+                self.assertFalse(settings(self.fx.mod_path(body['name']) + '/meta.ini')
+                                 .contains('Plugins/mo2aibridge/installProvenance'))
 
     def test_unicode_filename_inventory_uses_consistent_normalization(self):
         self.body['files'][0]['destination'] = 'Straße.esp'
@@ -252,7 +292,8 @@ class Accounting(unittest.TestCase):
 
     def test_partial_or_unverified_native_results_are_never_complete(self):
         for behavior in ('extra', 'corrupt', 'not-marked', 'metadata-damage',
-                         'provenance-held', 'raises', 'model-stale', 'missing-file-id'):
+                         'provenance-held', 'provenance-not-saved', 'raises',
+                         'model-stale', 'missing-file-id'):
             with self.subTest(behavior=behavior):
                 self.behavior = behavior
                 download = settings(self.archive + '.meta')

@@ -101,6 +101,8 @@ def make():
     log = []
     svc = services.Services(fx.organizer, run_main=lambda f, timeout=None: f(),
                             docs_path='README.md', note=log.append)
+    svc.modops.remove_native = fake_mo2.remove_via_model
+    svc.modops.plugin_snapshot = lambda: fake_mo2.plugin_snapshot(svc)
     svc.game_exe = 'NoSuchProcess.exe'.lower()
     svc._self_hwnd = 0
     # Replace the native Qt adapter, not IOrganizer: MO2's API has no rename method.

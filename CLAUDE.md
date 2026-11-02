@@ -69,6 +69,7 @@ Each layer knows only the one below it. Keep it that way.
 | `operations.py` | retry keys and worker outcomes | MO2, Qt widgets |
 | `runtime.py` | threads, sockets, JSON, the token | what the routes do |
 | `services.py` and the domain files | `mobase` and the setup | HTTP, JSON, tokens |
+| `modui.py` | exact MO2 2.5.2 ModList Qt removal and confirmation | HTTP, profile persistence policy |
 | `routes.py` | path names | `mobase`, sockets |
 | `plugin.py` | the MO2 plugin lifecycle | it does nothing by hand, it only wires things |
 | `i18n.py` | strings | across all layers |
@@ -129,6 +130,8 @@ Every line here is a past failure. The reason is given so nobody is tempted to s
 | `winapi._declare()` | 17 `argtypes`/`restype` declarations | without them ctypes treats everything as 32-bit while x64 handles are 8 bytes; `GetProcessId` also lives in `kernel32`, not `user32`, which made `/run` always return `pid: 0` |
 | `loadorder.py` file IO | opens with `newline=''` | text mode collapses `CRLF` to `LF`, and the first version of this fix rewrote all 96 lines of the file |
 | `plugins.txt` written directly | not only through `setState` | `setState` changes an in-memory list, MO2 writes the file on exit, the game starts from the file — three runs in a row left a plugin disabled while reporting `applied: true` |
+| native removal | source ModList model instead of public `IModList.removeMod` | the public method omits profile-index repair and download-uninstalled signals; saving the stale profile produced an error dialog and API stall |
+| native install checkpoint | explicitly incomplete model setting before ID readback | addInstalledFile dirties MO2's model without saving meta.ini; QSettings cannot flush it, and final provenance must not be saved before strict verification |
 | `isActive()` | a lenient check instead of `is True` | the "Enabled" checkbox in MO2 2.5 is the manager's own switch, not a setting named `enabled`: `pluginSetting` returns `None` for it, so a strict comparison never passed |
 | `__init__.py` | `mobase` imported lazily, inside the factory | otherwise `from mo2aibridge import i18n` stops working outside MO2, and every offline check depends on that |
 | `runtime.Server` | `allow_reuse_address = False` | `HTTPServer` sets it to 1, and on Windows that allows binding to an already-listening address: a second bridge started silently and received nothing |

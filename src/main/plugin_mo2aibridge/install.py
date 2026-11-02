@@ -129,6 +129,7 @@ class Installer(Domain):
                'files': 0, 'filesVerified': False, 'archiveInstalled': False,
                'archiveMetadataPreserved': False,
                'downloadStatusVerified': False,
+               'nativeMetadataSaved': False,
                'installationComplete': False, 'provenanceSaved': False,
                'refreshRequested': False, 'undo': None}
         touched, owned = False, False
@@ -183,9 +184,24 @@ class Installer(Domain):
                 if not installed_from or os.path.basename(installed_from.replace('\\', '/')) != os.path.basename(arc):
                     raise RuntimeError(i18n.t('err.nativeInstall', reason='archive-association'))
                 from PyQt6.QtCore import QSettings
+                # addInstalledFile() dirties MO2's model without saving meta.ini.
+                # setPluginSetting() calls saveMeta(): persist an explicitly
+                # incomplete checkpoint before checking the native ID array.
+                # Never write the completed provenance merely to force a save.
+                checkpoint = json.dumps({'schemaVersion': 1, 'stage': 'payload-verified',
+                    'installationComplete': False, 'archiveSha256': expected.lower(),
+                    'files': len(manifest)}, sort_keys=True)
+                if not mod.setPluginSetting(PLUGIN_ID, 'installCheckpoint', checkpoint):
+                    raise RuntimeError(i18n.t('err.nativeInstall', reason='metadata-save'))
                 metadata = QSettings(os.path.join(target, 'meta.ini'), QSettings.Format.IniFormat)
+                metadata.setFallbacksEnabled(False)
+                metadata.sync()
                 if metadata.status() != QSettings.Status.NoError:
                     raise RuntimeError(i18n.t('err.nativeInstall', reason='metadata-unreadable'))
+                if (mod.pluginSetting(PLUGIN_ID, 'installCheckpoint', '') != checkpoint or
+                        metadata.value('Plugins/' + PLUGIN_ID + '/installCheckpoint', '') != checkpoint):
+                    raise RuntimeError(i18n.t('err.nativeInstall', reason='metadata-save-readback'))
+                res['nativeMetadataSaved'] = True
                 mod_id = original_download.get('modID', 0)
                 file_id = original_download.get('fileID', 0)
                 try:
@@ -245,6 +261,7 @@ class Installer(Domain):
                 encoded = json.dumps(provenance, ensure_ascii=False, sort_keys=True)
                 if not mod.setPluginSetting(PLUGIN_ID, 'installProvenance', encoded):
                     raise RuntimeError(i18n.t('err.nativeInstall', reason='provenance-write'))
+                metadata.sync()
                 if (mod.pluginSetting(PLUGIN_ID, 'installProvenance', '') != encoded or
                         metadata.value('Plugins/' + PLUGIN_ID + '/installProvenance', '') != encoded or
                         metadata.status() != QSettings.Status.NoError):

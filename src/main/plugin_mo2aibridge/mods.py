@@ -7,15 +7,38 @@ it a route does nothing and returns an explanation and the path to the README: t
 only be learned by reading the section about the consequences. The busy lock is checked
 before the irreversible one.
 """
+import io
 import os
 
 import mobase
 
-from . import i18n, winapi
+from . import i18n, modui, winapi
 from .base import Domain, flag, safe
 
 
 class ModOps(Domain):
+
+    def __init__(self, ctx, guard, refresh, plugin_snapshot):
+        super().__init__(ctx, guard)
+        self.remove_native = modui.remove
+        self.refresh_tracker = refresh
+        self.plugin_snapshot = plugin_snapshot
+
+    def _setup(self):
+        ml = self.o.modList()
+        return (os.path.realpath(self.o.profile().absolutePath()),
+                [(name, bool(ml.state(name) & mobase.ModState.ACTIVE))
+                 for name in ml.allModsByProfilePriority()])
+
+    def _modlist_persisted(self, setup):
+        ml = self.o.modList()
+        expected = [(name, active) for name, active in setup[1]
+                    if not ml.getMod(name).isForeign()]
+        names = {name for name, _active in expected}
+        with io.open(os.path.join(setup[0], 'modlist.txt'), encoding='utf-8-sig') as stream:
+            saved = [(line.rstrip('\r\n')[1:], line[0] != '-') for line in stream
+                     if line[:1] in ('+', '-') and line.rstrip('\r\n')[1:] in names]
+        return list(reversed(saved)) == expected
 
     def toggle(self, body):
         def prepare():
@@ -119,10 +142,11 @@ class ModOps(Domain):
                 raise ValueError(i18n.t('err.needMod'))
             flag(body, 'withArchive')
 
-        def f():
-            # Parsed inside the work rather than on entry to the method: the busy lock must
-            # answer first, and an exception before change() would beat it to it.
-            with_archive = flag(body, 'withArchive')
+        def inspect():
+            self.ctx.expected(body)
+            stop = self.guard.refusal('op.remove')
+            if stop:
+                return self._refusal(stop, 'remove', 'busy')
             ml = self.o.modList()
             m = ml.getMod(mod)
             if m is None:
@@ -133,28 +157,157 @@ class ModOps(Domain):
             card = self.removal_card(m, ml)
             stop = self.danger(body, 'remove')
             if stop:
-                stop.update({'mod': mod, 'card': card, 'withArchive': with_archive})
+                stop.update({'mod': mod, 'card': card, 'withArchive': flag(body, 'withArchive')})
                 return stop
-            ok = ml.removeMod(m)
-            self.o.refresh(True)
-            out = {'applied': bool(ok), 'mod': mod, 'path': card['path'],
-                   'card': card, 'archiveKept': True, 'archiveRecycled': False}
-            if not ok:
-                out.update(failed=True, partial=True, reason='removal',
-                           error=i18n.t('err.removeFailed', mod=mod),
-                           reconciliationRequired=True, undo=None)
+            plugins = self.plugin_snapshot()
+            state.update(card=card, setup=self._setup(),
+                         plugins={'order': plugins['order'], 'states': plugins['states']},
+                         origins={name: self.o.pluginList().origin(name) for name in plugins['order']})
+            return None
+
+        state = {'touched': False, 'preservationStarted': False, 'phase': 'inspect'}
+
+        def check(*, own_confirmation=False):
+            self.ctx.expected(body)
+            if self._setup() != state['setup']:
+                raise RuntimeError(i18n.t('err.removeState'))
+            plugins = self.plugin_snapshot()
+            if {'order': plugins['order'], 'states': plugins['states']} != state['plugins']:
+                raise RuntimeError(i18n.t('err.removeState'))
+            if not plugins['persisted'] or not self._modlist_persisted(state['setup']):
+                raise RuntimeError(i18n.t('err.removePending'))
+            stop = self.guard.refusal('op.remove')
+            if stop:
+                running = stop.get('running') or {}
+                # Only modui's already validated exact confirmation may account
+                # for this window lock. Launch callbacks/process evidence still holds.
+                window_only = (running.get('windowLocked') is True
+                    and running.get('app', False) is None
+                    and running.get('pids') == [] and running.get('mo2Run') == []
+                    and running.get('viaMO2') is False and running.get('isGame') is False
+                    and running.get('heldByUnknown') is True)
+                if not own_confirmation or not window_only:
+                    raise RuntimeError(i18n.t('err.removeState'))
+
+        def refresh(before):
+            wait = None
+            try:
+                def begin():
+                    nonlocal wait
+                    if before:
+                        check()
+                        winapi.check_file_replaceable(os.path.join(state['setup'][0], 'modlist.txt'))
+                    else:
+                        self.ctx.expected(body)
+                        if (os.path.realpath(self.o.profile().absolutePath()) != state['setup'][0]
+                                or self.guard.refusal('op.refresh')):
+                            raise RuntimeError(i18n.t('err.removeState'))
+                    self.refresh_tracker.attach(self.o.pluginList())
+                    wait = self.refresh_tracker.arm()
+                    token = wait
+                    if not self.o.onNextRefresh(lambda: self.refresh_tracker.directory(token), False):
+                        raise RuntimeError(i18n.t('err.removeRefresh'))
+                    if before:
+                        state['preservationStarted'] = True
+                    self.o.refresh(True)
+                self.run_main(begin)
+                # Wait outside Qt: CORE completes the directory and plugin lists later.
+                if (not wait['event'].wait(self.timeout('modRemoveRefresh'))
+                        or not wait['complete']):
+                    raise RuntimeError(i18n.t('err.removeRefresh'))
+            finally:
+                if wait is not None:
+                    self.refresh_tracker.release(wait)
+
+        def work():
+            if self.ctx.runner is not None:
+                from PyQt6.QtCore import QThread
+                if QThread.currentThread() == self.ctx.runner.thread():
+                    raise RuntimeError(i18n.t('err.removeThread'))
+            stop = self.run_main(inspect)
+            if stop:
+                return stop
+            card = state['card']
+            out = {'applied': False, 'mod': mod, 'path': card['path'], 'card': card,
+                   'archiveKept': True, 'archiveRecycled': False,
+                   'setupBefore': {'profile': state['setup'][0], 'mods': state['setup'][1]},
+                   'pluginsBefore': state['plugins'],
+                   'removalComplete': False, 'undo': None}
+            try:
+                state['phase'] = 'preserve'
+                # Native removeRows cancels the pending writer and reloads modlist.txt.
+                # Save unrelated owner edits while indexes are still valid, then revalidate.
+                refresh(before=True)
+                state['phase'] = 'native-remove'
+                def remove():
+                    check()
+                    receipt = self.remove_native(self.o, mod, card['path'],
+                        timeout=self.timeout('modRemoveConfirm'),
+                        poll_ms=int(self.cfg.get('modRemovalPollMs')),
+                        before_confirm=lambda: check(own_confirmation=True))
+                    state['touched'] = bool(receipt.get('invoked'))
+                    return receipt
+                out['nativeRemoval'] = self.run_main(remove)
+                state['phase'] = 'refresh'
+                refresh(before=False)
+                state['phase'] = 'readback'
+                def verify():
+                    self.ctx.expected(body)
+                    profile, mods = self._setup()
+                    expected = [(name, active) for name, active in state['setup'][1] if name != mod]
+                    plugins = self.plugin_snapshot()
+                    others = [name for name in state['plugins']['order'] if state['origins'][name] != mod]
+                    plugins_preserved = ([name for name in plugins['order'] if name in others] == others
+                        and all(plugins['states'].get(name) == state['plugins']['states'][name]
+                                for name in others)
+                        and set(plugins['order']) <= set(state['plugins']['order']))
+                    with io.open(os.path.join(profile, 'modlist.txt'), encoding='utf-8-sig') as stream:
+                        saved = [line.rstrip('\r\n')[1:] for line in stream if line[:1] in ('+', '-', '*')]
+                    out.update(modelRemoved=self.o.modList().getMod(mod) is None,
+                               filesystemRemoved=not os.path.lexists(card['path']),
+                               profilePersisted=mod not in saved,
+                               otherModsPreserved=profile == state['setup'][0] and mods == expected,
+                               otherPluginsPreserved=plugins_preserved)
+                    return (out['nativeRemoval'].get('removed') is True and
+                            all(out[key] for key in ('modelRemoved', 'filesystemRemoved',
+                                                   'profilePersisted', 'otherModsPreserved',
+                                                   'otherPluginsPreserved')))
+                if not self.run_main(verify):
+                    raise RuntimeError(i18n.t('err.removeFailed', mod=mod))
+                out.update(applied=True, removalComplete=True)
+            except Exception as exc:
+                receipt = getattr(exc, 'receipt', None)
+                if receipt is not None:
+                    out['nativeRemoval'] = receipt
+                    state['touched'] = state['touched'] or bool(receipt.get('invoked'))
+                error = (i18n.t('err.nativeRemove', reason=exc.code)
+                         if isinstance(exc, modui.NativeRemovalError) else str(exc))
+                out.update(failed=True, partial=state['touched'] or state['preservationStarted'],
+                           preservationStarted=state['preservationStarted'], reason='removal',
+                           phase=state['phase'], error=error, reconciliationRequired=True)
                 return out
-            if with_archive and card.get('archivePath'):
+            if flag(body, 'withArchive') and card.get('archivePath'):
                 # The archive is the one thing the bridge deletes itself, so only to the
                 # Recycle Bin.
-                out['archiveRecycled'] = bool(safe(
-                    lambda: winapi.recycle(card['archivePath']), False))
+                def recycle_archive():
+                    self.ctx.expected(body)
+                    profile, mods = self._setup()
+                    expected = [(name, active) for name, active in state['setup'][1] if name != mod]
+                    if (profile != state['setup'][0] or mods != expected
+                            or self.guard.refusal('op.remove')):
+                        raise RuntimeError(i18n.t('err.removeState'))
+                    return bool(safe(lambda: winapi.recycle(card['archivePath']), False))
+                try:
+                    out['archiveRecycled'] = self.run_main(recycle_archive)
+                except Exception as exc:
+                    out.update(applied=False, failed=True, partial=True, reason='removal',
+                               phase='archive', error=str(exc), reconciliationRequired=True)
                 out['archiveKept'] = not out['archiveRecycled']
             out['undo'] = ({'route': '/install',
                             'body': {'archive': card.get('archivePath'), 'name': mod}}
                            if out['archiveKept'] and card.get('archivePath') else None)
             return out
-        return self.change('remove', f, prepare=prepare)
+        return self.change('remove', work, prepare=prepare, on_main=False)
 
     def removal_card(self, m, ml):
         """Everything needed to bring the mod back. Taken before removal, on the main thread."""

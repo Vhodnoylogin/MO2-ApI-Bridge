@@ -6,7 +6,7 @@
 python run.py
 ```
 
-All twenty-eight suites in a row. The suites that need MO2 are skipped with a plain word when it is not
+All thirty suites in a row. The suites that need MO2 are skipped with a plain word when it is not
 running — a skip does not count as a failure.
 
 Use `python run.py --offline` to skip live suites without even probing a running manager.
@@ -33,6 +33,8 @@ to be loud, not papered over.
 | `test_order_persistence.py` | no; some checks need PyQt6 | native-shaped disk/order persistence, primary omissions, disabled-plugin priorities, partial writes/recovery, identity/busy guards and real Qt asynchronous refresh completion |
 | `test_native_adapter.py` | no; some checks need PyQt6 | one-use native installer selection, original native tree identity, cancellation and exact Downloads source-row refresh/readback with mocked MO2 APIs |
 | `test_install_accounting.py` | no; metadata checks need PyQt6 | archive/hash/selection identity, exact file mapping and payload verification, native metadata/provenance readback, incomplete accounting and foreign-target rollback refusals over scratch files |
+| `test_mod_removal.py` | no | pending-profile preservation, asynchronous refresh, stale setup, persistence failures, archive retention and same-operation replay |
+| `test_modui.py` | no; needs PyQt6 | real nested Qt confirmations, canonical model-row binding, native false/cancel/failure, stale identities, unsupported controls and timer cleanup |
 | `test_routes.py` | yes | all 32 routes and both locks |
 | `test_plugins_txt.py` | yes | that plugin state reaches `plugins.txt` and survives `/refresh` |
 | `test_install_modes.py` | yes | install, merge and replace in a sandbox |

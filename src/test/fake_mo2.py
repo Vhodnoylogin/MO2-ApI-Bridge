@@ -389,6 +389,22 @@ class FakeModList(object):
 
 
 # ================================================================== the plugin list
+def remove_via_model(organizer, name, path, *, before_confirm, **_kwargs):
+    """Domain-test adapter only; real native model/dialog behavior has its own suite."""
+    before_confirm()
+    result = organizer.modList().removeMod(organizer.modList().getMod(name))
+    if result:
+        organizer._native_plugins.writePluginLists(organizer.pluginList())
+    return {'invoked': True, 'confirmationAccepted': True, 'nativeReturned': result,
+            'removed': bool(result) and not os.path.lexists(path)}
+
+
+def plugin_snapshot(services):
+    """Broad fake-route contract only; faithful disk preservation has its own suite."""
+    memory = services.loadorder._order_memory()
+    return {'order': memory['order'], 'states': memory['states'], 'persisted': True, 'files': {}}
+
+
 class FakePluginList(object):
     """IPluginList: the plugins from the roots of the active mods, the order and the asterisks
     from plugins.txt.

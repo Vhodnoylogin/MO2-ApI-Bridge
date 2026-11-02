@@ -44,9 +44,10 @@ class Services(object):
         self.guard = busy.BusyGuard(ctx, launches)
         self.reader = reading.Reader(ctx, self.guard)
         self.installer = install.Installer(ctx, self.guard)
-        self.modops = mods.ModOps(ctx, self.guard)
         self.profileops = profiles.ProfileOps(ctx, self.guard)
         self.loadorder = loadorder.LoadOrder(ctx, self.guard, order_refresh)
+        self.modops = mods.ModOps(ctx, self.guard, self.loadorder.order_refresh,
+                                 self.loadorder.preservation_snapshot)
         self.launcher = launch.Launcher(ctx, self.guard)
         self.updater = updates.Updates(ctx, self.guard)
 

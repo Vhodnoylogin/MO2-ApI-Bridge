@@ -1,0 +1,7 @@
+{
+ "err.removePending": "Profile mod/plugin changes are not durably saved yet. Removal was refused before refreshing or deleting; inspect the saved pre-operation choices and let MO2 finish its pending write.",
+ "err.removeThread": "Mod removal must run through a Bridge worker so native refresh can finish on the Qt thread.",
+ "err.removeState": "The profile or mod setup changed during removal preparation. Nothing else was removed; inspect the operation before retrying.",
+ "err.removeRefresh": "Native removal refresh did not complete. Inspect the operation and current setup before retrying.",
+ "err.nativeRemove": "Native mod removal did not complete: %(reason)s. Inspect the operation receipt before retrying."
+}

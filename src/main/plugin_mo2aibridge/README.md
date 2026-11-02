@@ -227,6 +227,27 @@ download in `downloads\`, so the mod stays restorable by reinstalling. Deleting 
 takes an explicit `"withArchive": true`; it goes to the Recycle Bin as well, and the reply says
 `archiveRecycled`.
 
+On MO2 2.5.2, removal uses the native ModList model's complete removal path;
+the public `IModList.removeMod()` omits profile-index and download-accounting work.
+Pending UI edits must already match the native modlist and plugin files; otherwise
+removal refuses before refresh/deletion, allowing MO2's normal writer to finish.
+The reply retains `setupBefore` and `pluginsBefore`. A known modlist write/sharing
+failure also refuses before refresh. Bridge then saves the durable profile with
+indexes intact, waits outside Qt for
+the completed refresh, and rechecks the profile and every mod's order/activation.
+Only the exact target's native confirmation is accepted. After deletion it awaits
+another refresh and verifies folder/model absence, saved modlist and preservation
+of other mods before returning `removalComplete: true` or recycling an archive.
+It separately checks `otherPluginsPreserved`. The exact automated confirmation's
+completion signals are blocked during acceptance to prevent synchronous row reindexing.
+Arbitrary third-party global event filters/direct button observers are outside this
+stock-model adapter's qualification; fresh native acceptance is still required.
+Unsupported model versions, cancellation, failed deletion or failed readback are
+explicit failures with the original card and reconciliation data. No unsafe
+public-API fallback is used. `timeouts.modRemoveRefresh`, `timeouts.modRemoveConfirm`
+and `modRemovalPollMs` bound the adapter waits; a native call already running is
+still reconciled using its original operation key.
+
 ---
 
 ## The mod card — `/mod?name=…`
@@ -435,6 +456,13 @@ Unexpected native prompts are cancelled and reported as a failure. A failed nati
 leave a partial target; retain its receipt, `reconciliationRequired` and reversal data, inspect
 the result and reconcile it before a deliberate new operation. Do not blindly retry with a new
 operation key or silently overwrite the target.
+
+Before checking positive source IDs in `installedFiles`, Bridge saves an explicitly
+incomplete `installCheckpoint` through the mod's `setPluginSetting()` method. This
+flushes MO2's dirty native metadata; QSettings synchronization alone cannot do so.
+`nativeMetadataSaved` records checkpoint readback. A complete `installProvenance`
+is saved only after strict source-ID and Downloads verification. A checkpoint is
+historical stage evidence with `installationComplete: false`, never a success receipt.
 
 Offline checks in `tests/test_native_adapter.py` and `tests/test_install_accounting.py` use a
 mocked native adapter/pipeline. A native refusal or unavailable capability remains visible,
@@ -804,6 +832,7 @@ The defaults contain no machine-specific paths: the `7z.exe` candidates are asse
 | `provenance.py` | pure policy | historical receipt comparison, without IO or current-byte certification |
 | `nativeinstall.py` | MO2 installer | one-use explicit selection through MO2's original-archive installation pipeline |
 | `mods.py` | domain | enable, disable, refresh; priority, rename, remove |
+| `modui.py` | native Qt adapter | exact target removal through MO2 2.5.2's complete ModList model path |
 | `profiles.py` | domain | profile rename, names, conflict checks and both locks |
 | `profileui.py` | MO2 UI | native Qt profile manager, without manually renaming its folders |
 | `loadorder.py` | domain | plugin states and load order, writing `plugins.txt` |

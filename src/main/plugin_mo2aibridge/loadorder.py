@@ -277,6 +277,18 @@ class LoadOrder(Domain):
                 'priorities': {n: pl.priority(n) for n in names},
                 'loadOrders': {n: pl.loadOrder(n) for n in names}}
 
+    def preservation_snapshot(self):
+        """Read current plugin choices and their durable native representation only.
+
+        A refresh can discard pending UI edits. Callers must refuse before that
+        boundary if the native writer has not persisted these choices yet.
+        """
+        memory = self._order_memory()
+        disk = (self._order_disk(self.o.profile().absolutePath(), memory['order'], memory['states'])
+                if memory['order'] else {'verified': True, 'files': {}})
+        return {'order': memory['order'], 'states': memory['states'],
+                'persisted': disk['verified'], 'files': disk['files']}
+
     @staticmethod
     def _order_text(raw, system=False):
         if not system:

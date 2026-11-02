@@ -59,12 +59,15 @@ DEFAULTS = {
         'runWait': 3600,
         'profileRename': 30,
         'pluginOrderRefresh': 30,
+        'modRemoveRefresh': 30,
+        'modRemoveConfirm': 30,
     },
     # How many rows to return in the added/overwritten/sample lists, so a reply stays sane.
     'listLimit': 200,
     # Native profile dialog polling interval, in milliseconds.
     'profileDialogPollMs': 20,
     'nativeInstallPollMs': 25,
+    'modRemovalPollMs': 25,
     # HTTP waits are bounded independently of native operation completion.
     'operationWaitSec': 120,
     'operationLimit': 4096,

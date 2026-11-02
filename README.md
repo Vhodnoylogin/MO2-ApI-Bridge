@@ -9,6 +9,10 @@ fields and distinguishes historical installation receipts from current native me
 RAR4/RAR5 archive handling has dedicated regressions alongside ZIP and 7z.
 No new live MO2 acceptance is claimed for this candidate.
 
+Consumer findings also led to an explicit native metadata-save checkpoint before
+source-ID verification, and removal through MO2's complete native model path.
+These fixes require fresh exact-package native qualification before release.
+
 [Русская версия](README.ru.md) · [API documentation](src/main/plugin_mo2aibridge/README.md)
 · [Checks](src/test/README.md)
 
