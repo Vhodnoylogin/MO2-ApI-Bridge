@@ -52,7 +52,11 @@ Only runtime package files ship. The installed directory in MO2 must be
 source directory. The packer writes the correct installed package name.
 
 `main` holds the released source; one `develop` branch holds unfinished work.
-Candidate 2.3.6 is not released or live-qualified. Stable/public 2.3.5 is unchanged.
+Version 2.3.6's exact packaged runtime passed isolated MO2 2.5.2 native acceptance
+with a synthetic ZIP and positive source IDs: install/checkpoint/provenance,
+Installed/Uninstalled accounting, guarded removal, replay and manager-restart
+readback. No game was launched. RAR4/RAR5 STORE checks use real 7-Zip outside MO2;
+they do not establish native RAR installation or compressed/solid codec coverage.
 Historical receipt existence is not current installation proof: `/mod` preserves
 `installProvenance` and adds metadata-only `installProvenanceStatus`. Matching
 metadata never certifies present archive/payload bytes or FOMOD compatibility.
@@ -139,12 +143,16 @@ Every line here is a past failure. The reason is given so nobody is tempted to s
 | stuck-launch reset | menu item only, no route | a route would let one request bypass the busy lock |
 | `log()` | writes to both MO2's log and its own file | MO2's default log level drops plugin warnings, and the reason for a refusal was lost entirely. Both sinks live in `journal.py`; a sink that fails is announced through the other one, never swallowed |
 
-**MO2 crashes are not this plugin's fault.** Heavy test runs crashed MO2 four times. A full dump
-under WinDbg showed a double free inside MO2's own bundled `plugins\diagnose_basic.dll` (the
-"Basic diagnosis plugin"), on a Qt thread-pool worker. Neither the bridge nor Python appears on
-the faulting stack. The link is indirect: diagnostics re-run on every `/refresh`, and a full test
-run triggers seven or eight in a row. **Do not hunt for the cause in the bridge and do not remove
-`refresh` calls because of it** — they are there for a reason.
+**Crash attribution is incident-specific.** During an earlier series of four MO2
+test crashes, a full dump examined in WinDbg showed a double free inside the bundled
+`plugins\diagnose_basic.dll` ("Basic diagnosis plugin") on a Qt thread-pool worker;
+neither Bridge nor Python appeared on that faulting stack. Diagnostics run again
+on `/refresh`, so preserve the required refresh operations and investigate each
+new crash on its own evidence. This historical finding does not exonerate Bridge
+from unrelated incidents. In the 2 November 2026 MO2 SE download crash, Windows
+identified `QIODevice::isOpen`, but the saved minidump lacked an ExceptionStream:
+the caller and cause remain unresolved, and neither Bridge involvement nor
+exoneration has been established.
 
 ---
 

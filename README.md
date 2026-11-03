@@ -2,16 +2,18 @@
 
 A local HTTP API inside a running Mod Organizer 2, for scripts and AI agents.
 
-**Development candidate 2.3.6; not released.** The stable release on `main` is
-[2.3.5](https://github.com/Vhodnoylogin/MO2-ApI-Bridge/releases/tag/v2.3.5).
-This candidate fixes selected extraction of valid archives ending in empty directory
-fields and distinguishes historical installation receipts from current native metadata.
-RAR4/RAR5 archive handling has dedicated regressions alongside ZIP and 7z.
-No new live MO2 acceptance is claimed for this candidate.
+**Version 2.3.6** fixes archive listing/extraction edge cases and distinguishes
+historical installation receipts from current native metadata. Native installation
+now saves an explicitly incomplete metadata checkpoint before strict source-ID
+verification. Removal uses MO2's complete native model path, preserving unrelated
+choices and refusing pending edits or known modlist locks before deletion.
 
-Consumer findings also led to an explicit native metadata-save checkpoint before
-source-ID verification, and removal through MO2's complete native model path.
-These fixes require fresh exact-package native qualification before release.
+The exact packaged runtime passed isolated MO2 2.5.2 checks with a synthetic ZIP
+and positive source IDs: selected installation, metadata/provenance persistence,
+native Installed accounting, removal with Uninstalled accounting, retries and
+readback after actual manager restarts. These checks did not launch a game.
+RAR4/RAR5 STORE fixtures were checked with real 7-Zip outside MO2; native RAR
+installation and compressed/solid RAR coverage are not established by those fixtures.
 
 [Русская версия](README.ru.md) · [API documentation](src/main/plugin_mo2aibridge/README.md)
 · [Checks](src/test/README.md)
@@ -25,7 +27,7 @@ The architecture review separates pure archive/selection and provenance rules fr
 MO2 orchestration, gives 7-Zip scratch resources one owner, and preserves profile
 bytes when changing plugin markers. Launch validation precedes process creation;
 update decisions are isolated by Nexus game and reuse each successful page within
-a sweep. No performance percentage or new native acceptance is implied.
+a sweep. No measured speedup is claimed.
 
 ## Source and release layout
 
