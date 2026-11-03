@@ -1,5 +1,5 @@
 {
- "err.installFiles": "files must be a nonempty list of safe archive source names and unique mod destination filenames. Root meta.ini, FOMOD payload and INI Tweaks destinations are refused.",
+ "err.installFiles": "files must be a nonempty list of safe archive source names and unique mod destination filenames. MO2 metadata and FOMOD installer controls cannot be selected as payload; meta.ini, FOMOD and root INI Tweaks destinations are refused.",
  "err.archiveUnsupported": "Selected installation requires a single-volume, unencrypted archive with regular files. Split members, links and alternate streams are not supported.",
  "err.installSelection": "selection must record the chosen installer options; a nonempty object is required for a FOMOD archive.",
  "err.archiveHash": "archiveSha256 must match the actual original archive; installation was not verified.",

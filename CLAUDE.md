@@ -205,6 +205,15 @@ MO2 prioritizes over the multiple-plugin factory. The native source archive must
 original download, with explicit selected file mappings and hash-pinned provenance. FOMOD
 choices and recursive dependency compatibility are the caller's responsibility.
 
+Candidate2.3.7 permits explicit original game-file sources beneath `fomod/`, while
+rejecting installer controls/MO2 metadata and retaining destination/archive guards.
+`installationaudit.py` reuses Installer's exact selection evidence for advisory
+`/install/preview` and independent `/install/verify`. These routes never install,
+refresh native Downloads or save provenance. Current verification cannot rewrite
+an earlier failed outcome, create historical provenance or certify private-field
+preservation without before fingerprints. Native observation and offline fake-host
+success remain separate from actual packaged MO2 acceptance.
+
 Run them after every step, not at the end. They have already caught defects introduced while
 fixing other defects.
 

@@ -24,7 +24,8 @@ not by the facade or an HTTP service instance.
 
 import os
 
-from . import base, busy, config, install, launch, loadorder, mods, profiles, reading, updates
+from . import (base, busy, config, install, installationaudit, launch, loadorder, mods,
+               profiles, reading, updates)
 from .base import DANGER_KEY, DANGER_VALUE, one as _one  # noqa: F401
 
 
@@ -45,6 +46,8 @@ class Services(object):
         self.guard = busy.BusyGuard(ctx, launches)
         self.reader = reading.Reader(ctx, self.guard)
         self.installer = install.Installer(ctx, self.guard)
+        self.install_audit = installationaudit.InstallAudit(ctx, self.guard, self.installer,
+                                                          self.reader)
         self.profileops = profiles.ProfileOps(ctx, self.guard)
         self.loadorder = loadorder.LoadOrder(ctx, self.guard, order_refresh)
         self.modops = mods.ModOps(ctx, self.guard, self.loadorder.order_refresh,
@@ -100,6 +103,8 @@ class Services(object):
                 'capabilities': {
                     'pendingRetryImmediate': True, 'mutationExclusion': 'bridge-host-lifetime',
                     'drainingRestart': True, 'retiredOperationReadback': True,
+                    'selectedInstallPreview': True, 'currentInstallVerification': True,
+                    'selectedSourcesUnderFomod': True,
                     'expectedTargets': ['expectedServerBootId', 'expectedInstance', 'expectedProfile'],
                     'snapshotAtomic': False, 'externalWritersTracked': False},
                 'mutation': self.ctx.mutations.snapshot()}
@@ -173,6 +178,12 @@ class Services(object):
 
     def install(self, body):
         return self.installer.install(body)
+
+    def install_preview(self, body):
+        return self.install_audit.preview(body)
+
+    def install_verify(self, body):
+        return self.install_audit.verify(body)
 
     def plugins_state(self, body):
         return self.loadorder.plugins_state(body)

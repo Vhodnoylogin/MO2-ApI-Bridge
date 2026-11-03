@@ -246,6 +246,48 @@ class Accounting(unittest.TestCase):
         self.body['files'][0]['destination'] = 'Straße.esp'
         self.assertTrue(self.svc.install(self.body)['installationComplete'])
 
+    def test_native_payload_beneath_fomod_keeps_original_source_identity(self):
+        with zipfile.ZipFile(self.archive, 'a') as archive:
+            archive.writestr('fomod/f/esp/Data/Selected.esp', b'original nested payload')
+            archive.writestr('fomod/f/alternate/Selected.esp', b'unselected alternate')
+        self.body['archiveSha256'] = installer.file_sha256(self.archive)
+        self.body['files'] = [{'source': 'fomod/f/esp/Data/Selected.esp',
+                               'destination': 'Selected.esp'}]
+        archive_hash = installer.file_sha256(self.archive)
+        result = self.svc.install(self.body)
+        self.assertTrue(result['installationComplete'], result)
+        self.assertEqual(result['installProvenance']['files'][0]['source'],
+                         'fomod/f/esp/Data/Selected.esp')
+        self.assertEqual(result['installProvenance']['archiveSha256'], archive_hash)
+        self.assertEqual(installer.file_sha256(self.archive), archive_hash)
+        self.assertEqual(self.calls[0][0], self.archive)
+        self.assertEqual(installer.tree_files(self.fx.mod_path('Native Selection')),
+                         {'selected.esp', 'meta.ini'})
+
+    def test_inventory_failure_reports_delta_before_checkpoint_without_retry(self):
+        self.behavior = 'extra'
+        code, result = self.svc.ctx.operations.invoke('/install', self.body, self.svc.install)
+        self.assertEqual(code, 500)
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(result['failureStage'], 'payload-inventory')
+        self.assertEqual(result['payloadInventory'], {
+            'expectedCount': 1, 'observedCount': 2, 'missingCount': 0, 'extraCount': 1,
+            'missing': [], 'extra': ['unselected.dll']})
+        self.assertEqual(result['checks']['payloadInventory'], 'mismatch')
+        self.assertEqual(result['checks']['payloadHashes'], 'not-run')
+        self.assertEqual(result['checks']['nativeMetadata'], 'not-run')
+        self.assertFalse(self.saved_settings)
+        self.assertFalse(result['installationComplete'])
+
+    def test_hash_failure_has_distinct_check_and_no_completion_setting(self):
+        self.behavior = 'corrupt'
+        result = self.svc.install(self.body)
+        self.assertEqual(result['failureStage'], 'payload-hash')
+        self.assertEqual(result['checks']['payloadInventory'], 'verified')
+        self.assertEqual(result['checks']['payloadHashes'], 'mismatch')
+        self.assertEqual(result['checks']['nativeMetadata'], 'not-run')
+        self.assertFalse(self.saved_settings)
+
     def test_invalid_manifest_hash_and_options_refuse_before_any_native_effect(self):
         invalid = [dict(archiveSha256='0' * 64), dict(files=[]), dict(selection={}),
                    dict(files=[{'source': 'missing.esp', 'destination': 'x.esp'}]),
@@ -265,6 +307,17 @@ class Accounting(unittest.TestCase):
         self.body['name'] = 'Alpha Mod'
         with self.assertRaises(ValueError):
             self.svc.install(self.body)
+        self.assertEqual(self.calls, [])
+
+    def test_preview_and_install_reject_the_same_raw_windows_name_aliases(self):
+        for name in ('Native Selection ', 'Native Selection.', 'Native Selection\n'):
+            body = dict(self.body, name=name)
+            with self.subTest(name=name):
+                preview = self.svc.install_preview(body)
+                self.assertFalse(preview['ready'])
+                self.assertFalse(preview['accepted'])
+                with self.assertRaises(ValueError):
+                    self.svc.install(body)
         self.assertEqual(self.calls, [])
 
     def test_concurrent_target_refusal_never_suggests_deleting_foreign_mod(self):

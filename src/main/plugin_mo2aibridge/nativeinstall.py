@@ -245,6 +245,19 @@ def refresh_downloads(organizer, archive, require_installed=True):
     model exposes no integer state role: its localized COL_STATUS DisplayRole is
     compared with the SAME DownloadList translation context used by native code.
     """
+    return _inspect_downloads(organizer, archive, require_installed, refresh=True)
+
+
+def observe_downloads(organizer, archive, require_installed=True):
+    """Read the exact current native row without refreshing or changing preferences.
+
+    This is an observation of the existing model, not a promise that its cache is
+    current. In particular it must not invoke refreshList's orphan-sidecar cleanup.
+    """
+    return _inspect_downloads(organizer, archive, require_installed, refresh=False)
+
+
+def _inspect_downloads(organizer, archive, require_installed, *, refresh):
     from PyQt6.QtCore import QCoreApplication, QThread, Qt
     from PyQt6.QtWidgets import QApplication
 
@@ -263,9 +276,11 @@ def refresh_downloads(organizer, archive, require_installed=True):
             raise NativeInstallError('archive-outside-downloads', receipt)
         button, _view, box, _model = _download_ui(organizer)
         was_hidden = box.isChecked()
-        receipt['nativeRefreshInvoked'] = True
-        button.click()
-        _button, _view, box, model = _download_ui(organizer)
+        model = _model
+        if refresh:
+            receipt['nativeRefreshInvoked'] = True
+            button.click()
+            _button, _view, box, model = _download_ui(organizer)
         if box.isChecked() != was_hidden:
             raise NativeInstallError('download-preference-changed', receipt)
         manager = organizer.downloadManager()
@@ -300,7 +315,8 @@ def refresh_downloads(organizer, archive, require_installed=True):
         merged.update(exc.receipt)
         raise NativeInstallError(exc.code, merged) from exc
     except Exception as exc:
-        raise NativeInstallError('download-refresh-unavailable', receipt) from exc
+        raise NativeInstallError('download-refresh-unavailable' if refresh else
+                                 'download-observation-unavailable', receipt) from exc
 
 
 def _guard_modals(app, plan, poll_ms):

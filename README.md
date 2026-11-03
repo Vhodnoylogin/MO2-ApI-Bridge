@@ -1,6 +1,10 @@
 # MO2 ApI Bridge
 
-Development candidate 2.3.7 adds operation draining/exclusion, failure-safe retries, update correlation/pacing and explicit reversal/snapshot evidence. See the runtime README for the full candidate changelog. Public release 2.3.6 and its qualification remain historical facts.
+Development candidate 2.3.7 adds operation draining/exclusion, failure-safe retries,
+update correlation/pacing, explicit reversal/snapshot evidence, selected game files
+under original `fomod/` sources and read-only installation preview/current verification.
+See the runtime README for the full candidate changelog. Public release 2.3.6 and
+its qualification remain historical facts.
 
 A local HTTP API inside a running Mod Organizer 2, for scripts and AI agents.
 

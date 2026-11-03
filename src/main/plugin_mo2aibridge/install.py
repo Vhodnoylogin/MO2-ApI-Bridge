@@ -65,17 +65,17 @@ class Installer(Domain):
                            if flag(body, 'native') else self._install(body)), on_main=False,
                            prepare=prepare)
 
-    def _install_native(self, body):
-        """Opt-in selected native install; no direct edits of MO2-owned INI files.
-
-        A successful native installer call alone is insufficient. Verify every selected
-        payload, archive identity, native metadata, download sidecar and durable provenance.
-        Existing targets retain the legacy copy backend until a native merge adapter is
-        qualified; do not accidentally open MO2's overwrite wizard.
-        """
-        from . import nativeinstall
-        arc = os.path.realpath(body['archive'])
+    def selection_inputs(self, body):
+        """Validate/hash explicit native inputs without manager calls or setup writes."""
+        if not flag(body, 'native') or body.get('mode') or 'paths' in body:
+            raise ValueError(i18n.t('err.nativeNewOnly'))
+        archive = body.get('archive')
+        if not isinstance(archive, str) or not archive or not os.path.isfile(archive):
+            raise ValueError(i18n.t('err.noArchive', archive=archive))
+        arc = os.path.realpath(archive)
         name = folder_name(body.get('name'))
+        # Match install.prepare's raw Windows-name guard before normalization.
+        archive_member(body.get('name'))
         expected = body.get('archiveSha256')
         if not isinstance(expected, str) or len(expected) != 64 or any(
                 c not in '0123456789abcdefABCDEF' for c in expected):
@@ -88,19 +88,10 @@ class Installer(Domain):
             raise ValueError(i18n.t('err.installSelection'))
         # Canonical JSON both validates the supplied receipt and detaches mutable input.
         selection = json.loads(json.dumps(selection, ensure_ascii=False, allow_nan=False))
+        return arc, name, files, selection, expected.lower()
 
-        def preflight():
-            self.ctx.expected(body)
-            if self.guard.refusal('op.install'):
-                raise RuntimeError(i18n.t('err.installRefresh'))
-            downloads = os.path.realpath(self.o.downloadsPath())
-            if os.path.normcase(os.path.dirname(arc)) != os.path.normcase(downloads):
-                raise ValueError(i18n.t('err.nativeDownloads'))
-            if os.path.exists(os.path.join(self.o.modsPath(), name)) or self.o.modList().getMod(name):
-                raise ValueError(i18n.t('err.nativeNewOnly'))
-            nativeinstall.check_available(self.o)
-            return os.path.join(self.o.modsPath(), name)
-        target = self.run_main(preflight)
+    def selection_evidence(self, arc, files, selection, expected):
+        """Hash explicit original members in owned scratch; never call native installation."""
         tmp = self._unpack_selected(arc, [row['source'] for row in files])
         manifest, fomods = [], []
         try:
@@ -119,11 +110,37 @@ class Installer(Domain):
                 if not inside(tmp, path) or not os.path.isfile(path):
                     raise ValueError(i18n.t('err.noPathInArchive', path=row['source']))
                 manifest.append(dict(row, sha256=file_sha256(path), bytes=os.path.getsize(path)))
+            if file_sha256(arc) != expected:
+                raise ValueError(i18n.t('err.archiveHash'))
+            return {'schemaVersion': 1, 'archive': arc, 'archiveSha256': expected,
+                    'archiveBytes': os.path.getsize(arc), 'selection': selection,
+                    'fomod': fomods, 'files': manifest}
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
-        provenance = {'schemaVersion': 1, 'archive': arc, 'archiveSha256': expected.lower(),
-                      'archiveBytes': os.path.getsize(arc), 'selection': selection,
-                      'fomod': fomods, 'files': manifest}
+
+    def _install_native(self, body):
+        """Install the selection, then independently verify payload and native accounting.
+
+        Existing targets retain the legacy copy backend until a native merge adapter is
+        qualified; do not accidentally open MO2's overwrite wizard.
+        """
+        from . import nativeinstall
+        arc, name, files, selection, expected = self.selection_inputs(body)
+
+        def preflight():
+            self.ctx.expected(body)
+            if self.guard.refusal('op.install'):
+                raise RuntimeError(i18n.t('err.installRefresh'))
+            downloads = os.path.realpath(self.o.downloadsPath())
+            if os.path.normcase(os.path.dirname(arc)) != os.path.normcase(downloads):
+                raise ValueError(i18n.t('err.nativeDownloads'))
+            if os.path.exists(os.path.join(self.o.modsPath(), name)) or self.o.modList().getMod(name):
+                raise ValueError(i18n.t('err.nativeNewOnly'))
+            nativeinstall.check_available(self.o)
+            return os.path.join(self.o.modsPath(), name)
+        target = self.run_main(preflight)
+        provenance = self.selection_evidence(arc, files, selection, expected)
+        manifest = provenance['files']
         res = {'mod': name, 'path': target, 'created': None, 'existed': False, 'mode': 'new',
                'archive': os.path.basename(arc), 'backend': 'native',
                'files': 0, 'filesVerified': False, 'archiveInstalled': False,
@@ -131,9 +148,12 @@ class Installer(Domain):
                'downloadStatusVerified': False,
                'nativeMetadataSaved': False,
                'installationComplete': False, 'provenanceSaved': False,
-               'refreshRequested': False, 'undo': None}
+               'refreshRequested': False, 'undo': None,
+               'checks': {key: 'not-run' for key in ('payloadInventory', 'payloadHashes',
+                    'nativeMetadata', 'downloadSidecar', 'downloadModel', 'provenance')}}
         touched, owned = False, False
         original_download = {}
+        stage = 'native-start'
         try:
             def perform():
                 nonlocal touched
@@ -154,6 +174,7 @@ class Installer(Domain):
                 return nativeinstall.install(self.o, arc, name, files,
                     poll_ms=int(self.cfg.get('nativeInstallPollMs')))
             mod, native_receipt = self.run_main(perform)
+            stage = 'native-return'
             res['native'] = native_receipt
             if mod is None:
                 raise RuntimeError(i18n.t('err.nativeInstall', reason='no-mod'))
@@ -162,19 +183,33 @@ class Installer(Domain):
                 raise RuntimeError(i18n.t('err.nativeInstall', reason='target-mismatch'))
             owned = True  # A confirmed native result, not a concurrent folder's existence.
             res['created'] = True
+            stage = 'payload-inventory'
             wanted = {r['destination'].replace('/', os.sep).lower() for r in manifest}
             actual = tree_files(target) - {'meta.ini'}
+            missing, extra = sorted(wanted - actual), sorted(actual - wanted)
+            res['payloadInventory'] = {'expectedCount': len(wanted), 'observedCount': len(actual),
+                'missingCount': len(missing), 'extraCount': len(extra),
+                'missing': missing[:max(0, self.limit())], 'extra': extra[:max(0, self.limit())]}
+            res['checks']['payloadInventory'] = 'mismatch' if missing or extra else 'verified'
             if actual != wanted:
                 raise RuntimeError(i18n.t('err.nativeInstall', reason='payload-inventory'))
+            stage = 'payload-hash'
+            res['checks']['payloadHashes'] = 'checking'
             for row in manifest:
                 dest = os.path.join(target, *row['destination'].split('/'))
                 if not inside(target, dest) or file_sha256(dest) != row['sha256']:
+                    res['checks']['payloadHashes'] = 'mismatch'
                     raise RuntimeError(i18n.t('err.nativeInstall', reason='payload-hash'))
+            res['checks']['payloadHashes'] = 'verified'
+            stage = 'archive-recheck'
             if file_sha256(arc) != expected.lower():
                 raise RuntimeError(i18n.t('err.archiveHash'))
             res.update(files=len(manifest), filesVerified=True)
 
             def finish():
+                nonlocal stage
+                stage = 'native-metadata'
+                res['checks']['nativeMetadata'] = 'checking'
                 self.ctx.expected(body)
                 if self.guard.refusal('op.install'):
                     raise RuntimeError(i18n.t('err.installRefresh'))
@@ -230,6 +265,9 @@ class Installer(Domain):
                 if mod_id > 0 and file_id > 0:
                     if (mod_id, file_id) not in installed_pairs:
                         raise RuntimeError(i18n.t('err.nativeInstall', reason='installed-file-identity'))
+                res['checks']['nativeMetadata'] = 'verified'
+                stage = 'download-sidecar'
+                res['checks']['downloadSidecar'] = 'checking'
                 download = QSettings(arc + '.meta', QSettings.Format.IniFormat)
                 res['archiveMetadataPreserved'] = all(
                     download.contains(key) and download.value(key) == value
@@ -243,10 +281,14 @@ class Installer(Domain):
                     not download.value('uninstalled', False, type=bool))
                 if not res['archiveInstalled']:
                     raise RuntimeError(i18n.t('err.nativeInstall', reason='download-accounting'))
+                res['checks']['downloadSidecar'] = 'verified'
+                stage = 'download-model'
+                res['checks']['downloadModel'] = 'checking'
                 res['downloadStatus'] = nativeinstall.refresh_downloads(self.o, arc)
                 res['downloadStatusVerified'] = res['downloadStatus'].get('verified') is True
                 if not res['downloadStatusVerified']:
                     raise RuntimeError(i18n.t('err.nativeInstall', reason='download-model-unverified'))
+                res['checks']['downloadModel'] = 'verified'
                 self.ctx.expected(body)
                 if self.guard.refusal('op.refresh'):
                     raise RuntimeError(i18n.t('err.installRefresh'))
@@ -258,6 +300,8 @@ class Installer(Domain):
                     'version': mod.version().displayString(), 'nexusId': mod.nexusId(),
                     'gameName': mod.gameName(),
                     'installedFiles': [{'modId': m, 'fileId': f} for m, f in installed_pairs]}
+                stage = 'provenance-save'
+                res['checks']['provenance'] = 'checking'
                 encoded = json.dumps(provenance, ensure_ascii=False, sort_keys=True)
                 if not mod.setPluginSetting(PLUGIN_ID, 'installProvenance', encoded):
                     raise RuntimeError(i18n.t('err.nativeInstall', reason='provenance-write'))
@@ -267,6 +311,8 @@ class Installer(Domain):
                         metadata.status() != QSettings.Status.NoError):
                     raise RuntimeError(i18n.t('err.nativeInstall', reason='provenance-readback'))
                 res['provenanceSaved'] = True
+                res['checks']['provenance'] = 'verified'
+                stage = 'refresh'
                 self.o.refresh(True)
                 res['refreshRequested'] = True
             self.run_main(finish)
@@ -276,7 +322,10 @@ class Installer(Domain):
             if not touched:
                 raise
             res.update(applied=False, failed=True, partial=True, error=str(exc),
-                       reconciliationRequired=True)
+                       reconciliationRequired=True, failureStage=stage)
+            for key, state in res['checks'].items():
+                if state == 'checking':
+                    res['checks'][key] = 'error'
             if getattr(exc, 'receipt', None):
                 res['native'] = exc.receipt
             res['targetExists'] = os.path.isdir(target)

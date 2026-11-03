@@ -17,6 +17,15 @@ from . import i18n
 
 _RESERVED_NAMES = frozenset({'CON', 'PRN', 'AUX', 'NUL'} | {
     prefix + str(n) for prefix in ('COM', 'LPT') for n in range(1, 10)})
+_FOMOD_CONTROL_FILES = frozenset({'moduleconfig.xml', 'info.xml', 'script.cs'})
+
+
+class SelectionError(ValueError):
+    """A localized mapping refusal with bounded, path-free diagnostic fields."""
+
+    def __init__(self, reason, index=None):
+        self.reason, self.index = reason, index
+        super().__init__(i18n.t('err.installFiles'))
 
 
 def selection_mappings(values):
@@ -26,24 +35,40 @@ def selection_mappings(values):
     Reject file/directory collisions and MO2/installer metadata before any writes.
     """
     if not isinstance(values, list) or not values:
-        raise ValueError(i18n.t('err.installFiles'))
+        raise SelectionError('invalid-files')
     result, destinations = [], set()
-    for value in values:
+    for index, value in enumerate(values):
         if not isinstance(value, dict) or set(value) != {'source', 'destination'}:
-            raise ValueError(i18n.t('err.installFiles'))
-        source = archive_member(value['source'])
-        destination = archive_member(value['destination'])
+            raise SelectionError('invalid-mapping', index)
+        try:
+            source = archive_member(value['source'])
+        except ValueError:
+            raise SelectionError('unsafe-source', index) from None
+        try:
+            destination = archive_member(value['destination'])
+        except ValueError:
+            raise SelectionError('unsafe-destination', index) from None
+        source_parts = source.casefold().split('/')
         key = destination.casefold()
         parts = key.split('/')
-        if (key in destinations or 'meta.ini' in parts or 'fomod' in parts
-                or parts[0] == 'ini tweaks' or source.casefold() == 'meta.ini'
-                or source.split('/')[0].casefold() == 'fomod'):
-            raise ValueError(i18n.t('err.installFiles'))
+        # FOMOD is also a legitimate author asset directory. Refuse its known
+        # installer controls, not explicitly selected runtime payload beneath it.
+        if ('meta.ini' in source_parts or source_parts[-1] == 'fomod'
+                or ('fomod' in source_parts[:-1]
+                    and source_parts[-1] in _FOMOD_CONTROL_FILES)):
+            raise SelectionError('metadata-source', index)
+        if 'meta.ini' in parts or 'fomod' in parts:
+            raise SelectionError('metadata-destination', index)
+        if parts[0] == 'ini tweaks':
+            raise SelectionError('ini-tweaks-destination', index)
+        if key in destinations:
+            raise SelectionError('duplicate-destination', index)
         destinations.add(key)
         result.append({'source': source, 'destination': destination})
-    if any('/'.join(parts[:index]) in destinations for path in destinations
-           for parts in [path.split('/')] for index in range(1, len(parts))):
-        raise ValueError(i18n.t('err.installFiles'))
+    for index, row in enumerate(result):
+        parts = row['destination'].casefold().split('/')
+        if any('/'.join(parts[:end]) in destinations for end in range(1, len(parts))):
+            raise SelectionError('destination-file-directory-collision', index)
     return result
 
 

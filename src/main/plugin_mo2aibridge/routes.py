@@ -33,6 +33,9 @@ def build(svc):
     post = {
         '/refresh': svc.refresh,
         '/install': svc.install,
+        # Read-only audits accept JSON selections; POST does not imply installation.
+        '/install/preview': svc.install_preview,
+        '/install/verify': svc.install_verify,
         '/toggle': svc.toggle,
         '/plugins/state': svc.plugins_state,
         '/plugins/order': svc.plugins_order,

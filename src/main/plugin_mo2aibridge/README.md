@@ -2,6 +2,13 @@
 
 ## Changes in candidate 2.3.7
 
+- Explicit native selections may use original game files stored under `fomod/`.
+  Installer controls and MO2 metadata remain excluded; destination and archive guards stay.
+- `POST /install/preview` checks the exact native selection before installation.
+  `POST /install/verify` independently checks an existing selection without reinstalling,
+  saving provenance, refreshing Downloads or rewriting a prior failed operation.
+- Partial native failures add `failureStage`, per-check states and bounded inventory
+  differences. A check not reached is distinct from a mismatch; strict checks stay strict.
 - Failed worker creation/start is a terminal, replayable operation. A retry of a pending
   operation returns HTTP202 immediately instead of occupying another long-wait handler.
 - One MO2-lifetime owner excludes overlapping Bridge setup changes and launches for the
@@ -155,6 +162,8 @@ The token is supplied by the wrapper and omitted below for brevity.
 |---|---|---|
 | `/refresh` | — | re-read `mods\` and the profile |
 | `/install` | `archive`, `name`; legacy: `paths`, `mode`; native: `native`, `archiveSha256`, `files`, `selection` | install an explicit selection; native accounting requires the opt-in backend described below. Legacy `replace` is **irreversible** and needs the key |
+| `/install/preview` | same explicit native selection as `/install` | read-only preflight, no target creation or native install; private scratch extraction only |
+| `/install/verify` | same explicit native selection, existing `name` | current-state verification without writes to the setup, installation or provenance |
 | `/toggle` | `mod`, `active` | enable or disable a mod |
 | `/plugins/state` | `set`, `apply` | enable or disable plugins in bulk |
 | `/plugins/order` | `order`, `apply` | set full priority order, persist native lists and await verified refresh |
@@ -474,6 +483,10 @@ option does not validate compatibility.
 Every mapping needs an existing source file and an unambiguous relative destination; absolute
 paths, traversal, duplicate destinations and file/directory collisions are refused. FOMOD,
 `meta.ini` and MO2 INI Tweaks are not payload destinations.
+Sources may be original game files beneath `fomod/`, including animation/config payloads.
+Selecting MO2 `meta.ini` components or FOMOD `ModuleConfig.xml`, `info.xml` or `script.cs`
+as runtime payload is refused. The configuration XML may still be read for provenance;
+it is never installed. Source names and original archive bytes are not rewritten.
 One source may map to several distinct destinations, as in a FOMOD which uses the same mesh
 for both weight variants. Each destination is verified independently. Technical archive
 listings preserve empty directory fields, including a final empty `Block` value; malformed
@@ -503,7 +516,7 @@ flushes MO2's dirty native metadata; QSettings synchronization alone cannot do s
 is saved only after strict source-ID and Downloads verification. A checkpoint is
 historical stage evidence with `installationComplete: false`, never a success receipt.
 
-Offline checks in `tests/test_native_adapter.py` and `tests/test_install_accounting.py` use a
+Offline checks in `src/test/test_native_adapter.py` and `src/test/test_install_accounting.py` use a
 mocked native adapter/pipeline. A native refusal or unavailable capability remains visible,
 with no automatic fallback to the legacy copy backend.
 The current Downloads adapter is gated to the source-verified MO2 2.5.2 interface and controls.
@@ -515,6 +528,54 @@ semantics. Its result has `backend: "copy"`, `installationComplete: false`,
 `archiveInstalled: false` and `accountingRequired: true`. Here `archiveInstalled: false` means
 source accounting is unverified, not proof that MO2 considers the archive uninstalled. Successful
 copying alone must not be reported as a completed MO2 installation.
+
+### Preview and verify an exact native selection (candidate 2.3.7)
+
+Send the same explicit JSON body shown above to `POST /install/preview` before
+installing a new target. This is advisory and read-only with respect to the setup:
+it reads/hash-checks the original archive, extracts selected members into owned
+scratch, observes target availability, companion support and expected context,
+then repeats context/archive observations. It does not call the native installer,
+refresh Downloads, create a mod or reserve the name. `ready:true` describes those
+observations; `/install` must perform its own fresh preflight. A whole batch can
+preview each item, but this is not an atomic batch transaction or collision reservation.
+
+`accepted`, `ready`, `verified`, `phase` and `checks` have separate meanings.
+Checks use `verified`, `mismatch`, `unavailable` or `not-run`. A validation refusal
+includes `refusal.phase`, a fixed `reason` and, for a mapping error, its zero-based
+`index`. No raw sidecar values or exception details are copied into the refusal.
+Scratch extraction is disclosed separately; read-only does not mean no temporary IO
+or HTTP operation bookkeeping.
+
+For an existing target, send the explicit body to `POST /install/verify`. This
+produces **new current-state evidence**, not a successful installation response.
+`verified:true` requires an exact selected inventory and payload sizes/hashes,
+the pinned original archive, positive source mod/file IDs, native association/
+version/game/installedFiles, sidecar accounting and a passive exact native
+DownloadList Installed row. A sidecar flag alone is insufficient. Missing evidence
+or an unavailable native adapter prevents verification. Unknown/local sources
+without those source identities need a separate import workflow.
+
+Verification does not reinstall, click refresh, save checkpoint/provenance, change
+the setup or rewrite any earlier operation. `installationComplete:false` and
+`provenanceCreated:false` stay explicit even on successful current verification.
+If supplied, `originalOperationId` refers to a server-generated operation ID from
+`/operations`, not a client retry key. Available original outcome summaries remain
+unchanged; `requestBinding:not-verified` means the new selection is not proven to
+be the historical request. Callers retain the original failed receipt and link it
+to this new evidence themselves. Missing old-boot records are not reconstructed.
+Private metadata preservation cannot be proved without original fingerprints;
+the verifier explicitly leaves that claim unverified and never exports private fields.
+
+All evidence is observational. Snapshot matching is not native/disk atomicity or
+external-writer tracking; an unobserved intermediate change can remain undetected.
+Bridge mutation overlap or detected context/target divergence prevents readiness/
+verification. This API does not qualify runtime compatibility or game behavior.
+
+Future partial `/install` failures include `failureStage`, `checks` and bounded
+`payloadInventory` missing/extra counts and samples. `not-run` means a check was
+never reached. Keep that original failure; do not retry installation to discover
+whether the files eventually settled.
 
 ### Agent checklist: archive, dependencies, selection, verification
 
@@ -867,6 +928,7 @@ The defaults contain no machine-specific paths: the `7z.exe` candidates are asse
 | `busy.py` | domain | MO2 busy state: run bookkeeping and the three lock sources |
 | `reading.py` | domain | reading state and the virtual Data |
 | `install.py` | domain | installing a mod: fresh, merge, replace |
+| `installationaudit.py` | read-only domain | advisory selected-native preview and independent current-state verification; no install, refresh or provenance writes |
 | `archives.py` | archive boundary | pure path/listing/selection plans; `ArchiveExtractor` owns 7-Zip and scratch cleanup |
 | `provenance.py` | pure policy | historical receipt comparison, without IO or current-byte certification |
 | `nativeinstall.py` | MO2 installer | one-use explicit selection through MO2's original-archive installation pipeline |

@@ -53,7 +53,7 @@ FOREIGN_RUN = {'C:' + chr(92) + 'x' + chr(92) + 'foo.exe': {'n': 1, 'mine': Fals
 GET_ROUTES = ['/ping', '/api', '/mods', '/mod', '/analyze', '/profiles', '/plugins', '/vfs',
               '/origins', '/resolve', '/dirs', '/procs', '/windows', '/updates',
               '/session', '/operations', '/profiles/capabilities']
-POST_ROUTES = ['/refresh', '/install', '/toggle', '/plugins/state', '/plugins/order',
+POST_ROUTES = ['/refresh', '/install', '/install/preview', '/install/verify', '/toggle', '/plugins/state', '/plugins/order',
                '/vfsexport', '/run', '/window', '/mods/priority', '/mods/rename',
                '/mods/remove', '/profiles/rename', '/profiles/clone', '/profiles/select', '/profiles/local']
 # Routes that must refuse while MO2 is busy (README, "While the game is running")

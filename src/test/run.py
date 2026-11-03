@@ -26,6 +26,7 @@ SUITES = ['test_sources.py', 'test_busy_logic.py', 'test_i18n.py', 'test_policy.
           'test_contract_offline.py', 'test_transport_offline.py', 'test_mutation_failures.py',
           'test_patch234.py', 'test_native_adapter.py', 'test_install_accounting.py',
           'test_order_persistence.py', 'test_archive_listing.py', 'test_provenance.py',
+          'test_installation_audit.py',
           'test_rar_archives.py', 'test_archive_resources.py', 'test_plugin_state_bytes.py',
           'test_launch_validation.py', 'test_update_targets.py', 'test_busy_state.py',
           'test_mod_removal.py', 'test_modui.py',

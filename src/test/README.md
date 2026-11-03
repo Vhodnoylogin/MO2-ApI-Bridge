@@ -154,3 +154,19 @@ pacing and a real Qt queue-stall counterexample. `test_snapshot_contract.py`
 checks supplied target guards and truthful observed divergence. Removal tests
 retain selected-install evidence and ensure malformed native receipts cannot
 make a destructive outcome unencodable. No installed manager or Nexus is accessed.
+
+## Foundation selection and current-state verification
+
+`test_archive_resources.py` covers synthetic1833-member FOMOD selections, original
+member names, excluded alternatives, Windows/archive link/collision guards,
+indexed path-free mapping refusals and actual selected extraction with7-Zip.
+`test_install_accounting.py` retains strict checkpoint/provenance/Installed ordering
+and adds nestedFOMOD native-adapter inputs plus safe inventory/hash failure stages.
+
+`test_installation_audit.py` exercises advisory preview and independent verification
+over disposable fake-host files and real QSettings/7-Zip/Qt when available. A separate
+passive DownloadList fixture checks exact path identity without refresh/filter changes.
+The verifier preserves original failed outcomes and missing provenance, rejects
+extra/corrupt payload, wrong/missing IDs, changed context/archive and active Bridge
+mutations. Neither these fixtures nor successful real archive extraction constitute
+native MO2 installation acceptance.
