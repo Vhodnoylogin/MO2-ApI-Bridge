@@ -93,6 +93,10 @@ for calculations. `ArchiveExtractor` owns process/scratch lifecycle; `Installer`
 coordinates native/copy installation; `Reader` snapshots host state and attaches
 metadata evidence. Retain the Services facade and existing HTTP contracts.
 
+Historical receipt decoding rejects nonfinite numbers, including exponent overflow,
+without discarding raw evidence. Pre-delete JSON checks use allow_nan=False; Python's
+default NaN/Infinity output is not interoperable JSON. Keep this check before removal.
+
 ## 4. The two locks
 
 **Busy lock.** While a game or tool runs under MO2, the virtual `Data` is mounted into another

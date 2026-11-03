@@ -102,9 +102,6 @@ class ModUiTests(unittest.TestCase):
                     dialog.setIcon(QMessageBox.Icon.Warning)
                 if owner.mode == 'changed-order':
                     QTimer.singleShot(0, lambda: owner.names.reverse())
-                if owner.mode == 'cancel':
-                    QTimer.singleShot(1, lambda: dialog.button(
-                        QMessageBox.StandardButton.No).click())
                 if owner.mode == 'finished-reindex':
                     def reindex(result):
                         owner.finished_observed.append(result)
@@ -118,7 +115,16 @@ class ModUiTests(unittest.TestCase):
                 watchdog.start(500)
                 if owner.mode == 'unowned-wrong-text':
                     watchdog.start(50)
-                result = dialog.exec()
+                if owner.mode == 'cancel':
+                    # Model the user's No synchronously. Competing 1ms/20ms
+                    # timers depend on cold dialog construction and scheduler
+                    # timing, not on whether native True proves removal.
+                    # Other cases exercise the real nested exec/adapter poll.
+                    dialog.open()
+                    dialog.button(QMessageBox.StandardButton.No).click()
+                    result = dialog.result()
+                else:
+                    result = dialog.exec()
                 watchdog.stop()
                 owner.dialog_results.append(result)
                 dialog.deleteLater()

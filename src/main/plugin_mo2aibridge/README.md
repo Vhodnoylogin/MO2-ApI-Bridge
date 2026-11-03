@@ -2,6 +2,9 @@
 
 ## Changes in candidate 2.3.7
 
+- Historical receipts with NaN/Infinity or overflowing numbers remain raw malformed
+  evidence. Removal and operation polling stay valid JSON; non-encodable native
+  card values are refused before deletion.
 - Documentation and read-only client examples distinguish master membership,
   physical MAST sequence and full plugin order; the `masters` API stays unchanged.
 - Explicit native selections may use original game files stored under `fomod/`.

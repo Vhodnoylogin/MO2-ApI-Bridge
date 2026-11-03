@@ -145,6 +145,16 @@ RAR4/RAR5 checks in test_rar_archives.py generate self-authored STORE fixtures, 
 
 ## Candidate 2.3.7 lifecycle regressions
 
+`profile_preservation.py` compares caller-captured bytes of every disposable
+profile, including inactive profiles, after selection, normal close and restart.
+Only explicitly named new disabled catalogue rows may be projected out of
+modlist.txt; original names/flags/order/comments/BOM/EOL and every other file
+remain exact. Missing/extra files, duplicate identities, unknown/active additions
+and empty snapshots never pass. It performs no IO or restoration and does not
+establish the responsible native writer. `test_profile_preservation.py` checks
+these contracts with synthetic bytes. Live acceptance must capture actual bytes
+at each phase; these offline tests cannot certify native profile preservation.
+
 `test_operation_lifecycle.py` uses real Qt with a fake host: failed scheduling,
 immediate pending replay, mutation exclusion, nested-event lease retention,
 post-stop reconciliation/draining, retained old-boot outcomes, bounded redacted

@@ -144,11 +144,43 @@ class Removal(unittest.TestCase):
             self.assertIsNone(result['reversal']['nativeReinstall'])
 
     def assert_pollable(self, result):
-        json.dumps(result, ensure_ascii=False).encode('utf-8')
+        json.dumps(result, ensure_ascii=False, allow_nan=False).encode('utf-8')
         status = self.svc.ctx.operations.status(result['operation']['id'])
-        json.dumps(status, ensure_ascii=False).encode('utf-8')
+        json.dumps(status, ensure_ascii=False, allow_nan=False).encode('utf-8')
         self.assertTrue(status['terminal'])
         return status
+
+    def test_nonfinite_receipt_survives_removal_and_polling_as_raw_malformed_evidence(self):
+        original = self.selected_record()
+        prefix = json.dumps(original)[:-1] + ', "foreignValue": '
+        for value in ('NaN', 'Infinity', '-Infinity', '1e309', '-1e309'):
+            raw = prefix + value + '}'
+            with self.subTest(value=value), patch.object(fake_mo2.FakeMod, 'pluginSetting',
+                                                         return_value=raw, create=True):
+                # Each destructive attempt has its own disposable setup/outcome.
+                if not os.path.isdir(self.fx.mod_path('Alpha Mod')):
+                    target = self.o.createMod(fake_mo2.GuessedString('Alpha Mod'))
+                    self.assertIsNotNone(target)
+                code, result = self.call(idempotencyKey='nonfinite-' + value)
+                self.assertEqual(code, 200, result)
+                self.assertTrue(result['removalComplete'])
+                self.assertFalse(os.path.exists(self.fx.mod_path('Alpha Mod')))
+                self.assertEqual(result['card']['installProvenanceRaw'], raw)
+                self.assertIsNone(result['card']['installProvenance'])
+                self.assertEqual(result['card']['installProvenanceStatus']['state'], 'malformed')
+                self.assertIsNone(result['reversal']['nativeReinstall'])
+                self.assert_pollable(result)
+
+    def test_nonfinite_native_card_refuses_before_destructive_call(self):
+        for value in (float('nan'), float('inf'), -float('inf')):
+            with self.subTest(value=value), patch.object(fake_mo2.FakeMod, 'comments',
+                                                         return_value=value), \
+                    patch.object(self.svc.modops, 'remove_native') as remove:
+                code, result = self.call(idempotencyKey='bad-comment-' + str(value))
+                self.assertEqual(code, 400, result)
+                remove.assert_not_called()
+                self.assertTrue(os.path.isdir(self.fx.mod_path('Alpha Mod')))
+                self.assert_pollable(result)
 
     def assert_binary_receipt_removal(self, raw, native_type):
         with patch.object(fake_mo2.FakeMod, 'pluginSetting', return_value=raw, create=True):

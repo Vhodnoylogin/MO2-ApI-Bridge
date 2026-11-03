@@ -453,7 +453,8 @@ class FakePluginList(object):
         """The first read of the profile's plugins.txt: the order of the lines and the asterisks."""
         path = os.path.join(self._o.profile().absolutePath(), 'plugins.txt')
         try:
-            raw = io.open(path, encoding='utf-8-sig', newline='').read()
+            with io.open(path, encoding='utf-8-sig', newline='') as stream:
+                raw = stream.read()
         except OSError:
             return
         order, active = [], {}
@@ -682,7 +683,8 @@ class FakeOrganizer(object):
         path = os.path.join(self.profilePath(), 'modlist.txt')
         ordered = []
         try:
-            raw = io.open(path, encoding='utf-8-sig').read()
+            with io.open(path, encoding='utf-8-sig') as stream:
+                raw = stream.read()
         except OSError:
             raw = ''
         for line in raw.splitlines():

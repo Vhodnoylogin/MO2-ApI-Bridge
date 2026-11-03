@@ -1,6 +1,26 @@
 # -*- coding: utf-8 -*-
 """Pure assessment of historical installation evidence; no IO or organizer access."""
+import json
+import math
 import ntpath
+
+
+def _invalid_number(value):
+    raise ValueError('nonfinite receipt number')
+
+
+def _finite_float(value):
+    number = float(value)
+    return number if math.isfinite(number) else _invalid_number(value)
+
+
+def decode_provenance(raw):
+    """Decode historical JSON without introducing non-JSON floating values.
+
+    Reject both Python's NaN/Infinity extensions and exponent overflow. The
+    caller retains the original raw native value when assessment is malformed.
+    """
+    return json.loads(raw, parse_constant=_invalid_number, parse_float=_finite_float)
 
 
 def provenance_status(record, current, installed_files=None, metadata_error=None, limit=200):

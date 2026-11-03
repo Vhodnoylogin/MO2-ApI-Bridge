@@ -434,6 +434,6 @@ class ModOps(Domain):
         # In particular, a foreign native value must never leave deletion successful
         # but its operation result impossible to return or poll.
         try:
-            json.dumps(card, ensure_ascii=False).encode('utf-8')
+            json.dumps(card, ensure_ascii=False, allow_nan=False).encode('utf-8')
         except (TypeError, ValueError, OverflowError):
             raise ValueError(i18n.t('err.receiptEncoding')) from None

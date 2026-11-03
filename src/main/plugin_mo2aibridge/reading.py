@@ -14,7 +14,7 @@ import mobase
 
 from . import i18n
 from .base import Domain, one, safe
-from .provenance import provenance_status
+from .provenance import decode_provenance, provenance_status
 
 
 def diagnostic_error(report, phase, path, error, limit):
@@ -70,7 +70,7 @@ def read_provenance(raw, current, path, limit, unavailable=False):
         record, record_error = None, None
     else:
         try:
-            record, record_error = json.loads(raw), None
+            record, record_error = decode_provenance(raw), None
         except Exception:
             record, record_error = None, 'invalid-json'
     installed_files, metadata_error = None, None

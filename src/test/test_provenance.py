@@ -115,6 +115,18 @@ class Binding(unittest.TestCase):
         self.assertEqual(reading.provenance_status(record, current_metadata(), None)['state'],
                          'unknown')
 
+    def test_nonfinite_receipt_numbers_are_malformed_including_exponent_overflow(self):
+        for value in ('NaN', 'Infinity', '-Infinity', '1e309', '-1e309'):
+            for raw in (value, '{"schemaVersion":1,"nested":[{"value":' + value + '}]}'):
+                with self.subTest(raw=raw):
+                    record, status = reading.read_provenance(raw, current_metadata(), '', 2)
+                    self.assertIsNone(record)
+                    self.assertEqual(status['state'], 'malformed')
+                    self.assertEqual(status['reasons'], ['invalid-json'])
+        raw = '{"schemaVersion":1,"nested":[1.5,1e100,"NaN","Infinity"]}'
+        record, _ = reading.read_provenance(raw, current_metadata(), '', 2)
+        self.assertEqual(record['nested'], [1.5, 1e100, 'NaN', 'Infinity'])
+
     def test_json_and_shape_handling_preserves_existing_decoded_contract(self):
         for raw, want_record, state in (('null', None, 'absent'), (None, None, 'absent'),
                                         ('{broken', None, 'malformed'), ('[]', [], 'malformed'),
