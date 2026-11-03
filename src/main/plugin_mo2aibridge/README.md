@@ -2,6 +2,8 @@
 
 ## Changes in candidate 2.3.7
 
+- Documentation and read-only client examples distinguish master membership,
+  physical MAST sequence and full plugin order; the `masters` API stays unchanged.
 - Explicit native selections may use original game files stored under `fomod/`.
   Installer controls and MO2 metadata remain excluded; destination and archive guards stay.
 - `POST /install/preview` checks the exact native selection before installation.
@@ -180,6 +182,47 @@ The token is supplied by the wrapper and omitted below for brevity.
 
 An unknown path returns 404 together with both tables listed separately — half of all mistakes are
 a read sent as a POST, or the other way round.
+
+### Master membership, file MAST sequence and plugin order
+
+`GET /plugins` returns `masters` exactly as MO2 reports it. This is the required
+master membership, **not a promise of the original TES4 MAST sequence**. MO2 2.5.2
+stores these names in a `std::set` and builds its API list in comparator order.
+Bridge preserves that list; it does not parse an ordered header for this field.
+[Exact-version implementation](https://github.com/ModOrganizer2/modorganizer/blob/9c130cbf2fc7225fb2916e46419af50671772aa0/src/pluginlist.cpp#L947-L959).
+
+Keep three checks separate:
+
+1. Compare API/file required-master membership using unique case-insensitive
+   filenames. Reject duplicates and missing/extra names. Different array order
+   alone is not a membership failure. Retain both original sequences; normalize
+   only derived comparison keys and never overwrite evidence to make it match.
+2. Read the ordered TES4 MAST sequence from the actual resolved plugin bytes when
+   header order is required. Pin the file/VFS winner and hashes independently;
+   neither membership equality nor an API list certifies those bytes.
+3. Validate the complete known plugin priority order and activation separately,
+   including disabled plugins. For each ACTIVE dependent, its actual file masters
+   must be present, active and earlier in native `loadOrder`. Inactive dependents
+   do not require their masters active for the current run. Disabled `loadOrder`
+   is `-1`; use `priority` to recover their place in the full order. `/plugins`
+   response-row order is not the full priority order: inactive rows come afterward.
+
+[Read-only client examples](https://github.com/Vhodnoylogin/MO2-ApI-Bridge/blob/develop/src/test/examples/master_checks.py)
+provide three pure checks. With an untouched `/plugins` response, independently
+read file headers and a caller-owned expected FULL order:
+
+```python
+membership = [compare_master_membership(row['masters'], file_mast[row['plugin']])
+              for row in native_rows]
+edges = active_master_issues(native_rows, file_mast)
+order = compare_priority_order(native_rows, expected_full_order)
+```
+
+Require every `membersMatch`, no active-edge issues and `orderMatch`; keep byte,
+activation, master-tier and runtime-compatibility checks as separate evidence.
+The examples do not read files, contact Bridge or certify a complete setup. A
+client-verifier error remains its original failed result; correcting its comparison
+does not turn an earlier phase into success. The `masters` response shape is unchanged.
 
 ### Plugin order persistence (2.3.5)
 

@@ -137,6 +137,7 @@ Every line here is a past failure. The reason is given so nobody is tempted to s
 | native removal | source ModList model instead of public `IModList.removeMod` | the public method omits profile-index repair and download-uninstalled signals; saving the stale profile produced an error dialog and API stall |
 | native install checkpoint | explicitly incomplete model setting before ID readback | addInstalledFile dirties MO2's model without saving meta.ini; QSettings cannot flush it, and final provenance must not be saved before strict verification |
 | `isActive()` | a lenient check instead of `is True` | the "Enabled" checkbox in MO2 2.5 is the manager's own switch, not a setting named `enabled`: `pluginSetting` returns `None` for it, so a strict comparison never passed |
+| `/plugins` masters array | keep MO2's order instead of making it mimic file MAST | MO2 2.5.2 derives it from a set. Compare unique membership; read actual file MAST independently and validate active dependency edges/full plugin priority separately. Preserve raw evidence |
 | `__init__.py` | `mobase` imported lazily, inside the factory | otherwise `from mo2aibridge import i18n` stops working outside MO2, and every offline check depends on that |
 | `runtime.Server` | `allow_reuse_address = False` | `HTTPServer` sets it to 1, and on Windows that allows binding to an already-listening address: a second bridge started silently and received nothing |
 | `src/test/` | sits **outside** the package and finds it by `__init__.py` | it must not search by name — the names differ on purpose |

@@ -170,3 +170,13 @@ The verifier preserves original failed outcomes and missing provenance, rejects
 extra/corrupt payload, wrong/missing IDs, changed context/archive and active Bridge
 mutations. Neither these fixtures nor successful real archive extraction constitute
 native MO2 installation acceptance.
+
+## Client master checks
+
+`examples/master_checks.py` separates unique case-insensitive master membership,
+actual-file active dependency edges and expected full plugin priority order,
+including disabled plugins. Raw API/file sequences remain unchanged. It performs
+no HTTP, filesystem or manager operations and does not verify VFS bytes or runtime
+compatibility. `test_master_examples.py` covers order-only differences, duplicates,
+real missing/extra names, missing/inactive/late masters, disabled dependents,
+disabled full-order positions and ambiguous snapshots over synthetic inputs.
