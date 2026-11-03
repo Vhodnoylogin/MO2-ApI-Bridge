@@ -226,6 +226,36 @@ class InstallAuditTests(unittest.TestCase):
         self.assertFalse(result['verified'])
         self.assertEqual(check(result, 'payload-hashes')['state'], 'mismatch')
 
+    def test_ordinary_inactive_import_after_400_keeps_refusal_and_absent_provenance(self):
+        # Synthetic equivalent of a separately completed native wizard after a
+        # selection-validation refusal; no original user POST or payload is replayed.
+        body = dict(self.body, operationId='original-validation-refusal',
+                    expectedServerBootId=self.svc.ctx.boot_id)
+
+        def refused(_body):
+            raise ValueError('synthetic-original-selection-refusal')
+
+        code, failed = self.svc.ctx.operations.invoke('/install', body, refused)
+        self.assertEqual(code, 400)
+        identifier = failed['operation']['id']
+        original = json.dumps(self.svc.ctx.operations.status(identifier), sort_keys=True)
+        self.make_target()
+        self.assertFalse(self.svc.reader.native_identity(self.body['name'])['target']['active'])
+        result = self.assert_no_writes(lambda: self.svc.install_verify(
+            dict(self.body, originalOperationId=identifier)))
+        self.assertTrue(result['verified'], result)
+        self.assertFalse(result['installationComplete'])
+        self.assertFalse(result['provenanceCreated'])
+        self.assertEqual(result['originalOperation']['outcome']['httpStatus'], 400)
+        for key in ('failed', 'partial', 'installationComplete', 'reconciliationRequired'):
+            self.assertNotIn(key, result['originalOperation']['outcome'])
+        self.assertEqual(json.dumps(self.svc.ctx.operations.status(identifier), sort_keys=True),
+                         original)
+        metadata = settings(os.path.join(self.target, 'meta.ini'))
+        for key in ('installCheckpoint', 'installProvenance'):
+            self.assertFalse(metadata.contains('Plugins/mo2aibridge/' + key))
+        self.assertFalse(self.svc.reader.native_identity(self.body['name'])['target']['active'])
+
     def test_wrong_or_missing_installed_file_id_fails_without_creating_provenance(self):
         self.make_target(file_id=999)
         result = self.assert_no_writes(lambda: self.audit.verify(self.body))
