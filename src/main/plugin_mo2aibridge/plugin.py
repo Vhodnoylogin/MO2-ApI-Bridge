@@ -17,6 +17,7 @@ been written is journal.py's business.
 """
 import os
 import traceback
+import weakref
 
 import mobase
 
@@ -108,6 +109,7 @@ class MO2ApIBridge(mobase.IPluginTool):
         self._order_refresh = loadorder.OrderRefresh()
         self._mutations = operations.MutationOwner()
         self._retired = operations.RetiredOperations()
+        self._runners = weakref.WeakSet()
 
     # ---- the MO2 interface -------------------------------------------------
     def init(self, organizer):
@@ -271,6 +273,8 @@ class MO2ApIBridge(mobase.IPluginTool):
         port and no record - from outside that is indistinguishable from "the plugin never
         loaded at all".
         """
+        if self._quitting:
+            return i18n.t('err.runnerClosed')
         if self._server:
             return None
         if not self.isActive():
@@ -285,6 +289,7 @@ class MO2ApIBridge(mobase.IPluginTool):
             wanted = int(self._setting('port', cfg.get('port')) or cfg.get('port'))
             token = runtime.new_token()
             self._runner = runtime.MainThreadRunner(limit=cfg.get('mainThreadJobLimit'))
+            self._runners.add(self._runner)
             svc = self._svc = Services(self._organizer, self._runner.call, DOCS,
                                        note=log, cfg=cfg, launches=self._launches,
                                        order_refresh=self._order_refresh,
@@ -334,6 +339,11 @@ class MO2ApIBridge(mobase.IPluginTool):
         """Release host-lifetime evidence only when MO2 itself is leaving."""
         self._quitting = True
         self.stop()
+        # A manual HTTP stop may still own an old runner through a draining worker.
+        # Host exit must cancel its queued continuations too, without retaining
+        # every completed HTTP boot or joining a worker on Qt.
+        for runner in self._runners:
+            runner.close()
         self._launches.reset()
         self._launches.set_starting(False)
         self._order_refresh.cancel()

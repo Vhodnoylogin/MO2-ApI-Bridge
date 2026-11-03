@@ -215,6 +215,40 @@ class Lifecycle(unittest.TestCase):
             launcher.close()
             self.assertEqual(closed, [900])
 
+    def test_host_quit_cancels_retired_runners_after_manual_http_stop(self):
+        bridge = plugin.MO2ApIBridge()
+        bridge._organizer = self.fx.organizer
+        bridge._runners.add(self.runner)
+        svc = plugin.Services(self.fx.organizer, self.runner.call, '',
+                              cfg=config.Config({'operationWaitSec': 0.01}),
+                              mutations=bridge._mutations, retired=bridge._retired)
+        bridge._svc, bridge._runner = svc, self.runner
+        domain = base.Domain(svc.ctx, Guard())
+        entered, release = threading.Event(), threading.Event()
+        def work():
+            entered.set()
+            release.wait(3)
+            return svc.run_main(lambda: {'applied': True})
+        _, reply = svc.ctx.operations.invoke('/test', {},
+            lambda b: domain.change('install', work, on_main=False))
+        self.assertTrue(entered.wait(1))
+        bridge.stop()
+        release.set()
+        deadline = time.monotonic() + 2
+        # Leave this retired runner's continuation queued, as at actual host exit.
+        while not self.runner.jobs and time.monotonic() < deadline:
+            time.sleep(0.001)
+        self.assertTrue(self.runner.jobs)
+        with patch.object(plugin, 'log', lambda *args: None):
+            bridge._on_quit()
+        self.assertTrue(drain(lambda: not bridge._retired.draining()))
+        result = bridge._retired.status(reply['operation']['id'])
+        self.assertEqual(result['httpStatus'], 504)
+        self.assertFalse(self.runner.draining)
+        self.assertIsNone(bridge._mutations.snapshot())
+        self.assertIsNotNone(bridge.start())
+        self.assertIsNone(bridge._server)
+
 
 if __name__ == '__main__':
     unittest.main()
