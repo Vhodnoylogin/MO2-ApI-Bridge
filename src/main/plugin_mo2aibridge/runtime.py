@@ -23,11 +23,18 @@ from . import config, i18n, operations
 
 
 class MainThreadJob:
-    def __init__(self, identifier, fn, timeout):
+    def __init__(self, identifier, fn, timeout, lease=None):
         self.identifier, self.fn = identifier, fn
         self.deadline = time.monotonic() + max(0, float(timeout))
         self.lock, self.done = threading.RLock(), threading.Event()
         self.state, self.value, self.error = 'queued', None, None
+        self.lease = lease.retain() if lease is not None else None
+        self.record = None
+
+    def release_lease(self):
+        lease, self.lease = self.lease, None
+        if lease is not None:
+            lease.release()
 
     def cancel_queued(self):
         with self.lock:
@@ -35,6 +42,9 @@ class MainThreadJob:
                 return False
             self.state = 'cancelled'
             self.fn = None
+            if self.record is not None:
+                self.record.stage('nativeCancelled', self.identifier)
+            self.release_lease()
             self.done.set()
             return True
 
@@ -66,19 +76,23 @@ class MainThreadRunner(QObject):
         super().__init__()
         self.boot_id = uuid.uuid4().hex
         self.jobs, self.lock, self.limit, self.closed = {}, threading.RLock(), int(limit), False
+        self.draining = False
         self._fire.connect(self._run)
 
     def _run(self, job):
         with job.lock:
             if job.state != 'queued':
                 return
-            if self.closed or time.monotonic() >= job.deadline:
+            if (self.closed and not self._continuation(job.lease)) or time.monotonic() >= job.deadline:
                 job.cancel_queued()
                 return
             job.state = 'running'
             fn, job.fn = job.fn, None
+        if job.record is not None:
+            job.record.stage('nativeRunning', job.identifier)
         try:
-            value = fn()
+            with operations.using_mutation(job.lease):
+                value = fn()
         except Exception as exc:
             # The exception is carried over whole, not as a string. This used to produce a
             # RuntimeError("ValueError: mod is required"), and the transport lost the one
@@ -89,17 +103,22 @@ class MainThreadRunner(QObject):
             with job.lock:
                 job.value, job.state = value, 'succeeded'
         finally:
+            with job.lock:
+                job.release_lease()
+            if job.record is not None:
+                job.record.stage('nativeFinished', job.identifier)
             job.done.set()
 
     def call(self, fn, timeout=120.0):
-        if self.closed:
+        lease = operations.mutation()
+        if self.closed and not self._continuation(lease):
             raise RuntimeError(i18n.t('err.runnerClosed'))
         # From the main thread the job runs in place. Otherwise the thread would queue a job
         # for itself and wait for itself to run it - a deadlock until the timeout.
         if QThread.currentThread() is self.thread():
             return fn()
         with self.lock:
-            if self.closed:
+            if self.closed and not self._continuation(lease):
                 raise RuntimeError(i18n.t('err.runnerClosed'))
             # Completed native jobs may be discarded; POST outcomes/retry keys live
             # independently in Operations and are never evicted during a boot.
@@ -110,12 +129,15 @@ class MainThreadRunner(QObject):
                         break
                 else:
                     raise RuntimeError(i18n.t('err.operationCapacity'))
-            job = MainThreadJob(self.boot_id + ':job:' + uuid.uuid4().hex, fn, timeout)
+            job = MainThreadJob(self.boot_id + ':job:' + uuid.uuid4().hex, fn, timeout,
+                                lease)
             self.jobs[job.identifier] = job
         record = operations.active()
         if record is not None:
+            job.record = record
             with record.lock:
                 record.job = job
+            record.stage('nativeQueued', job.identifier)
         self._fire.emit(job)
         if not job.done.wait(max(0, float(timeout))):
             if job.cancel_queued():
@@ -139,11 +161,16 @@ class MainThreadRunner(QObject):
             raise ValueError(i18n.t('err.noOperation', id=identifier))
         return job.snapshot()
 
-    def close(self):
+    def _continuation(self, lease):
+        return self.draining and lease is not None and lease.active_for(self.boot_id)
+
+    def close(self, drain=False):
         with self.lock:
             self.closed = True
+            self.draining = bool(drain)
             for job in self.jobs.values():
-                job.cancel_queued()
+                if not self._continuation(job.lease):
+                    job.cancel_queued()
 
 
 def new_token():

@@ -22,6 +22,8 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
+import weakref
 
 from . import i18n, winapi
 from .base import Domain, one, resolve_nexus_domain, safe
@@ -77,10 +79,16 @@ class Updates(Domain):
         self._mode = ''
         self._api_key = None
         self._quota = {}
+        self._quota_budget = None
         self._pending = {}
         self._lock = threading.Lock()
+        self._closed = threading.Event()
+        self._generation = uuid.uuid4().hex
+        self._subscriptions = []
         self._seq = 0
-        self._last_request = 0.0
+        self._next_request = 0.0
+        self._clock = time.monotonic
+        self._wait = self._closed.wait
         # Consecutive network failures. A dead link has no response code, and the only way to
         # tell it from a single mishap is by counting: one happens, five in a row means the
         # channel is down.
@@ -96,27 +104,95 @@ class Updates(Domain):
         refused. MO2's bridge is then not used at all and Nexus is asked directly - see
         _api_files.
         """
-        if self._bridge is not None:
-            return self._bridge
+        with self._lock:
+            if self._closed.is_set():
+                raise SweepStop('upd.closed')
+            if self._bridge is not None:
+                return self._bridge
         bridge = self.o.createNexusBridge()
-        self._how = '%s/%s' % (_connect(bridge, 'filesAvailable', self._on_files),
-                               _connect(bridge, 'requestFailed', self._on_failed))
-        self._bridge = bridge
+        subscriptions = []
+        owner = weakref.ref(self)
+        generation = self._generation
+
+        def callback(method):
+            def receive(*args):
+                target = owner()
+                if (target is not None and not target._closed.is_set()
+                        and target._generation == generation):
+                    getattr(target, method)(*args)
+            return receive
+
+        try:
+            how = '%s/%s' % (
+                _connect(bridge, 'filesAvailable', callback('_on_files'), subscriptions),
+                _connect(bridge, 'requestFailed', callback('_on_failed'), subscriptions))
+        except Exception:
+            self._dispose_bridge(bridge, subscriptions)
+            raise
+        with self._lock:
+            closed = self._closed.is_set()
+            if not closed:
+                self._how, self._bridge, self._subscriptions = how, bridge, subscriptions
+        if closed:
+            self._dispose_bridge(bridge, subscriptions)
+            raise SweepStop('upd.closed')
         self.note(i18n.t('log.nexusBridge', how=self._how))
         return bridge
+
+    @staticmethod
+    def _dispose_bridge(bridge, subscriptions):
+        """Only called on Qt, apart from deleteLater's thread-safe fallback in close."""
+        for unsubscribe in subscriptions:
+            safe(unsubscribe)
+        safe(lambda: bridge.deleteLater())
+
+    def close(self):
+        """Retire this HTTP lifetime; outstanding native/HTTP requests are not cancelled.
+
+        Call before closing the main-thread runner. Waiters wake immediately, callbacks
+        cannot publish, and QObject disconnect/deferred deletion runs on its Qt thread.
+        No worker is joined and no native call is made while holding the state lock.
+        """
+        with self._lock:
+            if self._closed.is_set():
+                return
+            self._closed.set()
+            self._generation = uuid.uuid4().hex
+            for slot in self._pending.values():
+                slot['state'] = 'closed'
+                slot['event'].set()
+            self._pending.clear()
+            bridge, subscriptions = self._bridge, self._subscriptions
+            self._bridge, self._subscriptions, self._api_key = None, [], None
+        if bridge is not None:
+            try:
+                self.run_main(lambda: self._dispose_bridge(bridge, subscriptions))
+            except Exception:
+                # A runner already closed cannot dispatch disconnect. Closed weak
+                # callbacks remain inert; QObject deletion is deferred to its owner.
+                safe(lambda: bridge.deleteLater())
 
     def _choose_mode(self, timeout):
         """Once per session: is MO2's bridge usable, or do we ask the API directly with
         MO2's key."""
-        if self._mode:
-            return self._mode
+        with self._lock:
+            if self._closed.is_set():
+                raise SweepStop('upd.closed')
+            if self._mode:
+                return self._mode
         try:
             self.run_main(self._ensure_bridge, timeout=timeout)
-            self._mode = 'bridge'
+            mode = 'bridge'
         except Exception as exc:
             self.note(i18n.t('log.nexusDirect', error=exc))
-            self._mode = 'api'
-        return self._mode
+            mode = 'api'
+        with self._lock:
+            if self._closed.is_set():
+                raise SweepStop('upd.closed')
+            # A missing-token callback may already have retired native correlation.
+            if not self._mode:
+                self._mode = mode
+            return self._mode
 
     # ---- asking the API directly -------------------------------------------
     def _key(self):
@@ -125,10 +201,18 @@ class Updates(Domain):
         Read once and living only in this object's memory: the bridge hands it out through no
         route and never writes it to the log.
         """
-        if self._api_key is None:
+        with self._lock:
+            if self._closed.is_set():
+                raise SweepStop('upd.closed')
+            key = self._api_key
+        if key is None:
             target = self.cfg.get('updates', {}).get('credentialTarget') or ''
-            self._api_key = winapi.read_generic_credential(target) or ''
-        return self._api_key
+            key = winapi.read_generic_credential(target) or ''
+            with self._lock:
+                if self._closed.is_set():
+                    raise SweepStop('upd.closed')
+                self._api_key = key
+        return key
 
     def _http_get(self, url, headers, timeout):
         """A GET with headers; separated out so the checks can substitute their own reply."""
@@ -143,11 +227,40 @@ class Updates(Domain):
         refresh the remaining count and carry Retry-After - never reached it at all.
         """
         low = {str(k).lower(): v for k, v in dict(hdrs or {}).items()}
-        for h in ('x-rl-daily-remaining', 'x-rl-hourly-remaining', 'x-rl-daily-limit'):
-            if h in low:
-                self._quota[h[5:]] = low[h]
-        if 'retry-after' in low:
-            self._quota['retry-after'] = low['retry-after']
+        with self._lock:
+            if self._closed.is_set():
+                return
+            for h in ('x-rl-daily-remaining', 'x-rl-hourly-remaining', 'x-rl-daily-limit'):
+                if h in low:
+                    value = low[h]
+                    if h == 'x-rl-daily-remaining':
+                        try:
+                            # Admission already reserved known quota. Out-of-order
+                            # replies cannot restore allowance spent by other callers.
+                            observed = int(value)
+                            self._quota_budget = (observed if self._quota_budget is None else
+                                                  min(observed, self._quota_budget))
+                        except (ValueError, TypeError):
+                            pass
+                    # Public quota fields preserve the observed response headers;
+                    # the reservation budget is separate process-local bookkeeping.
+                    self._quota[h[5:]] = value
+            if 'retry-after' in low:
+                self._quota['retry-after'] = low['retry-after']
+
+    def _remaining_quota(self):
+        """Internal allowance after reservations; called with _lock held."""
+        try:
+            observed = int(self._quota.get('daily-remaining'))
+        except (ValueError, TypeError):
+            return self._quota_budget
+        return observed if self._quota_budget is None else min(observed, self._quota_budget)
+
+    def _quota_low(self):
+        """Called with _lock held; quota is conservative within this HTTP lifetime."""
+        left = self._remaining_quota()
+        return (left is not None and
+                left <= int(self.cfg.get('updates', {}).get('quotaReserve') or 50))
 
     def quota_exhausted(self):
         """Is there room left in the daily allowance, or must we stop here.
@@ -156,11 +269,34 @@ class Updates(Domain):
         without updates and without downloads in the manager, and will look for the cause
         anywhere but in this plugin. So a small reserve is always left behind.
         """
-        try:
-            left = int(self._quota.get('daily-remaining'))
-        except Exception:
-            return False
-        return left <= int(self.cfg.get('updates', {}).get('quotaReserve') or 50)
+        with self._lock:
+            return self._quota_low()
+
+    def _try_admit_locked(self):
+        """Commit dispatch now or return its delay; never wait or call transport here."""
+        if self._closed.is_set():
+            raise SweepStop('upd.closed')
+        if self._quota_low():
+            raise SweepStop('upd.quotaLow', left=self._remaining_quota())
+        now = self._clock()
+        wait_for = self._next_request - now
+        if wait_for > 0:
+            return wait_for
+        delay = max(0.0, float(self.cfg.get('updates', {}).get('delaySec') or 0))
+        self._next_request = now + delay
+        left = self._remaining_quota()
+        if left is not None:
+            self._quota_budget = left - 1
+        return 0.0
+
+    def _admit(self):
+        """Worker-side dispatch gate. Native Qt callers use its nonblocking check."""
+        while True:
+            with self._lock:
+                wait_for = self._try_admit_locked()
+                if wait_for <= 0:
+                    return
+            self._wait(wait_for)
 
     def _api_files(self, game, mod_id, timeout):
         domain = self.nexus_domain(game)
@@ -175,9 +311,14 @@ class Updates(Domain):
         headers = {'apikey': key, 'Accept': 'application/json',
                    'Application-Name': 'MO2ApIBridge',
                    'Application-Version': upd.get('appVersion') or ''}
+        # Prepare domain/key/headers before admission, so credential or Qt delays
+        # cannot accumulate already-admitted direct requests either.
+        self._admit()
         try:
             status, hdrs, body = self._http_get(url, headers, timeout)
         except urllib.error.HTTPError as e:
+            if self._closed.is_set():
+                raise SweepStop('upd.closed')
             self._absorb_quota(getattr(e, 'headers', None))
             # A PAGE failing and the CHANNEL failing are different things, and they used to
             # be one. A bad key or a spent allowance applies not to one mod but to all of
@@ -188,16 +329,24 @@ class Updates(Domain):
             if e.code == 429:
                 raise SweepStop('upd.rateLimited',
                                 retry=self._quota.get('retry-after') or '?')
-            self._net_fails = 0
+            with self._lock:
+                self._net_fails = 0
             return None, 'HTTP %d %s' % (e.code, (e.reason or '')[:80])
         except Exception as exc:
-            self._net_fails += 1
+            with self._lock:
+                if self._closed.is_set():
+                    raise SweepStop('upd.closed')
+                self._net_fails += 1
+                fails = self._net_fails
             stop_at = int(upd.get('netFailsBeforeStop') or 5)
-            if self._net_fails >= stop_at:
-                raise SweepStop('upd.networkDown', fails=self._net_fails,
+            if fails >= stop_at:
+                raise SweepStop('upd.networkDown', fails=fails,
                                 error=str(exc)[:120])
             return None, str(exc)[:200]
-        self._net_fails = 0
+        with self._lock:
+            if self._closed.is_set():
+                raise SweepStop('upd.closed')
+            self._net_fails = 0
         self._absorb_quota(hdrs)
         try:
             data = json.loads(body)
@@ -220,26 +369,52 @@ class Updates(Domain):
     def _take(self, user_data, game=None, mod_id=None):
         page = self._page_key(game, mod_id) if mod_id is not None else None
         with self._lock:
+            if self._closed.is_set():
+                return None
+            if user_data is None or user_data == '':
+                # Tokenless payloads cannot distinguish a current request from a
+                # timed-out predecessor, even with just one same-page waiter.
+                # Retire native correlation and refetch safely via the direct API;
+                # the uncorrelated files/error never satisfy any slot.
+                if page is not None and any(s['page'] == page for s in self._pending.values()):
+                    self._mode = 'api'
+                    for slot in self._pending.values():
+                        slot['state'] = 'uncorrelated'
+                        slot['event'].set()
+                    self._pending.clear()
+                return None
             token = str(user_data)
             slot = self._pending.get(token)
             if slot is not None:
                 if page is not None and slot['page'] != page:
                     return None
-                return self._pending.pop(token)
-            if page is not None:
-                # Some builds lose userData. Only a unique game/mod match can
-                # identify its reply; an unrelated page or parallel wait cannot.
-                matches = [key for key, cand in self._pending.items() if cand['page'] == page]
-                if len(matches) == 1:
-                    return self._pending.pop(matches[0])
+                if self._clock() >= slot['deadline']:
+                    self._pending.pop(token)
+                    slot['state'] = 'timeout'
+                    slot['event'].set()
+                    return None
+                # Keep the slot registered until publishing under the same lock.
+                # close() must also retire replies currently being converted.
+                return slot
             return None
+
+    def _complete(self, user_data, slot, **result):
+        with self._lock:
+            token = str(user_data)
+            if self._closed.is_set() or self._pending.get(token) is not slot:
+                return
+            self._pending.pop(token)
+            if self._clock() >= slot['deadline']:
+                slot['state'] = 'timeout'
+            else:
+                slot.update(result, state='done')
+            slot['event'].set()
 
     def _on_files(self, game, mod_id, user_data, files):
         slot = self._take(user_data, game, mod_id)
         if slot is None:
             return
-        slot['files'] = [_file_record(f) for f in (files or [])]
-        slot['event'].set()
+        self._complete(user_data, slot, files=[_file_record(f) for f in (files or [])])
 
     def _on_failed(self, game, mod_id, *rest):
         # Signatures differ between MO2 builds: (game, modId, fileId, userData, error) or
@@ -249,8 +424,7 @@ class Updates(Domain):
         slot = self._take(user_data, game, mod_id)
         if slot is None:
             return
-        slot['error'] = error or 'request failed'
-        slot['event'].set()
+        self._complete(user_data, slot, error=error or 'request failed')
 
     def _fetch(self, game, mod_id, timeout):
         """The page's file list, or an error.
@@ -261,29 +435,83 @@ class Updates(Domain):
         """
         if not self.nexus_domain(game):
             return None, i18n.t('upd.noDomain', game=game or '?')
-        delay = float(self.cfg.get('updates', {}).get('delaySec') or 0)
-        wait_for = self._last_request + delay - time.time()
-        if wait_for > 0:
-            time.sleep(wait_for)
-        self._last_request = time.time()
-        if self._choose_mode(timeout) == 'api':
-            return self._api_files(game, mod_id, timeout)
-        slot = {'event': threading.Event(), 'files': None, 'error': '',
-                'page': self._page_key(game, mod_id)}
+        self._choose_mode(timeout)
         with self._lock:
-            self._seq += 1
-            token = 'upd%d' % self._seq
-            self._pending[token] = slot
+            if self._closed.is_set():
+                raise SweepStop('upd.closed')
+            if self._mode == 'api':
+                slot = None
+            else:
+                slot = {'event': threading.Event(), 'files': None, 'error': '',
+                        'page': self._page_key(game, mod_id), 'state': 'pending',
+                        'deadline': self._clock() + timeout, 'generation': self._generation,
+                        'issued': False}
+                self._seq += 1
+                token = 'upd%s-%d' % (self._generation, self._seq)
+                self._pending[token] = slot
+        if slot is None:
+            result = self._api_files(game, mod_id, timeout)
+            if self._closed.is_set():
+                raise SweepStop('upd.closed')
+            return result
+
+        def request():
+            bridge = self._ensure_bridge()
+            with self._lock:
+                if self._closed.is_set() or self._pending.get(token) is not slot:
+                    return
+                if self._clock() >= slot['deadline']:
+                    self._pending.pop(token)
+                    slot['state'] = 'timeout'
+                    slot['event'].set()
+                    return
+                # Qt may have stalled after the worker queued this job. Commit
+                # timing/quota only here, immediately before actual native dispatch.
+                wait_for = self._try_admit_locked()
+                if wait_for > 0:
+                    return wait_for
+                slot['issued'] = True
+            bridge.requestFiles(game, int(mod_id), token)
+            return 0.0
+
         try:
-            self.run_main(lambda: self._ensure_bridge().requestFiles(game, int(mod_id), token),
-                          timeout=timeout)
+            while True:
+                remaining = slot['deadline'] - self._clock()
+                if remaining <= 0:
+                    break
+                wait_for = self.run_main(request, timeout=remaining)
+                with self._lock:
+                    if slot['state'] != 'pending' or slot['issued']:
+                        break
+                # A deferred Qt job returns immediately. Only its HTTP worker
+                # waits, then requeues the same token under the same deadline.
+                self._wait(min(wait_for or 0, max(0.0, slot['deadline'] - self._clock())))
+        except SweepStop:
+            with self._lock:
+                self._pending.pop(token, None)
+                slot['state'] = 'closed' if self._closed.is_set() else 'failed'
+                slot['event'].set()
+            raise
         except Exception as exc:
             with self._lock:
+                if slot['state'] == 'pending':
+                    self._pending.pop(token, None)
+                    slot.update(state='failed', error=str(exc))
+                    slot['event'].set()
+        slot['event'].wait(max(0.0, slot['deadline'] - self._clock()))
+        with self._lock:
+            if slot['state'] == 'pending':
                 self._pending.pop(token, None)
-            return None, str(exc)
-        if not slot['event'].wait(timeout):
-            with self._lock:
-                self._pending.pop(token, None)
+                slot['state'] = 'timeout'
+            state = slot['state']
+        if self._closed.is_set() or state == 'closed':
+            raise SweepStop('upd.closed')
+        if state == 'uncorrelated':
+            result = self._api_files(game, mod_id, timeout)
+            if self._closed.is_set():
+                raise SweepStop('upd.closed')
+            return result
+        if state == 'timeout':
             return None, i18n.t('upd.timeout', sec=timeout)
         return slot['files'], slot['error']
 
@@ -384,7 +612,7 @@ class Updates(Domain):
         limit = int(one(q, 'limit', str(upd.get('maxPerCall') or 50)))
         offset = int(one(q, 'offset', '0') or 0)
         timeout = float(one(q, 'timeout', str(upd.get('timeoutSec') or 30)))
-        started = time.time()
+        started = self._clock()
 
         targets, total, pages = self.run_main(
             lambda: self._targets(names, want_all, offset, limit))
@@ -396,7 +624,9 @@ class Updates(Domain):
             # here is shared with MO2 itself, and eating it down to zero leaves the person
             # without updates and without downloads in the manager.
             if self.quota_exhausted():
-                stopped = i18n.t('upd.quotaLow', left=self._quota.get('daily-remaining'))
+                with self._lock:
+                    left = self._remaining_quota()
+                stopped = i18n.t('upd.quotaLow', left=left)
                 break
             try:
                 rows.append(self._check_one(t, got_all, dl_root, timeout, pages, file_cache))
@@ -410,7 +640,9 @@ class Updates(Domain):
                 rows.append(row)
                 self.note(i18n.t('log.sweepStopped', why=stopped))
                 break
-        res = {'count': len(rows), 'mods': rows, 'elapsedSec': round(time.time() - started, 1),
+        with self._lock:
+            quota, mode = dict(self._quota), self._mode
+        res = {'count': len(rows), 'mods': rows, 'elapsedSec': round(self._clock() - started, 1),
                'checked': sum(1 for r in rows if r.get('checked')),
                'rule': 'files-and-dates, versions never compared',
                # The sweep may have stopped short of the list: then it says why, and how
@@ -418,7 +650,7 @@ class Updates(Domain):
                # "everything was checked", and that would be untrue.
                'stopped': stopped, 'unchecked': max(0, len(targets) - len(rows)),
                # How Nexus was asked, and how many API requests remain in the allowance
-               'via': self._mode or 'none', 'quota': dict(self._quota)}
+               'via': mode or 'none', 'quota': quota}
         if want_all:
             res.update(offset=offset, limit=limit, total=total,
                        more=offset + len(rows) < total)
@@ -471,7 +703,7 @@ class Updates(Domain):
 
 
 # ================================================================ mobase plumbing
-def _connect(bridge, name, callback):
+def _connect(bridge, name, callback, subscriptions=None):
     """Subscribe to the bridge's reply by whichever means this MO2 build offers.
 
     In some builds it is a method onFilesAvailable(callback), in others a Qt signal
@@ -487,6 +719,8 @@ def _connect(bridge, name, callback):
         connect = getattr(sig, 'connect', None)
         if callable(connect):
             connect(callback)
+            if subscriptions is not None:
+                subscriptions.append(lambda: sig.disconnect(callback))
             return attr
     raise RuntimeError('nexus bridge has no %s' % name)
 

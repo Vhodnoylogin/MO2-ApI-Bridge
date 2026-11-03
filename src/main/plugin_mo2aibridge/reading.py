@@ -8,6 +8,7 @@ them, and a full VFS export.
 """
 import os
 import json
+import hashlib
 
 import mobase
 
@@ -83,6 +84,51 @@ def read_provenance(raw, current, path, limit, unavailable=False):
 
 
 class Reader(Domain):
+
+    def native_identity(self, name, include_order=False):
+        """Observe native identity/order on Qt; this is not an external-writer revision."""
+        profile, ml = self.o.profile(), self.o.modList()
+        mod = ml.getMod(name)
+        state = ml.state(name) if mod is not None else 0
+        target = ({'path': safe(mod.absolutePath, ''),
+                   'active': bool(state & mobase.ModState.ACTIVE),
+                   'essential': bool(state & mobase.ModState.ESSENTIAL), 'priority': ml.priority(name),
+                   'installationFile': safe(mod.installationFile),
+                   'version': safe(lambda: mod.version().displayString()),
+                   'nexusId': safe(mod.nexusId), 'gameName': safe(mod.gameName)}
+                  if mod is not None else None)
+        identity = {'serverBootId': self.ctx.boot_id, 'instanceId': self.ctx.instance_id,
+                    'profile': profile.name(), 'profilePath': os.path.realpath(profile.absolutePath()),
+                    'modsPath': os.path.realpath(self.o.modsPath()), 'mod': name, 'target': target}
+        if include_order:
+            order = []
+            for mod_name in ml.allModsByProfilePriority():
+                state = ml.state(mod_name)
+                order.append((mod_name, bool(state & mobase.ModState.ACTIVE),
+                              bool(state & mobase.ModState.ESSENTIAL), ml.priority(mod_name)))
+            identity.update(modCount=len(order), modOrderSha256=hashlib.sha256(
+                json.dumps(order, ensure_ascii=False).encode('utf-8')).hexdigest())
+        return identity
+
+    @staticmethod
+    def snapshot_evidence(observations):
+        """Report observed divergence separately from existing collection-completeness flags."""
+        values = list(observations.values())
+        observed = [value for value in values if value is not None]
+        # Order is sampled only at analysis boundaries, rather than walking the whole
+        # mod list for ordinary /mod cards or for both sides of its short native job.
+        fields = set().union(*(value.keys() for value in observed))
+        diverged = False
+        for field in fields:
+            samples = [value[field] for value in observed if field in value]
+            if any(sample != samples[0] for sample in samples[1:]):
+                diverged = True
+                break
+        state = ('diverged' if diverged else 'unknown' if len(observed) != len(values) or not values
+                 else 'no-observed-divergence')
+        return {'state': state, 'observations': observations,
+                'nativeAtomic': False, 'diskAtomic': False, 'externalWritersTracked': False,
+                'unobservedIntermediateChangesPossible': True}
 
     # ================================================== state
     def ping(self, _=None):
@@ -177,7 +223,7 @@ class Reader(Domain):
         return self.run_main(f)
 
     # ================================================== card and analysis
-    def mod(self, q):
+    def mod(self, q, *, snapshot_order=False):
         """Everything MO2 knows about a mod. Three of these fields are not in meta.ini at all:
         isSeparator (otherwise deduced from a name suffix, that is, from a convention),
         categories (MO2 keeps its own categories separately) and ignoredVersion with endorsed
@@ -188,6 +234,7 @@ class Reader(Domain):
             raise ValueError(i18n.t('err.needName'))
 
         def f():
+            before = self.native_identity(name)
             ml = self.o.modList()
             m = ml.getMod(name)
             if m is None:
@@ -225,6 +272,8 @@ class Reader(Domain):
                     'notes': safe(m.notes, ''), 'comments': safe(m.comments, ''),
                     'endorsed': str(safe(m.endorsedState, '')),
                     'tracked': str(safe(m.trackedState, ''))}
+            card['snapshot'] = self.snapshot_evidence(
+                {'before': before, 'after': self.native_identity(name, snapshot_order)})
             return card, raw, current, unavailable
         card, raw, current, unavailable = self.run_main(f)
         # The Qt job only snapshots native getters. JSON parsing and bounded INI
@@ -248,6 +297,7 @@ class Reader(Domain):
         error_limit = self.limit()
 
         def f():
+            before = self.native_identity(name, include_order=True)
             ml = self.o.modList()
             m = ml.getMod(name)
             if m is None:
@@ -281,6 +331,9 @@ class Reader(Domain):
                     contested += 1
                     (wins if org[0] == name else loses).append({'file': rel, 'providers': org})
             return {'mod': name, 'path': root, 'files': len(files),
+                    'snapshot': self.snapshot_evidence(
+                        {'collectionBefore': before,
+                         'collectionAfter': self.native_identity(name, include_order=True)}),
                     'plugins': [x for x in files if x.lower().endswith(('.esp', '.esm', '.esl'))],
                     'sample': sorted(files)[:limit],
                     'complete': diagnostics['errorCount'] == 0,
@@ -295,14 +348,20 @@ class Reader(Domain):
                                   'winsCount': len(wins), 'losesCount': len(loses),
                                   'wins': wins[:limit], 'loses': loses[:limit]}}
         res = self.run_main(f, timeout=self.timeout('analyze'))
-        # The card is fetched by a separate call: one run_main must not be nested inside
-        # another - the main thread is already busy and the result would be a deadlock.
+        # Keep card failures isolated, and assess provenance disk evidence off Qt. The
+        # runner supports same-thread calls; separate jobs need identity comparison,
+        # because neither their native observations nor the disk reads are a transaction.
         try:
-            res['card'] = self.mod({'name': [name]})
+            res['card'] = self.mod({'name': [name]}, snapshot_order=True)
         except Exception as exc:
             res['card'] = {'error': str(exc)}
             diagnostic_error(diagnostics, 'card', name, exc, error_limit)
             res.update(complete=False, partial=True, errorCount=diagnostics['errorCount'])
+        observations = res['snapshot']['observations']
+        card_observations = res['card'].get('snapshot', {}).get('observations', {})
+        observations.update(cardBefore=card_observations.get('before'),
+                            cardAfter=card_observations.get('after'))
+        res['snapshot'] = self.snapshot_evidence(observations)
         return res
 
     # ================================================== the virtual Data

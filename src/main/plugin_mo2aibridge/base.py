@@ -124,20 +124,25 @@ def resolve_nexus_domain(game, domains, managed_game='', managed_domain='', fall
 class Context(object):
     """Everything any area needs: MO2, the main thread, the log, the docs, the settings."""
 
-    def __init__(self, organizer, run_main, docs, note, cfg):
+    def __init__(self, organizer, run_main, docs, note, cfg, mutations=None, retired=None):
         self.o = organizer
         self.run_main = run_main
         self.docs = docs
         self.note = note
         self.cfg = cfg
+        self.stopping = False
+        self.mutations = mutations or operations.MutationOwner()
+        self.retired = retired or operations.RetiredOperations()
         self.runner = getattr(run_main, '__self__', None)
         self.boot_id = getattr(self.runner, 'boot_id', None) or uuid.uuid4().hex
         profile_path = safe(lambda: organizer.profile().absolutePath(), '')
         self.profiles_root = os.path.dirname(os.path.abspath(profile_path)) if profile_path else ''
         self.instance_id = hashlib.sha256(os.path.normcase(os.path.realpath(
             self.profiles_root)).encode('utf-8')).hexdigest()
-        self.operations = operations.Operations(self.boot_id, cfg.get('operationLimit'),
-                                                cfg.get('operationWaitSec'))
+        capacity = self.retired.remaining(cfg.get('operationLimit'))
+        self.operations = operations.Operations(self.boot_id, capacity,
+                                                cfg.get('operationWaitSec'),
+                                                cfg.get('operationStageLimit'), note)
 
     def expected(self, body):
         """Called on the Qt thread immediately before a targeted mutation."""
@@ -184,6 +189,21 @@ class Domain(object):
             stop = prepare()
             if stop:
                 return self._refusal(stop, op, 'danger')
+        lease = self.ctx.mutations.acquire(op, self.ctx.boot_id)
+        if lease is None:
+            return self._refusal({'applied': False,
+                                  'blocked': i18n.t('op.' + op),
+                                  'why': i18n.t('err.mutationBusy'),
+                                  'mutation': self.ctx.mutations.snapshot()}, op, 'mutationBusy')
+        try:
+            if self.ctx.stopping:
+                raise RuntimeError(i18n.t('err.runnerClosed'))
+            with operations.using_mutation(lease):
+                return self._change_owned(op, fn, timeout, on_main)
+        finally:
+            lease.release()
+
+    def _change_owned(self, op, fn, timeout, on_main):
         if on_main:
             def checked():
                 # Admission can precede Qt execution by seconds. A launch or modal may

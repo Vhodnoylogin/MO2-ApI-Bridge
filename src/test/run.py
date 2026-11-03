@@ -31,6 +31,7 @@ SUITES = ['test_sources.py', 'test_busy_logic.py', 'test_i18n.py', 'test_policy.
           'test_mod_removal.py', 'test_modui.py',
           'test_profileui.py', 'test_protocol.py',
           'test_health_logging.py', 'test_lifecycle.py', 'test_http_limits.py',
+          'test_operation_lifecycle.py', 'test_snapshot_contract.py',
           'test_routes.py', 'test_plugins_txt.py', 'test_install_modes.py',
           'test_busy_live.py']
 SKIPPED = 77

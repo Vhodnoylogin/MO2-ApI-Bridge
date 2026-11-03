@@ -1,5 +1,44 @@
 # MO2 ApI Bridge
 
+## Changes in candidate 2.3.7
+
+- Failed worker creation/start is a terminal, replayable operation. A retry of a pending
+  operation returns HTTP202 immediately instead of occupying another long-wait handler.
+- One MO2-lifetime owner excludes overlapping Bridge setup changes and launches for the
+  whole operation, including worker IO and nested Qt events. A conflict returns
+  `applied:false, reason:mutationBusy`; inspect the original outcome before a new operation.
+- Manual HTTP stop closes admission and drains an already-owned mutation, including its
+  Qt reconciliation. Start refuses until old work finishes. Work pending at stop retains
+  its terminal outcome through the next boot's `/operations?id=...`; old retry keys remain
+  non-executable. Retained outcomes share `operationLimit` capacity with new work. Closing
+  MO2 itself hard-cancels queued jobs; no running native call is claimed cancelled.
+- A process handle in use by a native wait/read is released after its last user leaves,
+  so stopping HTTP does not close it beneath `WaitForSingleObject`.
+- Update callbacks require their exact current token and page. A genuinely tokenless
+  callback retires native correlation and refetches through the direct API; it never
+  supplies a result for a newer same-page request. Shutdown retires subscribers/waiters.
+  Monotonic request pacing and conservative reservations are shared across callers.
+  `quota` still reports observed response headers; the internal budget cannot coordinate
+  MO2 or other consumers and may stop conservatively until Bridge is restarted.
+- Removal preserves historical receipt evidence and explicit selection. Legacy archive-only
+  `undo` remains available but does not reproduce FOMOD choices; `reversal.nativeReinstall`
+  is offered only with adequate recorded inputs and still needs caller verification.
+  Historical metadata is not proof of current archive or payload bytes.
+- Toggle, priority, mod rename and refresh now honor supplied target preconditions on Qt,
+  alongside existing install/remove/order/profile/run guards. Omitting them keeps old behavior.
+- `/mod` and `/analyze` add observed snapshot identity/divergence evidence. Collection
+  `complete` keeps its existing meaning. Native/disk atomicity and tracking of external
+  writers are explicitly false; matching observations cannot exclude an intermediate A→B→A.
+- `/session` adds `protocolVersion`, capabilities and the current mutation owner.
+  Operation `stages` retain bounded monotonic timing/job IDs (`operationStageLimit`, default 16).
+  Lifecycle audit logs contain generated operation IDs, routes and stages, never request
+  bodies, credentials, retry keys or signed URLs.
+
+This is a development candidate. Isolated runtime acceptance and publication are separate
+steps; the current public release remains 2.3.6. These changes do not claim to fix the
+separately investigated native MO2 download crash.
+
+
 **A local HTTP bridge to a running Mod Organizer 2 for scripts and AI agents.**
 
 Everything `mobase` offers — the mod list, the merged virtual `Data`, plugin load order, mod
@@ -71,13 +110,13 @@ work.
 ## Tests
 
 ```
-python ../tests/run.py
+python src/test/run.py --offline
 ```
 
-Eleven suites. Seven run without MO2 — source hygiene, the busy-state logic, the strings, the update
-rules, the contract of all 32 routes over a fake `mobase`, the transport, and mutation failure/retry checks; four acceptance
-suites need a running manager and are skipped with a clear message when it is absent. They live **outside** this package, in
-`tests\` next to it, and are never shipped to MO2. Details in `..\tests\README.md`.
+Run from the source repository root. Offline suites cover pure rules, fake-host behavior,
+real loopback HTTP and optional real Qt lifecycle/reentry; they never probe installed MO2.
+Four separately selected live suites require the intended disposable manager. Test source
+and instructions live in `src/test/`, outside the runtime package and never ship to MO2.
 
 The offline suites see the code on disk; the acceptance suites see the code MO2 loaded at start.
 After an edit they describe different versions until the manager is restarted.
@@ -893,13 +932,15 @@ For each POST, send a unique `idempotencyKey` and/or `operationId`, together wit
 The registered executable name must match MO2 exactly. A matching retry returns the original
 operation, including refusals or failures. A changed body with the same key is rejected.
 Without a retry key, a second POST is a new operation. A stale boot ID is rejected, so an old
-request cannot silently relaunch after a restart. `/run` and profile rename/clone/select/local
-also check `expectedInstance` and `expectedProfile` on the Qt thread before acting.
+request cannot silently relaunch after a restart. Setup mutations and `/run` check supplied
+`expectedInstance` and `expectedProfile` on Qt before acting. Window actions and VFS exports
+do not mutate the MO2 setup and do not promise those target preconditions.
 
 HTTP 202 is a pending outcome, not a failure or permission to launch again. Poll
 `GET /operations?id=<operation.id>` until `terminal: true`, then inspect `httpStatus` and
 `result`. Every POST is tracked even without a retry key. Operation IDs include the server boot.
-The registry retains up to `operationLimit` outcomes (default 4096) until the bridge stops;
+The registry retains up to `operationLimit` outcomes (default 4096), including retained
+old-boot outcomes described above; completed current-boot records otherwise retire at stop;
 it refuses new work at capacity rather than forgetting a key and allowing a duplicate.
 `operationWaitSec` (default 120) bounds the initial HTTP wait.
 

@@ -30,11 +30,12 @@ from .base import DANGER_KEY, DANGER_VALUE, one as _one  # noqa: F401
 
 class Services(object):
     def __init__(self, organizer, run_main, docs_path, note=None, cfg=None, launches=None,
-                 order_refresh=None):
+                 order_refresh=None, mutations=None, retired=None):
         # note - where to record launches; without it the plugin works silently.
         # cfg - settings; without them the built-in defaults are used and no file read.
         ctx = base.Context(organizer, run_main, docs_path,
-                           note or (lambda _msg: None), cfg or config.Config())
+                           note or (lambda _msg: None), cfg or config.Config(),
+                           mutations=mutations, retired=retired)
         self.ctx = ctx
         self.o = organizer
         self.run_main = run_main
@@ -94,7 +95,14 @@ class Services(object):
         from . import __version__
         return {'serverBootId': self.ctx.boot_id, 'instanceId': self.ctx.instance_id,
                 'mo2Pid': os.getpid(), 'bridgeVersion': __version__,
-                'profilesPath': self.ctx.profiles_root}
+                'profilesPath': self.ctx.profiles_root,
+                'protocolVersion': 1,
+                'capabilities': {
+                    'pendingRetryImmediate': True, 'mutationExclusion': 'bridge-host-lifetime',
+                    'drainingRestart': True, 'retiredOperationReadback': True,
+                    'expectedTargets': ['expectedServerBootId', 'expectedInstance', 'expectedProfile'],
+                    'snapshotAtomic': False, 'externalWritersTracked': False},
+                'mutation': self.ctx.mutations.snapshot()}
 
     def operation_status(self, q):
         identifier = _one(q, 'id', '')
@@ -102,7 +110,8 @@ class Services(object):
             if self.ctx.runner is None:
                 raise ValueError(base.i18n.t('err.noOperation', id=_one(q, 'jobId', '')))
             return self.ctx.runner.status(_one(q, 'jobId', ''))
-        return self.ctx.operations.status(identifier)
+        prior = self.ctx.retired.status(identifier)
+        return prior if prior is not None else self.ctx.operations.status(identifier)
 
     def ping(self, q=None):
         return self.reader.ping(q)

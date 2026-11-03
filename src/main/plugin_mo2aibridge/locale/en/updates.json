@@ -17,5 +17,6 @@
  "upd.replaced": "your file is no longer on the page - the author replaced it; downloaded %(mine)s, Main now holds a file from %(theirs)s",
  "upd.retired": "the downloaded file moved to Old files and nothing of the same name replaced it",
  "upd.timeout": "Nexus did not answer within %(sec).0f s",
- "upd.unmarked": "no file on the page is marked as downloaded"
+ "upd.unmarked": "no file on the page is marked as downloaded",
+ "upd.closed": "Update service is closed."
 }

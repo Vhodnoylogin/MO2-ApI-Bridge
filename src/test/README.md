@@ -6,7 +6,7 @@
 python run.py
 ```
 
-All thirty suites in a row. The suites that need MO2 are skipped with a plain word when it is not
+All registered suites in a row. The suites that need MO2 are skipped with a plain word when it is not
 running — a skip does not count as a failure.
 
 Use `python run.py --offline` to skip live suites without even probing a running manager.
@@ -45,8 +45,8 @@ The first import the package from disk; the second speak HTTP to the plugin that
 the manager started. After an edit the standalone suites talk about the new version and the
 acceptance ones about the old; they agree again only once MO2 has been restarted.
 
-The checks live **outside** the plugin package and are not imported by it: `tests\` is a sibling
-of `plugin_mo2aibridge\`, not a part of it. They find the plugin beside them, by the presence of
+The checks live **outside** the plugin package and are not imported by it: `src/test/` sits outside
+`src/main/plugin_mo2aibridge/`. They find the plugin beside them, by the presence of
 an `__init__.py`, and not by a coincidence of names — the names are deliberately different.
 
 The name MO2 knows the plugin by, the checks ask the plugin itself — the `PLUGIN_ID` string in
@@ -112,13 +112,13 @@ asks `pack.py` itself what it is going to take.
 
 An optional native Qt regression suite is `python test_profileui.py`. It requires standalone PyQt6, uses offscreen dialogs and temporary profiles, and never accesses installed MO2. It verifies nested dialog completion, cancellation, timeouts, missing controls, and preservation of unrelated modal windows.
 
-Standalone PyQt6 protocol regression checks: `python tests/test_protocol.py`.
+Standalone PyQt6 protocol regression checks: `python src/test/test_protocol.py`.
 Covers expired queue cancellation, started pending work, HTTP retries, boot/profile/instance identity,
 clone/select readback, shutdown and Windows process identity. No installed MO2 or game is accessed.
 
 For a separately installed package, set `MO2AIBRIDGE_TOKEN_FILE` to its token file path.
 
-`python tests/test_health_logging.py` requires standalone PyQt6. It checks a cold
+`python src/test/test_health_logging.py` requires standalone PyQt6. It checks a cold
 health request with a deliberately undrained Qt queue, cancellation without a
 late cache lookup, cached busy evidence, ordinary write-guard lookup, and actual
 Qt logging round trips for Cyrillic, other Unicode and literal percent signs.
@@ -142,3 +142,15 @@ Native adapter/accounting tests cover one source at two unique destinations. The
 use synthetic scratch fixtures and are not live MO2 acceptance.
 
 RAR4/RAR5 checks in test_rar_archives.py generate self-authored STORE fixtures, verify them with real 7-Zip, and cover full/selected extraction, source reuse, closed stdin and volume refusal. Compressed author archives are external evidence; fixtures contain no third-party payload.
+
+## Candidate 2.3.7 lifecycle regressions
+
+`test_operation_lifecycle.py` uses real Qt with a fake host: failed scheduling,
+immediate pending replay, mutation exclusion, nested-event lease retention,
+post-stop reconciliation/draining, retained old-boot outcomes, bounded redacted
+stages and process-handle retirement. `test_update_targets.py` adds exact callback
+identity, late/tokenless/foreign replies, closed lifetimes, monotonic concurrent
+pacing and a real Qt queue-stall counterexample. `test_snapshot_contract.py`
+checks supplied target guards and truthful observed divergence. Removal tests
+retain selected-install evidence and ensure malformed native receipts cannot
+make a destructive outcome unencodable. No installed manager or Nexus is accessed.

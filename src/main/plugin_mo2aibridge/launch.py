@@ -10,6 +10,7 @@ import os
 import math
 import threading
 import subprocess
+from contextlib import contextmanager
 
 from . import i18n, winapi
 from .base import Domain, flag, one, safe
@@ -48,13 +49,37 @@ class Launcher(Domain):
         self.identities, self.game_children = {}, {}
         self.owned_handles = set()
         self.closed = False
+        self._handle_users = 0
 
     def close(self):
         with self.lock:
             self.closed = True
-            handles, self.owned_handles = self.owned_handles, set()
+            handles = self._retire_handles()
         for handle in handles:
             winapi.close_process_handle(handle)
+
+    def _retire_handles(self):
+        """Called locked; never close a handle still passed to a native wait/read."""
+        if not self.closed or self._handle_users:
+            return set()
+        handles, self.owned_handles = self.owned_handles, set()
+        return handles
+
+    @contextmanager
+    def _using_handles(self):
+        with self.lock:
+            allowed = not self.closed
+            if allowed:
+                self._handle_users += 1
+        try:
+            yield allowed
+        finally:
+            with self.lock:
+                if allowed:
+                    self._handle_users -= 1
+                handles = self._retire_handles()
+            for handle in handles:
+                winapi.close_process_handle(handle)
 
     @staticmethod
     def arguments(body):
@@ -142,8 +167,9 @@ class Launcher(Domain):
             # We wait ourselves rather than through waitForApplication: that one never
             # releases the GIL and stalls the whole interpreter along with the server - the
             # bridge goes silent entirely.
-            res['exit'] = winapi.wait_process(handle, request['timeout']) if handle else None
-            res['waitedBy'] = 'WaitForSingleObject' if handle else 'unavailable'
+            with self._using_handles() as allowed:
+                res['exit'] = winapi.wait_process(handle, request['timeout']) if handle and allowed else None
+                res['waitedBy'] = 'WaitForSingleObject' if handle and allowed else 'unavailable'
         return res
 
     def procs_list(self, _=None):
@@ -155,10 +181,16 @@ class Launcher(Domain):
         running programs and raised a false alarm in a neighbouring chat. So liveness is
         asked of the system on every call.
         """
+        with self._using_handles() as allowed:
+            return self._procs_snapshot(allowed)
+
+    def _procs_snapshot(self, allowed):
         out = []
         with self.lock:
             records = list(self.procs.items())
         for k, (handle, pid, what) in records:
+            if not allowed:
+                handle = None
             code = (safe(lambda h=handle: winapi.wait_process(h, 0), None)
                     if handle else None)
             prior = self.identities.get(k)

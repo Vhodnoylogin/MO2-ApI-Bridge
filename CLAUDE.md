@@ -150,9 +150,11 @@ neither Bridge nor Python appeared on that faulting stack. Diagnostics run again
 on `/refresh`, so preserve the required refresh operations and investigate each
 new crash on its own evidence. This historical finding does not exonerate Bridge
 from unrelated incidents. In the 2 November 2026 MO2 SE download crash, Windows
-identified `QIODevice::isOpen`, but the saved minidump lacked an ExceptionStream:
-the caller and cause remain unresolved, and neither Bridge involvement nor
-exoneration has been established.
+identified `QIODevice::isOpen`. Although the minidump lacks ExceptionStream, recovered
+CONTEXT/EXCEPTION_RECORD and exact binary unwinding now prove a native null reply in
+DownloadManager::downloadFinished during nested event processing. The precise preceding
+sender transition and network close origin remain unknown; Bridge indirect triggering
+is unproved, not excluded. Candidate 2.3.7 does not claim to fix that native crash.
 
 ---
 

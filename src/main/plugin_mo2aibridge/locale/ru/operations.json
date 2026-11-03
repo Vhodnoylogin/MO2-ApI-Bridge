@@ -16,5 +16,6 @@
  "op.profileRename": "переименование профиля",
  "op.profileSelect": "выбор профиля",
  "op.profileClone": "копирование профиля",
- "op.profileLocalFlags": "изменение локальных настроек профиля"
+ "op.profileLocalFlags": "изменение локальных настроек профиля",
+ "log.operationEvent": "Операция %(id)s %(route)s: %(stage)s"
 }

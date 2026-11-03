@@ -20,7 +20,7 @@ import traceback
 
 import mobase
 
-from . import busy, i18n, journal, loadorder, runtime, routes as routes_mod
+from . import busy, i18n, journal, loadorder, operations, runtime, routes as routes_mod
 from .config import Config
 from .services import Services
 
@@ -106,6 +106,8 @@ class MO2ApIBridge(mobase.IPluginTool):
         self._quitting = False
         self._launches = busy.LaunchState(log)
         self._order_refresh = loadorder.OrderRefresh()
+        self._mutations = operations.MutationOwner()
+        self._retired = operations.RetiredOperations()
 
     # ---- the MO2 interface -------------------------------------------------
     def init(self, organizer):
@@ -276,12 +278,17 @@ class MO2ApIBridge(mobase.IPluginTool):
         try:
             # Settings are read once per start; with no file, one is created from defaults.
             cfg = config(reload=True)
+            if self._retired.draining() or self._mutations.snapshot() is not None:
+                return i18n.t('err.draining')
+            if self._retired.full(cfg.get('operationLimit')):
+                return i18n.t('err.operationCapacity')
             wanted = int(self._setting('port', cfg.get('port')) or cfg.get('port'))
             token = runtime.new_token()
             self._runner = runtime.MainThreadRunner(limit=cfg.get('mainThreadJobLimit'))
             svc = self._svc = Services(self._organizer, self._runner.call, DOCS,
                                        note=log, cfg=cfg, launches=self._launches,
-                                       order_refresh=self._order_refresh)
+                                       order_refresh=self._order_refresh,
+                                       mutations=self._mutations, retired=self._retired)
             svc.prime()
             get, post = routes_mod.build(svc)
             # The server comes up BEFORE the token is written: if the bind fails, no file is
@@ -339,11 +346,14 @@ class MO2ApIBridge(mobase.IPluginTool):
         silently: shutting down has to run to the end whatever the previous step did.
         Run evidence belongs to MO2's lifetime and survives this HTTP shutdown.
         """
-        if self._runner is not None:
-            self._runner.close()
         if self._svc is not None:
+            self._svc.ctx.stopping = True
             self._svc.ctx.operations.close()
+            self._retired.retire(self._svc.ctx.operations)
+            self._svc.updater.close()
             self._svc.launcher.close()
+        if self._runner is not None:
+            self._runner.close(drain=not self._quitting)
         srv, self._server = self._server, None
         if srv is not None:
             try:

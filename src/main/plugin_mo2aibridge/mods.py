@@ -8,12 +8,79 @@ only be learned by reading the section about the consequences. The busy lock is 
 before the irreversible one.
 """
 import io
+import base64
+import json
 import os
 
 import mobase
 
 from . import i18n, modui, winapi
 from .base import Domain, flag, safe
+from .archives import selection_mappings
+from .reading import read_provenance
+
+
+def receipt_evidence(raw):
+    """Detach native receipt values into lossless JSON evidence before removal."""
+    if raw is None or isinstance(raw, str):
+        return raw
+    if isinstance(raw, (bytes, bytearray)):
+        native_type = 'bytearray' if isinstance(raw, bytearray) else 'bytes'
+    else:
+        try:
+            from PyQt6.QtCore import QByteArray
+        except ImportError:
+            QByteArray = None
+        if QByteArray is None or not isinstance(raw, QByteArray):
+            # Never stringify a foreign native wrapper or silently discard its value.
+            raise ValueError(i18n.t('err.receiptEncoding'))
+        native_type, raw = 'QByteArray', bytes(raw)
+    return {'nativeType': native_type, 'encoding': 'base64',
+            'data': base64.b64encode(raw).decode('ascii')}
+
+
+def removal_reversal(card, archive_kept=True):
+    """Describe retained evidence; a historical selection is never a payload backup."""
+    evidence = {'complete': False, 'scope': 'historical-installation',
+                'archiveOnlyUndoRestoresSelection': False,
+                'archiveHashVerified': False, 'payloadHashesVerified': False,
+                'diskAtomic': False,
+                'nativeReinstall': None, 'reasons': []}
+    record = card.get('installProvenance')
+    if not archive_kept or not card.get('archivePath'):
+        evidence['reasons'].append('archive-unavailable')
+    if card.get('installProvenanceStatus', {}).get('state') != 'metadata-match':
+        evidence['reasons'].append('historical-metadata-not-current')
+    try:
+        if (not isinstance(record, dict) or type(record.get('schemaVersion')) is not int
+                or record['schemaVersion'] != 1):
+            raise ValueError()
+        digest = record.get('archiveSha256')
+        if (not isinstance(digest, str) or len(digest) != 64
+                or any(char not in '0123456789abcdefABCDEF' for char in digest)):
+            raise ValueError()
+        rows = record.get('files')
+        if not isinstance(rows, list) or not rows:
+            raise ValueError()
+        files = selection_mappings([{'source': row['source'], 'destination': row['destination']}
+                                    for row in rows])
+        selection = record.get('selection')
+        fomod = record.get('fomod')
+        if (not isinstance(selection, dict) or not isinstance(fomod, list)
+                or (fomod and not selection)):
+            raise ValueError()
+        selection = json.loads(json.dumps(selection, ensure_ascii=False, allow_nan=False))
+    except (ValueError, TypeError, KeyError):
+        evidence['reasons'].append('explicit-selection-inputs-incomplete')
+    if not evidence['reasons']:
+        evidence['nativeReinstall'] = {
+            'route': '/install',
+            'body': {'archive': card['archivePath'], 'name': card['mod'], 'native': True,
+                     'archiveSha256': digest.lower(), 'files': files, 'selection': selection},
+            'scope': 'recorded-selection', 'requiresRevalidation': True,
+            'restoresCurrentPayload': False}
+    # Reinstallation does not restore later payload edits, profile state or every metadata field.
+    return evidence
 
 
 class ModOps(Domain):
@@ -49,6 +116,7 @@ class ModOps(Domain):
             flag(body, 'active')
 
         def f():
+            self.ctx.expected(body)
             mod, want = body.get('mod'), flag(body, 'active')
             ml = self.o.modList()
             if ml.getMod(mod) is None:
@@ -63,7 +131,7 @@ class ModOps(Domain):
                     'undo': {'route': '/toggle', 'body': {'mod': mod, 'active': was}}}
         return self.change('toggle', f, prepare=prepare)
 
-    def refresh(self, _=None):
+    def refresh(self, body=None):
         """Re-read mods\\ and the profile.
 
         This is precisely what removes the need to close MO2: a mod folder created behind
@@ -71,6 +139,7 @@ class ModOps(Domain):
         toggle.
         """
         def f():
+            self.ctx.expected(body or {})
             self.o.refresh(True)
             return {'refreshed': True}
         return self.change('refresh', f)
@@ -84,6 +153,7 @@ class ModOps(Domain):
         mod, prio = body.get('mod'), body.get('priority')
 
         def f():
+            self.ctx.expected(body)
             ml = self.o.modList()
             if ml.getMod(mod) is None:
                 raise ValueError(i18n.t('err.noSuchMod', mod=mod))
@@ -107,6 +177,7 @@ class ModOps(Domain):
                 raise ValueError(i18n.t('err.needMod'))
 
         def f():
+            self.ctx.expected(body)
             ml = self.o.modList()
             m = ml.getMod(mod)
             if m is None:
@@ -225,14 +296,19 @@ class ModOps(Domain):
                 if QThread.currentThread() == self.ctx.runner.thread():
                     raise RuntimeError(i18n.t('err.removeThread'))
             stop = self.run_main(inspect)
+            card = stop.get('card') if stop else state['card']
+            if card is not None:
+                self.assess_removal_card(card)
             if stop:
+                if card is not None:
+                    stop['reversal'] = removal_reversal(card)
                 return stop
-            card = state['card']
             out = {'applied': False, 'mod': mod, 'path': card['path'], 'card': card,
                    'archiveKept': True, 'archiveRecycled': False,
                    'setupBefore': {'profile': state['setup'][0], 'mods': state['setup'][1]},
                    'pluginsBefore': state['plugins'],
-                   'removalComplete': False, 'undo': None}
+                   'removalComplete': False, 'undo': None,
+                   'reversal': removal_reversal(card)}
             try:
                 state['phase'] = 'preserve'
                 # Native removeRows cancels the pending writer and reloads modlist.txt.
@@ -306,11 +382,14 @@ class ModOps(Domain):
             out['undo'] = ({'route': '/install',
                             'body': {'archive': card.get('archivePath'), 'name': mod}}
                            if out['archiveKept'] and card.get('archivePath') else None)
+            if out['undo'] is not None and card.get('installProvenance') is not None:
+                out['undo'].update(scope='archive-only', reconstructsRecordedSelection=False)
+            out['reversal'] = removal_reversal(card, out['archiveKept'])
             return out
         return self.change('remove', work, prepare=prepare, on_main=False)
 
     def removal_card(self, m, ml):
-        """Everything needed to bring the mod back. Taken before removal, on the main thread."""
+        """Snapshot native reversal evidence before removal, on the main thread."""
         name = m.name()
         arc = safe(m.installationFile, '') or ''
         arc_path = ''
@@ -319,17 +398,42 @@ class ModOps(Domain):
             arc_path = cand if os.path.isfile(cand) else ''
         st = ml.state(name)
         nid = safe(m.nexusId, 0)
+        try:
+            raw, available = m.pluginSetting('mo2aibridge', 'installProvenance', 'null'), True
+        except Exception:
+            raw, available = None, False
+        raw = receipt_evidence(raw)
         return {'mod': name,
                 'path': safe(m.absolutePath, ''),
                 'version': safe(lambda: m.version().displayString(), ''),
                 'nexusId': nid,
+                'gameName': safe(m.gameName, '') or '',
                 'url': self.nexus_url(safe(m.gameName, '') or '', nid),
                 'categories': list(safe(m.categories, []) or []),
                 'notes': safe(m.comments, '') or '',
                 'installationFile': arc,
                 'archivePath': arc_path,
                 'archiveOnDisk': bool(arc_path),
+                'installProvenanceRaw': raw,
+                'installProvenanceSettingAvailable': available,
                 'priority': ml.priority(name),
                 'active': bool(st & mobase.ModState.ACTIVE),
                 'files': safe(lambda: sum(len(fs) for _r, _d, fs in
                                           os.walk(m.absolutePath())), -1)}
+
+    def assess_removal_card(self, card):
+        """Decode receipts and read bounded disk evidence off Qt, before deleting anything."""
+        current = {key: card[key] for key in ('nexusId', 'gameName', 'version', 'installationFile')}
+        raw = card['installProvenanceRaw']
+        if isinstance(raw, dict):
+            raw = base64.b64decode(raw['data'])
+        card['installProvenance'], card['installProvenanceStatus'] = read_provenance(
+            raw, current, card['path'], self.limit(),
+            unavailable=not card['installProvenanceSettingAvailable'])
+        # Prove the complete pre-delete evidence survives the actual wire encoding.
+        # In particular, a foreign native value must never leave deletion successful
+        # but its operation result impossible to return or poll.
+        try:
+            json.dumps(card, ensure_ascii=False).encode('utf-8')
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(i18n.t('err.receiptEncoding')) from None
