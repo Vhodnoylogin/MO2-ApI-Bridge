@@ -10,6 +10,15 @@
  "profileui.bounded": "ожидание ограничено: %(mode)s",
  "profileui.current": "активный профиль верен: %(mode)s",
  "profileui.closed": "собственные окна закрыты: %(mode)s",
+ "profileui.noManage": "выбор не создаёт окно управления профилями: %(mode)s",
+ "profileui.noWriters": "выбор не создаёт объекты записи неактивных профилей: %(mode)s",
+ "profileui.released": "профили окна освобождены до рекурсивного обновления: %(mode)s",
+ "profileui.allWriters": "все ожидающие записи завершены: %(mode)s",
+ "profileui.writersBeforeRefresh": "ожидающие записи завершены до рекурсивного обновления: %(mode)s",
+ "profileui.stableRows": "строки профиля сохранены при смене индексов: %(mode)s / %(profile)s",
+ "profileui.signalState": "состояние блокировки сигналов списка сохранено: %(mode)s",
+ "profileui.userClose": "пользователь закрывает заполненное окно между проверками: %(mode)s",
+ "profileui.laterKept": "следующее окно того же менеджера сохраняет профили",
  "profileui.foreignRefused": "ранее открытое модальное окно блокирует переименование",
  "profileui.foreignKept": "ранее открытое окно не изменено"
 }

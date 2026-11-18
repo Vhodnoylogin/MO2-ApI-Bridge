@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Invoke MO2 2.5's native profile rename on the Qt main thread.
+"""Invoke MO2 2.5's native profile controls on the Qt main thread.
 
 IOrganizer/IProfile expose no rename operation. Driving the native ProfilesDialog
 keeps MO2's profile objects, UI list and profileRenamed callbacks consistent.
@@ -32,7 +32,7 @@ def select(name, timeout, poll_ms):
 
 
 def operate(action, old, new, timeout, poll_ms):
-    from PyQt6.QtCore import QTimer, Qt
+    from PyQt6.QtCore import QEvent, QObject, QTimer, Qt
     from PyQt6.QtWidgets import QApplication, QComboBox, QListWidget, QPushButton, QInputDialog
 
     app = QApplication.instance()
@@ -43,8 +43,51 @@ def operate(action, old, new, timeout, poll_ms):
     if len(boxes) != 1 or boxes[0].currentIndex() <= 0:
         raise RuntimeError(i18n.t('err.profileDialog'))
     box = boxes[0]
+    if action == 'select':
+        # The normal dropdown does not construct a second Profile for every
+        # inactive profile. Manage's stack-local dialog survives the recursive
+        # selection/refresh, so its pending writers can otherwise use stale mod
+        # indices after MO2 rebuilds the global collection.
+        matches = [i for i in range(1, box.count()) if box.itemText(i) == old]
+        if len(matches) != 1:
+            raise RuntimeError(i18n.t('err.noSuchProfile', profile=old))
+        box.setCurrentIndex(matches[0])
+        return
     state = {'phase': 'profiles', 'dialog': None, 'input': None, 'error': None, 'done': False}
     deadline = time.monotonic() + timeout
+
+    def release_profiles():
+        owner = state['dialog']
+        if owner is not None:
+            listing = owner.findChild(QListWidget, 'profilesList')
+            if listing is not None:
+                # Each item owns a native Profile::Ptr. Release them BEFORE
+                # rejecting the dialog lets MainWindow recursively refresh and
+                # reindex ModInfo. Their destructors flush legitimate pending
+                # writes against the map with which they were constructed.
+                blocked = listing.blockSignals(True)
+                try:
+                    listing.clear()
+                finally:
+                    listing.blockSignals(blocked)
+
+    def dialog_finished(_result):
+        # Escape and the window close button may finish exec() between polls.
+        # This direct signal runs before MainWindow resumes and reindexes mods.
+        try:
+            release_profiles()
+        except Exception as exc:
+            state['error'] = exc
+        state['done'] = True
+
+    class DialogObserver(QObject):
+        def eventFilter(self, widget, event):
+            if (event.type() == QEvent.Type.Show and state['dialog'] is None
+                    and widget.metaObject().className() == 'ProfilesDialog'
+                    and owned_by(widget, box.window())):
+                state['dialog'] = widget
+                widget.finished.connect(dialog_finished)
+            return False
 
     def fail(exc):
         state['error'] = exc
@@ -61,6 +104,8 @@ def operate(action, old, new, timeout, poll_ms):
         for widget in (state['input'], state['dialog']):
             if widget is not None:
                 try:
+                    if widget is state['dialog']:
+                        release_profiles()
                     widget.reject()
                 except RuntimeError:
                     # A native dialog may already have been destroyed after its exec().
@@ -82,8 +127,7 @@ def operate(action, old, new, timeout, poll_ms):
                     state['dialog'] = modal
                 listing = modal.findChild(QListWidget, 'profilesList')
                 button = modal.findChild(QPushButton, {'rename': 'renameButton',
-                                                      'clone': 'copyProfileButton',
-                                                      'select': 'select'}[action])
+                                                      'clone': 'copyProfileButton'}[action])
                 if (state['dialog'] is None or listing is None or button is None
                         or not owned_by(modal, box.window())):
                     raise RuntimeError(i18n.t('err.profileDialog'))
@@ -94,10 +138,6 @@ def operate(action, old, new, timeout, poll_ms):
                 listing.setCurrentItem(items[0])
                 if not button.isEnabled():
                     raise RuntimeError(i18n.t('err.profileDialog'))
-                if action == 'select':
-                    state['phase'], state['done'] = 'finish', True
-                    button.click()
-                    return
                 state['phase'] = 'input'
                 QTimer.singleShot(poll_ms, step)
                 button.click()
@@ -115,6 +155,7 @@ def operate(action, old, new, timeout, poll_ms):
             if state['phase'] == 'finish':
                 if modal is state['dialog']:
                     state['done'] = True
+                    release_profiles()
                     modal.reject()  # Close without selecting a different active profile.
                 else:
                     QTimer.singleShot(poll_ms, step)
@@ -122,10 +163,18 @@ def operate(action, old, new, timeout, poll_ms):
             fail(exc)
 
     QTimer.singleShot(poll_ms, step)
+    observer = DialogObserver()
+    app.installEventFilter(observer)
     try:
         box.setCurrentIndex(0)  # MO2's native <Manage...> entry opens ProfilesDialog.exec().
     finally:
         state['done'] = True
+        app.removeEventFilter(observer)
+        if state['dialog'] is not None:
+            try:
+                state['dialog'].finished.disconnect(dialog_finished)
+            except (RuntimeError, TypeError):
+                pass  # The native stack dialog may already have been destroyed.
     if state['error'] is not None:
         raise state['error']
     if state['phase'] != 'finish':

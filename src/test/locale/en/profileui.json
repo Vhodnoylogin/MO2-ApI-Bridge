@@ -10,6 +10,15 @@
  "profileui.bounded": "wait is bounded: %(mode)s",
  "profileui.current": "active profile is correct: %(mode)s",
  "profileui.closed": "owned dialogs closed: %(mode)s",
+ "profileui.noManage": "selection does not construct Manage Profiles: %(mode)s",
+ "profileui.noWriters": "selection constructs no inactive writers: %(mode)s",
+ "profileui.released": "dialog profiles released before recursive refresh: %(mode)s",
+ "profileui.allWriters": "every pending writer is flushed: %(mode)s",
+ "profileui.writersBeforeRefresh": "pending writers finish before recursive refresh: %(mode)s",
+ "profileui.stableRows": "cached profile rows survive reindex: %(mode)s / %(profile)s",
+ "profileui.signalState": "list signal blocking is preserved: %(mode)s",
+ "profileui.userClose": "user closes populated dialog between polls: %(mode)s",
+ "profileui.laterKept": "later dialog from the same manager keeps its profiles",
  "profileui.foreignRefused": "pre-existing modal refuses rename",
  "profileui.foreignKept": "pre-existing modal remains untouched"
 }

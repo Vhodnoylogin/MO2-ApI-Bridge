@@ -2,6 +2,11 @@
 
 ## Changes in candidate 2.3.7
 
+- Profile selection uses the ordinary native dropdown. Clone/rename release their
+  dialog-owned profile objects before MO2 refreshes its mod indices, preventing
+  their pending writes from applying cached flags/order to different mod names.
+  This guards the Bridge control path; it does not restore
+  previously changed profiles or establish the cause of every historical incident.
 - Historical receipts with NaN/Infinity or overflowing numbers remain raw malformed
   evidence. Removal and operation polling stay valid JSON; non-encodable native
   card values are refused before deletion.
